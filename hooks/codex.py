@@ -32,7 +32,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any
+from typing import IO, Any
 
 from gating import PolicyError, protected_checks, read_gate, tool_command
 from triage import InventoryError, parse_check, parse_inventory
@@ -45,13 +45,8 @@ TERMINATE_GRACE = 3
 # How long one read of a watch command's output waits for more, in seconds, and the most it reads at once, in bytes.
 READ_WAIT = 0.1
 READ_CHUNK = 65_536
-# How long a git query may take, in seconds, before overwatch treats git as unavailable.
+# How long a git query may take, in seconds, before overwatch gives up on it.
 GIT_TIMEOUT = 5
-# The directories a workspace fingerprint leaves out when git cannot list the workspace's files.
-UNTRACKED = frozenset({
-    ".git", ".venv", "node_modules", "__pycache__", ".pytest_cache",
-    ".mypy_cache", ".zig-cache", "zig-cache", "target", "dist", "build",
-})
 # The size, in bytes, of a workspace fingerprint's digest.
 FINGERPRINT_BYTES = 20
 FAILURE_LIMIT = 10
@@ -117,8 +112,9 @@ class First:
 
 @dataclass(frozen=True)
 class Session:
-    """The files of one session in one repository, all named once by session_at from the state file's path: the
-    state, the lock held while it is read and saved, the triage inventory and the directory of full logs."""
+    """The files of one session in one repository, named from the state file's path: the state, its lock, the
+    triage inventory and the directory of full logs. Only locked() makes one, and only for the block in which this
+    process holds the lock, so a function given a Session writes files no other overwatch process is writing."""
     state: Path
     lock: Path
     inventory: Path
@@ -240,8 +236,9 @@ def state_from(value: object) -> State:
     return state
 
 
-def state_digest(value: object) -> str:
-    """The digest save_state stores beside a state's JSON, so load_state can tell a file it wrote whole from any other."""
+def digest_of(value: object) -> str:
+    """The digest overwatch stores beside the JSON it saves, state or inventory, so it can tell a file it wrote whole
+    from any other when it reads one back."""
     digest = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
     assert len(digest) == 64, f"state digest {digest} is not a SHA-256 hex digest"
     assert digest == digest.lower(), f"state digest {digest} is not lower-case hex; use hexdigest"
@@ -475,6 +472,34 @@ def read_available(selector: selectors.BaseSelector) -> bytes:
     return chunk
 
 
+def output_selector(stdout: IO[bytes]) -> selectors.BaseSelector:
+    """A selector that read_available waits on for a command's output: on POSIX a pipe can be selected on."""
+    selector = selectors.DefaultSelector()
+    key = selector.register(stdout, selectors.EVENT_READ)
+    assert key.fileobj is stdout, f"selector registered {key.fileobj}, not the command's output; register stdout"
+    assert key.events == selectors.EVENT_READ, f"selector waits for events {key.events}; wait only to read"
+    return selector
+
+
+@contextmanager
+def locked(path: Path) -> Iterator[Session]:
+    """The session whose state is kept at path, which must lie in data_root(), for the block, while this process
+    holds an exclusive flock on the state's .lock sibling, released however the block ends. data_root() refuses a
+    directory another user owns, and one this makes is readable by its owner alone. The lock file is kept after the
+    block: removing it while another process waits on it would let a third lock a new file at the same path."""
+    path = in_data(path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    session = Session(state=path, lock=path.with_suffix(".lock"), inventory=path.with_suffix(".baseline.json"), logs=path.with_suffix(""))
+    assert len({session.state, session.lock, session.inventory, session.logs}) == 4, f"session files of {path} share a name; give each its own suffix"
+    with open(session.lock, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield session
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+    assert lock.closed, f"lock {session.lock} is still open after the block; close it with the block"
+
+
 def run_command(
     cwd: Path, watcher: dict[str, Any], argv: list[str], stop_after_report: bool,
 ) -> tuple[str, int | None]:
@@ -508,8 +533,7 @@ def run_command(
         return output.decode(errors="replace"), process.returncode
 
     summary = re.compile(watcher["summary"], re.MULTILINE)
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
+    selector = output_selector(process.stdout)
     chunks: list[bytes] = []
     deadline = time.monotonic() + COMMAND_TIMEOUT
     try:
@@ -617,9 +641,8 @@ def run_checks(cwd: Path, watchers: list[dict[str, Any]]) -> list[Report]:
 
 
 def workspace_files(cwd: Path) -> list[Path]:
-    """Every file git would track in cwd. Where git is not installed, refuses the directory or takes longer than
-    GIT_TIMEOUT, every file under cwd outside the UNTRACKED directories instead: the fingerprint only needs to change
-    when the workspace does, which either list gives. Any other failure is raised to the caller."""
+    """Every file git would track in cwd, a repository repository_of found, or ConfigurationError saying why git
+    could not list them."""
     try:
         result = subprocess.run(
             ["git", "ls-files", "-co", "--exclude-standard", "-z"],
@@ -630,11 +653,8 @@ def workspace_files(cwd: Path) -> list[Path]:
             check=True,
         )
         paths = [cwd / os.fsdecode(part) for part in result.stdout.split(b"\0") if part]
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        paths = []
-        for root, directories, files in os.walk(cwd):
-            directories[:] = [name for name in directories if name not in UNTRACKED]
-            paths.extend(Path(root) / name for name in files)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ConfigurationError(f"git could not list the files of {cwd}: {error}; check that git is installed and can read the repository") from error
     assert all(path.is_relative_to(cwd) for path in paths), f"listed {[path for path in paths if not path.is_relative_to(cwd)]} outside {cwd}; list only the workspace"
     assert len(set(paths)) == len(paths), f"listed {len(paths) - len(set(paths))} files of {cwd} twice; list each once"
     return paths
@@ -687,6 +707,8 @@ def data_root() -> Path:
     if given is not None and not Path(given).is_absolute():
         raise ConfigurationError(f"PLUGIN_DATA is {given!r}, not an absolute path; set it to the plugin's data directory")
     root = Path(given or Path.home() / ".cache" / "overwatch").resolve()
+    if root.exists() and root.stat().st_uid != os.getuid():
+        raise ConfigurationError(f"data directory {root} belongs to another user; set PLUGIN_DATA to a directory of your own")
     assert root.is_absolute(), f"data root {root} is relative; resolve it"
     assert root == root.resolve(), f"data root {root} still holds a link or a parent step; resolve it"
     return root
@@ -712,16 +734,6 @@ def state_path(event: Event, cwd: Path) -> Path:
     return path
 
 
-def session_at(path: Path) -> Session:
-    """The files of the session whose state is kept at path, which must lie in data_root(): the lock, the inventory
-    and the log directory beside it."""
-    path = in_data(path)
-    session = Session(state=path, lock=path.with_suffix(".lock"), inventory=path.with_suffix(".baseline.json"), logs=path.with_suffix(""))
-    assert len({session.state, session.lock, session.inventory, session.logs}) == 4, f"session files of {path} share a name; give each its own suffix"
-    assert all(each.parent == path.parent for each in (session.lock, session.inventory, session.logs)), f"session files of {path} are not beside it"
-    return session
-
-
 def load_state(session: Session) -> State:
     """The state saved in session, or an empty one when none was saved yet. A file whose digest does not match its
     state, or that is unreadable JSON or of another shape, is not one save_state wrote: it is replaced, and the
@@ -730,23 +742,22 @@ def load_state(session: Session) -> State:
     try:
         saved = json.loads(session.state.read_text())
         value = saved.get("state") if isinstance(saved, dict) else None
-        if not isinstance(saved, dict) or saved.get("digest") != state_digest(value):
+        if not isinstance(saved, dict) or saved.get("digest") != digest_of(value):
             raise StateError(f"{session.state} has no digest matching its state{REBUILT}")
         state = state_from(value)
     except (FileNotFoundError, json.JSONDecodeError, StateError):
         state = State()
-    assert session.state.parent == session.lock.parent, f"state {session.state} is not beside its lock {session.lock}; build the session with session_at"
+    assert session.state.parent == session.lock.parent, f"state {session.state} is not beside its lock {session.lock}; build the session with locked"
     assert session.state.suffix == ".json", f"state {session.state} is not a .json file; name it with state_path"
     return state
 
 
 def save_state(session: Session, state: State) -> None:
     """Replaces the state of session with state in one step, writing it first to a new temporary file that only this
-    process can name or read, in the same directory, and removing that file if the write fails. Only process_event
-    calls this, while it holds session.lock, for the session it read the state of, which session_at placed in
-    data_root()."""
+    process can name or read, in the same directory, and removing that file if the write fails. session comes from
+    locked(), so this process holds its lock, and it is the session the state was read from."""
     value = state_json(state)
-    text = json.dumps({"digest": state_digest(value), "state": value})
+    text = json.dumps({"digest": digest_of(value), "state": value})
     with tempfile.NamedTemporaryFile("w", dir=session.state.parent, prefix=f"{session.state.stem}.", suffix=".tmp", delete=False) as handle:
         temporary = Path(handle.name)
         try:
@@ -760,14 +771,13 @@ def save_state(session: Session, state: State) -> None:
 
 
 def failing_line(failures: list[str]) -> str:
-    """Names the failing tests, the first FAILURE_LIMIT of them, for the agent."""
-    if not failures:
-        return ""
-    named = ", ".join(f"`{name}`" for name in failures[:FAILURE_LIMIT])
-    more = f", and {len(failures) - FAILURE_LIMIT} more" if len(failures) > FAILURE_LIMIT else ""
-    line = f"Failing: {named}{more}.\n"
-    assert line.startswith(f"Failing: `{failures[0]}`"), f"line {line} does not name {failures[0]} first; quote the first {FAILURE_LIMIT} in order"
-    assert (len(failures) > FAILURE_LIMIT) == line.endswith(" more.\n"), f"line {line} for {len(failures)} failures miscounts the rest"
+    """Names the failing tests, the first FAILURE_LIMIT of them, for the agent; nothing when there are none."""
+    shown = failures[:FAILURE_LIMIT]
+    hidden = len(failures) - len(shown)
+    more = f", and {hidden} more" if hidden else ""
+    line = f"Failing: {', '.join(f'`{name}`' for name in shown)}{more}.\n" if shown else ""
+    assert not shown or line.startswith(f"Failing: `{shown[0]}`"), f"line {line} does not name {shown[0] if shown else ''} first; quote the first {FAILURE_LIMIT} in order"
+    assert (hidden > 0) == line.endswith(" more.\n"), f"line {line} for {len(failures)} failures miscounts the {hidden} not shown"
     return line
 
 
@@ -837,8 +847,8 @@ def failure_counts(summary: str) -> dict[str, int]:
 
 
 def write_log(session: Session, report: Report, prefix: str = "") -> Path:
-    """Writes a report's full output into session.logs, which session_at placed in data_root(), keeping the output
-    out of the conversation. The log is named by prefix and a digest of the report's key, so each check has one log
+    """Writes a report's full output into session.logs, keeping the output out of the conversation. session comes
+    from locked(), so this process holds its lock and no other is writing there. The log is named by prefix and a digest of the report's key, so each check has one log
     for each prefix, and writing it again replaces the earlier one."""
     log = session.logs / f"{prefix}{hashlib.sha256(report_key(report).encode()).hexdigest()[:16]}.log"
     assert log.parent == session.logs, f"log {log} is outside {session.logs}; name it by digest alone"
@@ -1001,13 +1011,15 @@ def gate_reason(reports: list[Report]) -> str:
 
 def inventory_checks(session: Session) -> dict[str, dict[str, object]] | None:
     """The entries the session's triage inventory already lists, by their check's key, as triage.py parses them:
-    none when there is no inventory yet, and None when it is not one triage.py can read, so the caller can say it
-    was replaced. Any other failure to read it is raised to the caller, which reports it."""
+    none when there is no inventory yet, and None when its digest does not match or triage.py cannot read it, so the
+    caller can say it was replaced. Any other failure to read it is raised to the caller, which reports it."""
     try:
         value = json.loads(session.inventory.read_text())
     except FileNotFoundError:
         return {}
     except json.JSONDecodeError:
+        return None
+    if not isinstance(value, dict) or value.get("digest") != digest_of(value.get("checks")):
         return None
     try:
         parse_inventory(value)
@@ -1043,7 +1055,7 @@ def baseline_inventory(old: State, current: State, session: Session) -> str:
     checks = [entry for key, entry in (listed or {}).items() if key not in keys]
     checks.extend({**{name: value for name, value in asdict(report).items() if name != "text"},
                    "log": str(write_log(session, report, "baseline-"))} for report in keys.values())
-    inventory.write_text(json.dumps({"checks": checks}, indent=2))
+    inventory.write_text(json.dumps({"digest": digest_of(checks), "checks": checks}, indent=2))
     assert len(checks) >= len(added), f"inventory {inventory} holds {len(checks)} checks after adding {len(added)}; append every one"
     assert all("text" not in check for check in checks[-len(added):]), f"inventory {inventory} kept a report's output; link its log instead"
     count = sum(len(report.failures) for report in added)
@@ -1072,10 +1084,7 @@ def process_event(event: Event) -> dict[str, Any]:
     cwd = repository_of(Path(event.cwd or os.getcwd()).resolve())
     if cwd is None:
         return {}
-    path = state_path(event, cwd)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    session = session_at(path)
-    with locked(session):
+    with locked(state_path(event, cwd)) as session:
         if event.hook_event_name == "PreToolUse":
             return protected_output(event, cwd, session)
         old, current = checked_state(session, cwd)
@@ -1084,21 +1093,6 @@ def process_event(event: Event) -> dict[str, Any]:
     assert current.fingerprint is not None, f"state for {cwd} has no fingerprint; checked_state must record one"
     assert session.state.exists(), f"no state was saved for {cwd} at {session.state}; save_state must write it"
     return output
-
-
-@contextmanager
-def locked(session: Session) -> Iterator[None]:
-    """Holds an exclusive flock on session.lock for the block, releasing it and closing the file however the block
-    ends. The lock file is in the user's own data directory, so only the user's own processes can take it. The one
-    place that locks, so the POSIX call is here alone."""
-    assert session.lock.suffix == ".lock", f"asked to lock {session.lock}; lock the session's .lock file"
-    with open(session.lock, "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
-    assert lock.closed, f"lock {session.lock} is still open after the block; close it with the block"
 
 
 def checked_state(session: Session, cwd: Path) -> tuple[State, State]:
