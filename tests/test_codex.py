@@ -380,7 +380,7 @@ class CodexHookTests(unittest.TestCase):
 
     def test_full_output_is_saved_without_truncation(self) -> None:
         report = fixture_report(text="details\n" * 2000)
-        path = codex.write_log(self.data / "state.json", report)
+        path = codex.write_log(codex.session_at(self.data / "state.json"), report)
         self.assertEqual(read(path), report.text)
 
     def test_colour_codes_are_read_through(self) -> None:
