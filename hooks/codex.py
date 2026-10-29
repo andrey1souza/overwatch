@@ -7,10 +7,16 @@ outside one. It runs one build whenever the workspace changes and caches its
 result for later hooks. A configured watch command is stopped after its first
 complete report. The first result of each check is its baseline: only failures
 it did not have are reported, each once, with the full output in a log file.
+
+It runs on POSIX systems: it reads a watch command's output through selectors
+on a pipe and holds each session's state under an flock.
+
+Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -21,7 +27,9 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 from gating import protected_checks, read_gate, tool_command
@@ -51,18 +59,168 @@ ENVIRONMENT: tuple[re.Pattern[str], ...] = tuple(re.compile(pattern) for pattern
 
 
 class ConfigurationError(Exception):
-    pass
+    """The project, its .overwatch.json or the hook event cannot be used; the message says what to change."""
 
 
-def read_event() -> dict[str, Any]:
+class StateError(ValueError):
+    """The saved state does not have the shape save_state writes, so the session starts afresh."""
+
+
+@dataclass(frozen=True)
+class Event:
+    """One hook event as read_event checked it: the fields overwatch reads, each a string, and the tool's input."""
+    hook_event_name: str
+    session_id: str
+    cwd: str
+    tool_name: str
+    tool_input: object
+
+
+@dataclass(frozen=True)
+class Report:
+    """One check's result, as read_report reads it from the check's output."""
+    name: str
+    language: str
+    command: str
+    dir: str | None
+    summary: str
+    failed: bool
+    failures: tuple[str, ...]
+    environment: str | None
+    text: str
+
+
+@dataclass(frozen=True)
+class First:
+    """A check's first result in the session, its baseline: whether it failed, with what, and its summary."""
+    failed: bool
+    failures: tuple[str, ...]
+    summary: str
+
+
+@dataclass(frozen=True)
+class State:
+    """What one session in one repository knows between hook events. Saved by save_state, read back by state_from."""
+    reports: tuple[Report, ...] = ()
+    baseline: Mapping[str, First] = field(default_factory=dict)
+    failed: bool = False
+    told: str | None = None
+    signatures: tuple[str, ...] = ()
+    inherited: str = "allow"
+    fingerprint: str | None = None
+    environment: tuple[str, ...] = ()
+
+
+EVENT_FIELDS = ("hook_event_name", "session_id", "cwd", "tool_name")
+
+
+def read_event() -> Event:
+    """The hook event on stdin, or ConfigurationError naming the fields that are not strings."""
     try:
         value = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError) as error:
-        raise ConfigurationError(f"could not read the Codex hook event: {error}") from error
+        raise ConfigurationError(f"could not read the Codex hook event: {error}; send one JSON object on stdin") from error
     if not isinstance(value, dict):
-        raise ConfigurationError("the Codex hook event was not a JSON object")
-    assert all(isinstance(key, str) for key in value), f"event keys {list(value)} are not all strings; read the event with json.load"
-    assert value == json.loads(json.dumps(value)), f"event with keys {list(value)} does not survive a JSON round trip; read it with json.load"
+        raise ConfigurationError(f"the Codex hook event was a JSON {type(value).__name__}; send one JSON object on stdin")
+    fields = {name: value.get(name) or "" for name in EVENT_FIELDS}
+    wrong = sorted(name for name, given in fields.items() if not isinstance(given, str))
+    if wrong:
+        raise ConfigurationError(f"the Codex hook event's fields {wrong} must be strings; send each as a JSON string")
+    event = Event(**fields, tool_input=value.get("tool_input"))
+    read = (event.hook_event_name, event.session_id, event.cwd, event.tool_name)
+    assert read == tuple(fields[name] for name in EVENT_FIELDS), f"event {event} lost one of the fields {fields}"
+    assert event.tool_input is value.get("tool_input"), f"event for {event.hook_event_name} replaced its tool input; pass it through"
+    return event
+
+
+def string_tuple(value: object, where: str) -> tuple[str, ...]:
+    """value as a tuple of strings, or StateError naming where it was read when it is not a list of strings."""
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise StateError(f"{where} must be a list of strings, not {type(value).__name__}; the state will be rebuilt")
+    strings = tuple(value)
+    assert len(strings) == len(value), f"{where} kept {len(strings)} of {len(value)} strings"
+    assert list(strings) == value, f"{where} reordered its strings; keep them in order"
+    return strings
+
+
+def text_fields(value: dict[str, object], names: tuple[str, ...], optional: tuple[str, ...], where: str) -> None:
+    """Raises StateError naming each of names that is not a string, and each of optional that is neither a string nor null."""
+    given = {name: value.get(name) for name in (*names, *optional)}
+    wrong = [name for name, item in given.items() if not isinstance(item, str) and not (item is None and name in optional)]
+    if not isinstance(value.get("failed"), bool):
+        wrong.append("failed")
+    if wrong:
+        raise StateError(f"{where} has fields {wrong} of the wrong type; the state will be rebuilt")
+    assert all(isinstance(value[name], str) for name in names), f"{where} passed with a field of {names} that is not a string"
+    assert isinstance(value["failed"], bool), f"{where} passed with failed {value['failed']}, not a boolean"
+
+
+def report_from(value: object) -> Report:
+    """A report as save_state wrote it, or StateError naming the fields that do not match."""
+    if not isinstance(value, dict):
+        raise StateError(f"a saved report is a JSON {type(value).__name__}, not an object; the state will be rebuilt")
+    text_fields(value, ("name", "language", "command", "summary", "text"), ("dir", "environment"), "a saved report")
+    report = Report(name=value["name"], language=value["language"], command=value["command"], dir=value.get("dir"),
+                    summary=value["summary"], failed=value["failed"],
+                    failures=string_tuple(value.get("failures"), f"saved report {value['name']}'s failures"),
+                    environment=value.get("environment"), text=value["text"])
+    assert report.name == value["name"] and report.failed == value["failed"], f"saved report {value['name']} changed while read"
+    assert list(report.failures) == value["failures"], f"saved report {report.name} lost failures; keep each in order"
+    return report
+
+
+def first_from(key: str, value: object) -> First:
+    """A check's saved first result, or StateError naming the check whose entry does not match."""
+    if not isinstance(value, dict):
+        raise StateError(f"the baseline of {key!r} is a JSON {type(value).__name__}, not an object; the state will be rebuilt")
+    text_fields(value, ("summary",), (), f"the baseline of {key!r}")
+    first = First(value["failed"], string_tuple(value.get("failures"), f"the baseline of {key!r}'s failures"), value["summary"])
+    assert first.summary == value["summary"], f"the baseline of {key!r} changed its summary while read"
+    assert list(first.failures) == value["failures"], f"the baseline of {key!r} lost failures; keep each in order"
+    return first
+
+
+def state_from(value: object) -> State:
+    """A state as save_state wrote it, or StateError naming the part that does not match."""
+    if not isinstance(value, dict):
+        raise StateError(f"the saved state is a JSON {type(value).__name__}, not an object; it will be rebuilt")
+    reports, baseline, gate = value.get("reports", []), value.get("baseline", {}), value.get("gate", {})
+    told, fingerprint = value.get("told"), value.get("fingerprint")
+    if not isinstance(reports, list) or not isinstance(baseline, dict) or not isinstance(gate, dict):
+        raise StateError("the saved state's reports, baseline or gate is not a list, object and object; it will be rebuilt")
+    if not isinstance(value.get("failed", False), bool) or not all(item is None or isinstance(item, str) for item in (told, fingerprint)):
+        raise StateError("the saved state's failed, told or fingerprint has the wrong type; it will be rebuilt")
+    if gate.get("inherited", "allow") not in ("allow", "block"):
+        raise StateError(f"the saved state's gate.inherited is {gate.get('inherited')}, not allow or block; it will be rebuilt")
+    state = State(
+        reports=tuple(report_from(report) for report in reports),
+        baseline={key: first_from(key, first) for key, first in baseline.items()},
+        failed=value.get("failed", False),
+        told=told,
+        signatures=string_tuple(value.get("signatures", []), "the saved state's signatures"),
+        inherited=gate.get("inherited", "allow"),
+        fingerprint=fingerprint,
+        environment=string_tuple(value.get("environment", []), "the saved state's environment"),
+    )
+    assert len(state.reports) == len(reports) and set(state.baseline) == set(baseline), f"state lost reports or baseline entries while read"
+    assert state.fingerprint == fingerprint, f"state changed its fingerprint {fingerprint} while read"
+    return state
+
+
+def state_json(state: State) -> dict[str, object]:
+    """state as save_state writes it, the shape state_from reads."""
+    value: dict[str, object] = {
+        "reports": [asdict(report) for report in state.reports],
+        "baseline": {key: asdict(first) for key, first in state.baseline.items()},
+        "failed": state.failed,
+        "told": state.told,
+        "signatures": list(state.signatures),
+        "gate": {"inherited": state.inherited},
+        "fingerprint": state.fingerprint,
+        "environment": list(state.environment),
+    }
+    assert len(value["reports"]) == len(state.reports), f"state JSON holds {len(value['reports'])} of {len(state.reports)} reports"
+    assert value["gate"] == {"inherited": state.inherited}, f"state JSON gate {value['gate']} does not hold {state.inherited}"
     return value
 
 
@@ -180,7 +338,7 @@ def find_project_watchers(cwd: Path, override: dict[str, Any]) -> list[dict[str,
             claimed.append(directory)
             labelled = {**watcher, "language": language, "name": f"{watcher['name']} {directory}", "dir": directory}
             found.append(apply_override(labelled, override if not found else {}))
-    keys = [key_of(watcher) for watcher in found]
+    keys = [key_of(watcher["name"], watcher.get("dir")) for watcher in found]
     assert len(set(keys)) == len(keys), f"watchers {keys} repeat a check; find each language once per directory"
     assert not any(Path(watcher.get("dir", "")).is_absolute() for watcher in found), f"watchers {keys} hold an absolute dir; keep dirs relative to {cwd}"
     return found
@@ -209,7 +367,8 @@ def find_watchers(cwd: Path) -> list[dict[str, Any]]:
         if shutil.which(checker["marker"]):
             found.append(dict(checker))
     assert all("name" in watcher for watcher in found), f"found {found} with an unnamed watcher; every watcher needs a name"
-    assert len({key_of(watcher) for watcher in found}) == len(found), f"found {[key_of(watcher) for watcher in found]} in {cwd}; find each check once"
+    keys = [key_of(watcher["name"], watcher.get("dir")) for watcher in found]
+    assert len(set(keys)) == len(found), f"found {keys} in {cwd}; find each check once"
     return found
 
 
@@ -328,7 +487,7 @@ def environment_in(output: str) -> str | None:
     return line
 
 
-def read_report(watcher: dict[str, Any], output: str, code: int | None = None) -> dict[str, Any] | None:
+def read_report(watcher: dict[str, Any], output: str, code: int | None = None) -> Report | None:
     """Reads one build's output; a run with no summary line is read by its exit code."""
     clean = ANSI.sub("", output)
     failures = failures_in(watcher, clean)
@@ -345,22 +504,22 @@ def read_report(watcher: dict[str, Any], output: str, code: int | None = None) -
         summary = (f"{len(failures)} failed" if failures else f"exited with code {code}") if failed else "passed"
     selected = command_for(watcher)
     assert selected is not None, f"{watcher['name']} reported without a command; give it argv or baseline in watchers.json"
-    report = {
-        "name": watcher["name"],
-        "language": language_of(watcher),
-        "command": command_line(selected[0]),
-        "dir": watcher.get("dir"),
-        "summary": summary,
-        "failed": failed,
-        "failures": failures if failed else [],
-        "environment": environment_in(clean) if failed else None,
-        "text": clean.strip(),
-    }
-    assert report["failed"] or not report["failures"], f"{watcher['name']} passed with failures {failures}; list failures only when it failed"
+    report = Report(
+        name=watcher["name"],
+        language=language_of(watcher),
+        command=command_line(selected[0]),
+        dir=watcher.get("dir"),
+        summary=summary,
+        failed=failed,
+        failures=tuple(failures) if failed else (),
+        environment=environment_in(clean) if failed else None,
+        text=clean.strip(),
+    )
+    assert report.failed or not report.failures, f"{watcher['name']} passed with failures {failures}; list failures only when it failed"
     return report
 
 
-def run_check(cwd: Path, watcher: dict[str, Any]) -> dict[str, Any] | None:
+def run_check(cwd: Path, watcher: dict[str, Any]) -> Report | None:
     """Runs one watcher's command and reads its report, or None when it has no command."""
     selected = command_for(watcher)
     if selected is None:
@@ -371,13 +530,13 @@ def run_check(cwd: Path, watcher: dict[str, Any]) -> dict[str, Any] | None:
     if report is None:
         tail = output.strip()[-2_000:]
         detail = f"\n\n{tail}" if tail else ""
-        raise ConfigurationError(f"{command_line(argv)} gave no matching summary{detail}")
-    assert report["name"] == watcher["name"], f"{watcher['name']} reported as {report['name']}; name the report after its watcher"
-    assert report["command"] == command_line(argv), f"{watcher['name']} reported {report['command']} but ran {command_line(argv)}"
+        raise ConfigurationError(f"{command_line(argv)} gave no matching summary; make the summary pattern for {watcher['name']} in .overwatch.json match its output{detail}")
+    assert report.name == watcher["name"], f"{watcher['name']} reported as {report.name}; name the report after its watcher"
+    assert report.command == command_line(argv), f"{watcher['name']} reported {report.command} but ran {command_line(argv)}"
     return report
 
 
-def run_checks(cwd: Path, watchers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def run_checks(cwd: Path, watchers: list[dict[str, Any]]) -> list[Report]:
     """Runs every watcher's check at once, so a polyglot project waits for its slowest suite, not the sum of them."""
     if not watchers:
         return []
@@ -385,7 +544,7 @@ def run_checks(cwd: Path, watchers: list[dict[str, Any]]) -> list[dict[str, Any]
         reports = list(pool.map(lambda watcher: run_check(cwd, watcher), watchers))
     assert len(reports) == len(watchers), f"ran {len(reports)} of {len(watchers)} checks; map every watcher"
     ran = [report for report in reports if report is not None]
-    assert [report["name"] for report in ran] == [watcher["name"] for watcher, report in zip(watchers, reports) if report], f"reports {[report['name'] for report in ran]} are out of watcher order"
+    assert [report.name for report in ran] == [watcher["name"] for watcher, report in zip(watchers, reports) if report], f"reports {[report.name for report in ran]} are out of watcher order"
     return ran
 
 
@@ -446,36 +605,51 @@ def repository_of(cwd: Path) -> Path | None:
     return root
 
 
-def state_path(event: dict[str, Any], cwd: Path) -> Path:
-    """Where the state of one session in one repository is kept."""
-    data = Path(os.environ.get("PLUGIN_DATA", Path.home() / ".cache" / "overwatch"))
-    identity = f"{event.get('session_id', '')}\0{cwd}"
+def data_root() -> Path:
+    """The directory overwatch keeps session state in, resolved: PLUGIN_DATA when the host sets it, else ~/.cache/overwatch."""
+    root = Path(os.environ.get("PLUGIN_DATA", Path.home() / ".cache" / "overwatch")).resolve()
+    assert root.is_absolute(), f"data root {root} is relative; resolve it"
+    assert root == root.resolve(), f"data root {root} still holds a link or a parent step; resolve it"
+    return root
+
+
+def in_data(path: Path) -> Path:
+    """path resolved, or ConfigurationError when it lies outside data_root(), the only place overwatch reads state from."""
+    root, resolved = data_root(), path.resolve()
+    if not resolved.is_relative_to(root):
+        raise ConfigurationError(f"state file {path} is outside {root}; set PLUGIN_DATA to the directory that holds it")
+    assert resolved.is_absolute() and ".." not in resolved.parts, f"state file {resolved} is not a plain absolute path"
+    assert resolved.is_relative_to(root), f"state file {resolved} escaped {root}"
+    return resolved
+
+
+def state_path(event: Event, cwd: Path) -> Path:
+    """Where the state of one session in one repository is kept: named by a digest of both, so neither shapes the path."""
+    data = data_root()
+    identity = f"{event.session_id}\0{cwd}"
     path = data / f"{hashlib.sha256(identity.encode()).hexdigest()}.json"
     assert path.parent == data, f"state path {path} is outside {data}; name it by digest alone"
     assert path.suffix == ".json", f"state path {path} is not JSON; save_state's temporary file swaps the suffix"
     return path
 
 
-def load_state(event: dict[str, Any], cwd: Path) -> dict[str, Any]:
-    """The session's saved state in cwd, or an empty one when none was saved or it cannot be read."""
-    path = state_path(event, cwd)
+def load_state(path: Path) -> State:
+    """The state saved at path, or an empty one when none was saved, it cannot be read, or it is not one save_state wrote."""
     try:
-        value = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
-        value = {}
-    state = value if isinstance(value, dict) else {}
-    assert state is value or not isinstance(value, dict), f"{path} held an object that was dropped; keep it"
-    assert all(isinstance(key, str) for key in state), f"{path} gave keys {list(state)}; read it with json.loads"
+        state = state_from(json.loads(in_data(path).read_text()))
+    except (OSError, json.JSONDecodeError, StateError):
+        state = State()
+    assert state.inherited in ("allow", "block"), f"state from {path} has gate {state.inherited}; state_from must refuse it"
+    assert all(report.name for report in state.reports), f"state from {path} holds an unnamed report; state_from must refuse it"
     return state
 
 
-def save_state(event: dict[str, Any], cwd: Path, value: dict[str, Any]) -> None:
-    """Saves the session's state in cwd, replacing the old state in one step."""
-    path = state_path(event, cwd)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def save_state(path: Path, state: State) -> None:
+    """Saves state at path, the one state_path named and process_event holds the lock for, replacing the old state
+    in one step through path's .tmp sibling, which only the holder of that lock writes."""
     temporary = path.with_suffix(".tmp")
-    assert temporary != path, f"state {path} would be written over itself; save through a temporary file"
-    temporary.write_text(json.dumps(value))
+    assert temporary.parent == path.parent and temporary != path, f"state {path} would be saved through {temporary}; use its .tmp sibling"
+    temporary.write_text(json.dumps(state_json(state)))
     temporary.replace(path)
     assert not temporary.exists(), f"{temporary} was left behind; replace the state file with it"
 
@@ -492,93 +666,106 @@ def failing_line(failures: list[str]) -> str:
     return line
 
 
-def where(report: dict[str, Any]) -> str:
+def where(report: Report) -> str:
     """The sub-project a report's command ran in, for the agent."""
-    text = f" in `{report['dir']}`" if report.get("dir") else ""
-    assert bool(text) == bool(report.get("dir")), f"where gave {text} for dir {report.get('dir')}; name the dir only when there is one"
-    assert not text or text.endswith(f"`{report['dir']}`"), f"where gave {text}; quote the dir {report.get('dir')}"
+    text = f" in `{report.dir}`" if report.dir else ""
+    assert bool(text) == bool(report.dir), f"where gave {text} for dir {report.dir}; name the dir only when there is one"
+    assert not text or text.endswith(f"`{report.dir}`"), f"where gave {text}; quote the dir {report.dir}"
     return text
 
 
-def key_of(report: dict[str, Any]) -> str:
-    """What identifies a check across runs: its name and the sub-project it ran in."""
-    assert "\0" not in report["name"], f"check name {report['name']} holds a NUL; key_of separates fields with one"
-    key = f"{report['name']}\0{report.get('dir') or ''}"
-    assert key.split("\0")[0] == report["name"], f"key {key} does not start with {report['name']}"
+def key_of(name: str, directory: str | None) -> str:
+    """What identifies a check across runs: its name and the sub-project it ran in, joined by a NUL neither can hold."""
+    if "\0" in name or "\0" in (directory or ""):
+        raise ConfigurationError(f"check {name!r} in {directory!r} holds a NUL character; remove it from its name in .overwatch.json")
+    key = f"{name}\0{directory or ''}"
+    assert key.split("\0") == [name, directory or ""], f"key {key!r} does not split back into {name!r} and {directory!r}"
+    assert key.count("\0") == 1, f"key {key!r} holds {key.count(chr(0))} separators; join exactly two fields"
     return key
 
 
-def known_failures(report: dict[str, Any], baseline: dict[str, Any]) -> list[str]:
-    """The failures this check already had when the session started."""
-    first = baseline.get(key_of(report), {})
-    known = list(first.get("failures", [])) if first.get("failed") else []
-    assert first.get("failed") or not known, f"{report['name']} knows failures {known} from a passing baseline"
-    assert len(known) == len(first.get("failures", [])) or not first.get("failed"), f"{report['name']} kept {len(known)} known failures; keep all of them"
+def report_key(report: Report) -> str:
+    """The key of the check report came from."""
+    key = key_of(report.name, report.dir)
+    assert key.startswith(report.name), f"key {key!r} does not start with {report.name}"
+    assert key.endswith(report.dir or ""), f"key {key!r} does not end with {report.dir}"
+    return key
+
+
+def known_failures(report: Report, baseline: Mapping[str, First]) -> list[str]:
+    """The failures this check already had when the session started: none when its first result passed."""
+    first = baseline.get(report_key(report))
+    known = list(first.failures) if first is not None and first.failed else []
+    assert first is None or first.failed or not known, f"{report.name} knows failures {known} from a passing baseline"
+    assert first is None or not first.failed or len(known) == len(first.failures), f"{report.name} kept {len(known)} known failures; keep all of them"
     return known
 
 
-def is_regression(report: dict[str, Any], baseline: dict[str, Any]) -> bool:
+def is_regression(report: Report, baseline: Mapping[str, First]) -> bool:
     """Whether a report fails in a way its baseline, the session's first result, did not."""
-    if not report["failed"] or report.get("environment"):
+    if not report.failed or report.environment:
         return False
-    first = baseline.get(key_of(report), {})
+    first = baseline.get(report_key(report))
     known = set(known_failures(report, baseline))
-    if not first.get("failed") or any(name not in known for name in report.get("failures", [])):
+    if first is None or not first.failed or any(name not in known for name in report.failures):
         return True
-    if "summary" not in first:
-        return False
-    previous, counts = failure_counts(first["summary"]), failure_counts(report["summary"])
+    previous, counts = failure_counts(first.summary), failure_counts(report.summary)
     grew = [kind for kind, count in counts.items() if count > previous.get(kind, 0)]
-    assert first.get("failed") and report["failed"], f"{report['name']} compared counts without two failing results; compare only failing ones"
-    assert set(grew) <= set(counts), f"{report['name']} grew in {grew}, which its summary does not count"
+    assert first.failed and report.failed, f"{report.name} compared counts without two failing results; compare only failing ones"
+    assert set(grew) <= set(counts), f"{report.name} grew in {grew}, which its summary does not count"
     return bool(grew)
 
 
 def failure_counts(summary: str) -> dict[str, int]:
-    """Counts are a fallback when a runner does not identify individual issues."""
+    """Each count a summary gives, keyed by its kind (error, warning or failure) and its place among the counts of
+    that kind, so a summary with two failure counts, such as zig's failed steps and failed tests, compares each with
+    its own."""
     counts: dict[str, int] = {}
+    seen = {"error": 0, "warning": 0, "failure": 0}
     for number, label in re.findall(r"(\d+)\s+(errors?|warnings?|failures?|failed|fail)\b", summary):
         kind = "error" if label.startswith("error") else "warning" if label.startswith("warning") else "failure"
-        counts[kind] = max(counts.get(kind, 0), int(number))
-    assert set(counts) <= {"error", "warning", "failure"}, f"summary {summary} counted kinds {set(counts)}; fold each label into error, warning or failure"
+        counts[f"{kind} {seen[kind]}"] = int(number)
+        seen[kind] += 1
+    assert len(counts) == sum(seen.values()), f"summary {summary} gave {len(counts)} counts from {seen}; key each by its kind and place"
     assert all(str(count) in summary for count in counts.values()), f"counts {counts} are not in summary {summary}; take each from it"
     return counts
 
 
-def write_log(path: Path, report: dict[str, Any], prefix: str = "") -> Path:
-    """Writes a report's full output beside the session's state, keeping it out of the conversation."""
-    log = path.with_suffix("") / f"{prefix}{hashlib.sha256(key_of(report).encode()).hexdigest()[:16]}.log"
+def write_log(path: Path, report: Report, prefix: str = "") -> Path:
+    """Writes a report's full output into the directory beside the state at path, which process_event holds the lock
+    for, under a name made from prefix and a digest of the report's key, keeping the output out of the conversation."""
+    log = path.with_suffix("") / f"{prefix}{hashlib.sha256(report_key(report).encode()).hexdigest()[:16]}.log"
     assert log.parent == path.with_suffix(""), f"log {log} is outside {path.with_suffix('')}; name it by digest alone"
     log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text(report["text"])
-    assert log.stat().st_size >= len(report["text"]), f"{log} holds {log.stat().st_size} bytes of {report['name']}'s output; write all of it"
+    log.write_text(report.text)
+    assert log.read_text() == report.text, f"{log} does not hold {report.name}'s output as given; write it whole"
     return log
 
 
-def failure_message(reports: list[dict[str, Any]], baseline: dict[str, Any], logs: dict[str, Path]) -> str:
+def failure_message(reports: list[Report], baseline: Mapping[str, First], logs: dict[str, Path]) -> str:
     """Tells the agent which checks newly fail, what fails in each and where the full output is."""
-    assert all(key_of(report) in logs for report in reports), f"no log for {[report['name'] for report in reports if key_of(report) not in logs]}; write one for each report"
+    assert all(report_key(report) in logs for report in reports), f"no log for {[report.name for report in reports if report_key(report) not in logs]}; write one for each report"
     messages: list[str] = []
     for report in reports:
         known = set(known_failures(report, baseline))
-        fresh = [name for name in report.get("failures", []) if name not in known]
-        old = len(report.get("failures", [])) - len(fresh)
+        fresh = [name for name in report.failures if name not in known]
+        old = len(report.failures) - len(fresh)
         messages.append(
-            f"overwatch: `{report['command']}`{where(report)} failed after the latest change: {report['summary']}\n"
+            f"overwatch: `{report.command}`{where(report)} failed after the latest change: {report.summary}\n"
             f"{failing_line(fresh)}"
             f"{f'{old} more were already failing when the session started.' + chr(10) if old else ''}"
             "Fix these new failures before finishing. Tools remain available while you investigate.\n"
-            f"Full output: `{logs[key_of(report)]}`"
+            f"Full output: `{logs[report_key(report)]}`"
         )
     text = "\n\n".join(messages)
     assert text.count("Full output: ") == len(reports), f"message links {text.count('Full output: ')} logs for {len(reports)} reports; link each once"
     return text
 
 
-def environment_message(reports: list[dict[str, Any]]) -> str:
+def environment_message(reports: list[Report]) -> str:
     """Tells the agent which checks cannot run where they are, and that no code change fixes that."""
-    assert all(report.get("environment") for report in reports), f"{[report['name'] for report in reports if not report.get('environment')]} have no environment line; pass only checks that cannot run"
-    lines = "\n".join(f"- `{report['command']}`{where(report)}: {report['environment']}" for report in reports)
+    assert all(report.environment for report in reports), f"{[report.name for report in reports if not report.environment]} have no environment line; pass only checks that cannot run"
+    lines = "\n".join(f"- `{report.command}`{where(report)}: {report.environment}" for report in reports)
     assert lines.count("\n- ") == max(len(reports) - 1, 0), f"environment message lists {lines.count(chr(10) + '- ') + 1} lines for {len(reports)} checks"
     return (
         "overwatch: these checks cannot run in this environment, so they are not reporting. "
@@ -586,7 +773,7 @@ def environment_message(reports: list[dict[str, Any]]) -> str:
     )
 
 
-def failing_suffix(failures: list[str]) -> str:
+def failing_suffix(failures: tuple[str, ...]) -> str:
     """The first failure and how many more, for the status line."""
     if not failures:
         return ""
@@ -597,20 +784,20 @@ def failing_suffix(failures: list[str]) -> str:
     return suffix
 
 
-def failure_status(reports: list[dict[str, Any]]) -> str:
+def failure_status(reports: list[Report]) -> str:
     """The status line for failing checks, one part each."""
     assert reports, "failure_status was given no reports; pass the checks that newly fail"
     summaries = " · ".join(
-        f"{report['name']} ✗ {SUMMARY_DECORATION.sub('', report['summary'])}{failing_suffix(report.get('failures', []))}"
+        f"{report.name} ✗ {SUMMARY_DECORATION.sub('', report.summary)}{failing_suffix(report.failures)}"
         for report in reports
     )
     assert summaries.count(" ✗ ") >= len(reports), f"status {summaries} marks fewer than {len(reports)} checks; give each one part"
     return f"Overwatch: {summaries}"
 
 
-def recovery_message(reports: list[dict[str, Any]]) -> str:
+def recovery_message(reports: tuple[Report, ...]) -> str:
     """Tells the agent the checks pass again, with each one's summary."""
-    summaries = " · ".join(f"overwatch {report['name']} ✓ {SUMMARY_DECORATION.sub('', report['summary'])}" for report in reports)
+    summaries = " · ".join(f"overwatch {report.name} ✓ {SUMMARY_DECORATION.sub('', report.summary)}" for report in reports)
     assert summaries.count(" ✓ ") >= len(reports), f"recovery {summaries} marks fewer than {len(reports)} checks; give each one part"
     text = f"overwatch: green again. {summaries}"
     assert text.endswith(summaries), f"recovery {text} drops the summaries; end with them"
@@ -630,171 +817,201 @@ def context_output(event_name: str, text: str) -> dict[str, Any]:
     return output
 
 
-def report_state(reports: list[dict[str, Any]], old: dict[str, Any]) -> dict[str, Any]:
+def report_state(reports: list[Report] | tuple[Report, ...], old: State) -> State:
     """The state after reports: the baseline with each new check's first result, and the regressions against it."""
-    baseline = dict(old.get("baseline", {}))
-    keyed = [(key_of(report), report) for report in reports]
-    for key, report in keyed:
-        if not report.get("environment"):
-            baseline.setdefault(key, {"failed": report["failed"], "failures": report.get("failures", []),
-                                      "summary": report["summary"]})
+    baseline = dict(old.baseline)
+    for report in reports:
+        if not report.environment:
+            baseline.setdefault(report_key(report), First(report.failed, report.failures, report.summary))
     regressions = [report for report in reports if is_regression(report, baseline)]
     signatures = regression_signatures(regressions, baseline)
-    assert set(old.get("baseline", {})) <= set(baseline), f"baseline lost {set(old.get('baseline', {})) - set(baseline)}; keep each check's first result"
+    assert set(old.baseline) <= set(baseline), f"baseline lost {set(old.baseline) - set(baseline)}; keep each check's first result"
     assert bool(signatures) == bool(regressions), f"{len(regressions)} regressions gave signatures {signatures}; sign each one"
-    return {"reports": reports, "baseline": baseline, "failed": bool(regressions),
-            "told": json.dumps(signatures) if regressions else None,
-            "signatures": signatures}
+    return replace(old, reports=tuple(reports), baseline=baseline, failed=bool(regressions),
+                   told=json.dumps(signatures) if regressions else None, signatures=tuple(signatures))
 
 
-def regression_signatures(reports: list[dict[str, Any]], baseline: dict[str, Any]) -> list[str]:
+def regression_signatures(reports: list[Report], baseline: Mapping[str, First]) -> list[str]:
     """What identifies each regression, the new failures or else the summary without timings, sorted."""
     signatures: list[str] = []
     for report in reports:
         known = set(known_failures(report, baseline))
-        fresh = [name for name in report.get("failures", []) if name not in known]
-        identities = fresh or [re.sub(r"\d+(?:\.\d+)?m?s\b", "", report["summary"])]
-        signatures.extend(json.dumps([key_of(report), identity]) for identity in identities)
+        fresh = [name for name in report.failures if name not in known]
+        identities = fresh or [re.sub(r"\d+(?:\.\d+)?m?s\b", "", report.summary)]
+        signatures.extend(json.dumps([report_key(report), identity]) for identity in identities)
     assert len(signatures) >= len(reports), f"{len(reports)} regressions gave {len(signatures)} signatures; sign each at least once"
-    assert all(json.loads(signature)[0] in {key_of(report) for report in reports} for signature in signatures), f"signatures {signatures} name a check that did not regress"
+    assert all(json.loads(signature)[0] in {report_key(report) for report in reports} for signature in signatures), f"signatures {signatures} name a check that did not regress"
     return sorted(signatures)
 
 
-def block_stop(event: dict[str, Any], current: dict[str, Any]) -> bool:
+def block_stop(event: Event, current: State) -> bool:
     """Whether a Stop event is refused because guarded checks fail."""
-    if event.get("hook_event_name") != "Stop":
+    if event.hook_event_name != "Stop":
         return False
     guarded = gate_reports(current)
-    assert all(report in current["reports"] for report in guarded), f"guarded {[report['name'] for report in guarded]} are not this run's reports"
-    assert all(report["failed"] for report in guarded), f"{[report['name'] for report in guarded if not report['failed']]} pass but block Stop"
+    assert all(report in current.reports for report in guarded), f"guarded {[report.name for report in guarded]} are not this run's reports"
+    assert all(report.failed for report in guarded), f"{[report.name for report in guarded if not report.failed]} pass but block Stop"
     return bool(guarded)
 
 
-def gate_reports(current: dict[str, Any], checks: list[str] | None = None) -> list[dict[str, Any]]:
+def gate_reports(current: State, checks: tuple[str, ...] | list[str] | None = None) -> list[Report]:
     """The failing reports that guard an action: those among checks, inherited ones only when the policy blocks them."""
-    inherited = current.get("gate", {}).get("inherited", "allow") == "block"
-    guarded = [report for report in current["reports"]
-               if report["failed"] and not report.get("environment")
-               and (not checks or report["name"] in checks or report.get("language") in checks)
-               and (inherited or is_regression(report, current["baseline"]))]
-    assert len(guarded) <= len(current["reports"]), f"guarded {len(guarded)} of {len(current['reports'])} reports; select from them"
-    assert not any(report.get("environment") for report in guarded), f"{[report['name'] for report in guarded if report.get('environment')]} cannot run but guard; leave them out"
+    inherited = current.inherited == "block"
+    guarded = [report for report in current.reports
+               if report.failed and not report.environment
+               and (not checks or report.name in checks or report.language in checks)
+               and (inherited or is_regression(report, current.baseline))]
+    assert len(guarded) <= len(current.reports), f"guarded {len(guarded)} of {len(current.reports)} reports; select from them"
+    assert not any(report.environment for report in guarded), f"{[report.name for report in guarded if report.environment]} cannot run but guard; leave them out"
     return guarded
 
 
-def protected_output(event: dict[str, Any], cwd: Path) -> dict[str, Any]:
-    """The PreToolUse output: a denial when the tool call is protected and its checks fail, else nothing."""
-    tool = event.get("tool_name")
-    checks = protected_checks(tool if isinstance(tool, str) else "", tool_command(event.get("tool_input")), read_gate(read_override(cwd)))
+def protected_output(event: Event, cwd: Path, path: Path) -> dict[str, Any]:
+    """The PreToolUse output: a denial when the tool call is protected and its checks fail, else nothing. Saves the
+    rechecked state at path, keeping what the agent was told, since a tool call tells it nothing."""
+    checks = protected_checks(event.tool_name, tool_command(event.tool_input), read_gate(read_override(cwd)))
     if checks is None:
         return {}
-    old, current = checked_state(event, cwd)
-    current["told"] = old.get("told")
-    save_state(event, cwd, current)
+    old, current = checked_state(path, cwd)
+    save_state(path, replace(current, told=old.told))
     reports = gate_reports(current, checks)
     if not reports:
         return {}
     reason = gate_reason(reports)
-    assert all(report["failed"] for report in reports), f"{[report['name'] for report in reports if not report['failed']]} pass but deny the call"
-    assert all(not checks or report["name"] in checks or report.get("language") in checks for report in reports), f"{[report['name'] for report in reports]} guard a call protected only by {checks}"
+    assert all(report.failed for report in reports), f"{[report.name for report in reports if not report.failed]} pass but deny the call"
+    assert all(not checks or report.name in checks or report.language in checks for report in reports), f"{[report.name for report in reports]} guard a call protected only by {checks}"
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                    "permissionDecisionReason": reason}}
 
 
-def gate_reason(reports: list[dict[str, Any]]) -> str:
+def gate_reason(reports: list[Report]) -> str:
     """Why an action is refused: the failing checks that guard it, and that repairs remain possible."""
     assert reports, "gate_reason was given no reports; give it the checks that guard the action"
-    summaries = "; ".join(f"{report['name']}: {report['summary']}" for report in reports)
-    assert all(f"{report['name']}: " in summaries for report in reports), f"reason {summaries} leaves out a guarding check"
+    summaries = "; ".join(f"{report.name}: {report.summary}" for report in reports)
+    assert all(f"{report.name}: " in summaries for report in reports), f"reason {summaries} leaves out a guarding check"
     return (f"overwatch: this action is guarded while relevant checks fail. {summaries}. "
             "Inspection, edits, and check commands remain available. Rerun the checks after repairing the failure.")
 
 
-def baseline_inventory(old: dict[str, Any], current: dict[str, Any], path: Path) -> str:
-    """Keep the inherited backlog inspectable without putting it in model context."""
-    added = [report for report in current["reports"]
-             if key_of(report) not in old.get("baseline", {}) and report["failed"] and not report.get("environment")]
+def inventory_checks(inventory: Path) -> list[dict[str, object]]:
+    """The checks a triage inventory already lists, none when it is missing or not one baseline_inventory wrote."""
+    try:
+        value = json.loads(in_data(inventory).read_text())
+    except (OSError, ValueError):
+        return []
+    checks = value.get("checks") if isinstance(value, dict) else None
+    listed = [check for check in checks if isinstance(check, dict)] if isinstance(checks, list) else []
+    assert all(isinstance(check, dict) for check in listed), f"inventory {inventory} kept an entry that is not an object"
+    assert not isinstance(checks, list) or len(listed) <= len(checks), f"inventory {inventory} listed {len(listed)} of {len(checks)} checks"
+    return listed
+
+
+def inherited_failures(old: State, current: State) -> list[Report]:
+    """The reports of checks that failed on their first run in this session, for reasons in the code."""
+    added = [report for report in current.reports if report_key(report) not in old.baseline]
+    failing = [report for report in added if report.failed and not report.environment]
+    assert all(report in current.reports for report in failing), f"inherited failures {[report.name for report in failing]} are not this run's"
+    assert not any(report_key(report) in old.baseline for report in failing), f"{[report.name for report in failing]} already had a baseline"
+    return failing
+
+
+def checked_key(check: dict[str, object]) -> str:
+    """The key of the check an inventory entry lists, from its name and dir."""
+    name, directory = check.get("name"), check.get("dir")
+    key = key_of(name if isinstance(name, str) else "", directory if isinstance(directory, str) else None)
+    assert key.count("\0") == 1, f"inventory entry key {key!r} does not join a name and a dir"
+    assert not isinstance(name, str) or key.startswith(name), f"inventory entry key {key!r} does not start with {name}"
+    return key
+
+
+def baseline_inventory(old: State, current: State, path: Path) -> str:
+    """Keeps the inherited backlog inspectable without putting it in model context: lists each check that first
+    failed in this run in the inventory beside the state at path, replacing any entry of the same check, so a
+    repeated event leaves one entry per check."""
+    added = inherited_failures(old, current)
     if not added:
         return ""
     inventory = path.with_suffix(".baseline.json")
-    try:
-        checks = json.loads(inventory.read_text())["checks"]
-    except (OSError, ValueError, KeyError):
-        checks = []
-    for report in added:
-        log = write_log(path, report, "baseline-")
-        checks.append({**{key: value for key, value in report.items() if key != "text"}, "log": str(log)})
+    keys = {report_key(report): report for report in added}
+    checks = [check for check in inventory_checks(inventory) if checked_key(check) not in keys]
+    checks.extend({**{name: value for name, value in asdict(report).items() if name != "text"},
+                   "log": str(write_log(path, report, "baseline-"))} for report in keys.values())
     inventory.write_text(json.dumps({"checks": checks}, indent=2))
     assert len(checks) >= len(added), f"inventory {inventory} holds {len(checks)} checks after adding {len(added)}; append every one"
     assert all("text" not in check for check in checks[-len(added):]), f"inventory {inventory} kept a report's output; link its log instead"
-    count = sum(len(report.get("failures", [])) for report in added)
+    count = sum(len(report.failures) for report in added)
     detail = f"{count} named issues" if count else "individual issue names unavailable; see full logs"
     policy = ("Inherited findings guard completion and protected actions. "
-              if current.get("gate", {}).get("inherited") == "block"
+              if current.inherited == "block"
               else "It is not a Stop blocker; only new failures are guarded. ")
     return (f"overwatch: inherited backlog in {len(added)} checks ({detail}). "
             f"{policy}"
             f"Triage inventory: `{inventory}`. Filter or page it with hooks/triage.py; full logs are linked there.")
 
 
-def new_environment(reports: list[dict[str, Any]], told: list[str]) -> list[dict[str, Any]]:
+def new_environment(reports: tuple[Report, ...] | list[Report], told: tuple[str, ...]) -> list[Report]:
     """The reports that cannot run for a reason the agent has not been told yet."""
-    fresh = [report for report in reports if report.get("environment") and report["environment"] not in told]
-    assert all(report in reports for report in fresh), f"new environment reports {[report['name'] for report in fresh]} are not among the reports"
-    assert not any(report["environment"] in told for report in fresh), f"{[report['environment'] for report in fresh]} repeat what the agent was told"
+    fresh = [report for report in reports if report.environment and report.environment not in told]
+    assert all(report in reports for report in fresh), f"new environment reports {[report.name for report in fresh]} are not among the reports"
+    assert not any(report.environment in told for report in fresh), f"{[report.environment for report in fresh]} repeat what the agent was told"
     return fresh
 
 
-def process_event(event: dict[str, Any]) -> dict[str, Any]:
-    """The hook output for one event, saving the state it leaves."""
-    cwd = repository_of(Path(str(event.get("cwd") or os.getcwd())).resolve())
+def process_event(event: Event) -> dict[str, Any]:
+    """The hook output for one event, saving the state it leaves. Hooks of one session can run at once, so each
+    holds an exclusive flock on the state's .lock sibling from reading the state to saving it: the next one waits,
+    then sees the saved fingerprint and reuses the results instead of running the checks again."""
+    cwd = repository_of(Path(event.cwd or os.getcwd()).resolve())
     if cwd is None:
         return {}
-    if event.get("hook_event_name") == "PreToolUse":
-        return protected_output(event, cwd)
-    old, current = checked_state(event, cwd)
-    output = report_output(event, old, current, state_path(event, cwd))
-    assert "fingerprint" in current, f"state for {cwd} has no fingerprint; checked_state must record one"
-    save_state(event, cwd, current)
-    assert state_path(event, cwd).exists(), f"no state was saved for {cwd}; save_state must write it"
+    path = state_path(event, cwd)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_suffix(".lock"), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if event.hook_event_name == "PreToolUse":
+            return protected_output(event, cwd, path)
+        old, current = checked_state(path, cwd)
+        output = report_output(event, old, current, path)
+        save_state(path, current)
+    assert current.fingerprint is not None, f"state for {cwd} has no fingerprint; checked_state must record one"
+    assert path.exists(), f"no state was saved for {cwd} at {path}; save_state must write it"
     return output
 
 
-def checked_state(event: dict[str, Any], cwd: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    """The saved state and the state after rerunning the checks when the workspace changed since it was saved."""
-    old = load_state(event, cwd)
+def checked_state(path: Path, cwd: Path) -> tuple[State, State]:
+    """The state saved at path and the state after rerunning the checks when the workspace changed since it was saved."""
+    old = load_state(path)
     before = fingerprint(cwd)
-    should_run = not old or old.get("fingerprint") != before
-    watchers = find_watchers(cwd)
-    reports = run_checks(cwd, watchers) if should_run else old.get("reports", [])
-    current = report_state(reports, old)
-    told = list(old.get("environment", []))
+    should_run = old.fingerprint != before
+    reports = run_checks(cwd, find_watchers(cwd)) if should_run else old.reports
+    told = old.environment
     environment = new_environment(reports, told)
-    current.update({
-        "gate": {"inherited": read_gate(read_override(cwd)).inherited},
-        "fingerprint": fingerprint(cwd) if should_run else before,
-        "environment": [*told, *(report["environment"] for report in environment)],
-    })
-    assert current["environment"][:len(told)] == told, f"environment {current['environment']} forgot what the agent was told; keep {told} first"
-    assert should_run or current["reports"] == old.get("reports", []), f"unchanged workspace {cwd} got new reports; reuse the saved ones"
+    current = replace(
+        report_state(reports, old),
+        inherited=read_gate(read_override(cwd)).inherited,
+        fingerprint=fingerprint(cwd) if should_run else before,
+        environment=(*told, *(report.environment for report in environment if report.environment)),
+    )
+    assert current.environment[:len(told)] == told, f"environment {current.environment} forgot what the agent was told; keep {told} first"
+    assert should_run or current.reports == old.reports, f"unchanged workspace {cwd} got new reports; reuse the saved ones"
     return old, current
 
 
-def report_output(event: dict[str, Any], old: dict[str, Any], current: dict[str, Any], path: Path) -> dict[str, Any]:
+def report_output(event: Event, old: State, current: State, path: Path) -> dict[str, Any]:
     """The hook output for the new state: what newly fails, recovers or cannot run, and a Stop refusal when guarded."""
-    reports = current["reports"]
-    environment = new_environment(reports, list(old.get("environment", [])))
+    reports = current.reports
+    environment = new_environment(reports, old.environment)
     baseline_notice = baseline_inventory(old, current, path)
     parts: list[str] = [baseline_notice] if baseline_notice else []
     output: dict[str, Any] = {}
     blocking = block_stop(event, current)
-    if current["failed"] and current["told"] != old.get("told"):
-        regressions = [report for report in reports if is_regression(report, current["baseline"])]
-        logs = {key_of(report): write_log(path, report) for report in regressions}
-        message = failure_message(regressions, current["baseline"], logs)
+    if current.failed and current.told != old.told:
+        regressions = [report for report in reports if is_regression(report, current.baseline)]
+        logs = {report_key(report): write_log(path, report) for report in regressions}
+        message = failure_message(regressions, current.baseline, logs)
         parts.append(message)
         output["systemMessage"] = failure_status(regressions)
-    elif not current["failed"] and old.get("failed"):
+    elif not current.failed and old.failed:
         parts.append(recovery_message(reports))
     if environment:
         parts.append(environment_message(environment))
@@ -802,7 +1019,7 @@ def report_output(event: dict[str, Any], old: dict[str, Any], current: dict[str,
     if blocking:
         output.update({"decision": "block", "reason": gate_reason(gate_reports(current))})
     if parts:
-        output.update(context_output(str(event.get("hook_event_name", "")), "\n\n".join(parts)))
+        output.update(context_output(event.hook_event_name, "\n\n".join(parts)))
     assert blocking == (output.get("decision") == "block"), f"output {output} disagrees with blocking={blocking}; block only a guarded Stop"
     assert bool(parts) == ("hookSpecificOutput" in output), f"output {output} drops or invents context for {len(parts)} parts"
     return output

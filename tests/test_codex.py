@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -36,6 +37,14 @@ def read(path: Path) -> str:
     text = path.read_text()
     assert len(text.encode()) == path.stat().st_size, f"{path} changed while it was read"
     return text
+
+
+def fixture_report(failed: bool = False, failures: tuple[str, ...] = (), summary: str = "passed", text: str = "") -> codex.Report:
+    """A report of the fixture check, as read_report would give it, with the given result."""
+    report = codex.Report("fixture", "project", "fixture", None, summary, failed, failures if failed else (), None, text)
+    assert report.failed or not report.failures, f"fixture report passed with failures {failures}; give failures only to a failure"
+    assert report.summary == summary, f"fixture report summary {report.summary} is not {summary}"
+    return report
 
 
 def mkdir(path: Path) -> None:
@@ -192,17 +201,39 @@ class CodexHookTests(unittest.TestCase):
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
 
     def test_another_new_issue_gets_its_own_stop_guard(self) -> None:
-        first = {"name": "fixture", "failed": True, "failures": ["legacy"], "summary": "1 failed"}
-        baseline = codex.report_state([first], {})
-        report = {**first, "failures": ["legacy", "new-a"], "summary": "2 failed"}
+        first = fixture_report(failed=True, failures=("legacy",), summary="1 failed")
+        baseline = codex.report_state([first], codex.State())
+        stop = codex.Event("Stop", "session-1", str(self.cwd), "", None)
+        report = replace(first, failures=("legacy", "new-a"), summary="2 failed")
         current = codex.report_state([report], baseline)
-        self.assertTrue(codex.block_stop({"hook_event_name": "Stop"}, current))
-        report = {**report, "failures": ["new-b", "new-a", "legacy"], "summary": "3 failed"}
+        self.assertTrue(codex.block_stop(stop, current))
+        report = replace(report, failures=("new-b", "new-a", "legacy"), summary="3 failed")
         following = codex.report_state([report], current)
-        self.assertTrue(codex.block_stop({"hook_event_name": "Stop"}, following))
-        report = {**report, "failures": ["new-a"], "summary": "1 failed"}
+        self.assertTrue(codex.block_stop(stop, following))
+        report = replace(report, failures=("new-a",), summary="1 failed")
         remaining = codex.report_state([report], following)
-        self.assertTrue(codex.block_stop({"hook_event_name": "Stop"}, remaining))
+        self.assertTrue(codex.block_stop(stop, remaining))
+
+    def test_a_summary_with_two_failure_counts_compares_each_with_its_own(self) -> None:
+        first = fixture_report(failed=True, summary="Build Summary: 3/5 steps succeeded (1 failed); 1/3 tests passed (2 failed)")
+        baseline = codex.report_state([first], codex.State()).baseline
+        more_steps = replace(first, summary="Build Summary: 3/5 steps succeeded (2 failed); 1/3 tests passed (2 failed)")
+        fewer_tests = replace(first, summary="Build Summary: 4/5 steps succeeded (1 failed); 2/3 tests passed (1 failed)")
+        self.assertTrue(codex.is_regression(more_steps, baseline))
+        self.assertFalse(codex.is_regression(fewer_tests, baseline))
+
+    def test_saved_state_reads_back_as_it_was_written(self) -> None:
+        state = codex.report_state([fixture_report(failed=True, failures=("legacy",), summary="1 failed")], codex.State())
+        self.assertEqual(codex.state_from(json.loads(json.dumps(codex.state_json(state)))), state)
+
+    def test_saved_state_of_another_shape_starts_the_session_afresh(self) -> None:
+        result, count = self.configure()
+        write(result, "RESULT: PASS")
+        self.call("SessionStart")
+        [state] = [path for path in self.data.glob("*.json") if not path.name.endswith(".baseline.json")]
+        write(state, json.dumps({"reports": [{"name": "fixture", "failed": "yes"}]}))
+        self.assertEqual(self.call("PostToolUse", tool_name="apply_patch")[0], {})
+        self.assertEqual(read(count), "2")
 
     def legacy_project(self) -> tuple[list[str], dict[str, object], Path]:
         """Starts a session in a Go project with 10,000 inherited failures, returning them, the hook output and the
@@ -348,22 +379,22 @@ class CodexHookTests(unittest.TestCase):
         self.assertEqual(started["systemMessage"], "Overwatch: python ✗ 1 failed, 2 passed in 0.03s: tests/test_add.py::test_add")
 
     def test_full_output_is_saved_without_truncation(self) -> None:
-        report = {"name": "fixture", "text": "details\n" * 2000}
+        report = fixture_report(text="details\n" * 2000)
         path = codex.write_log(self.data / "state.json", report)
-        self.assertEqual(read(path), report["text"])
+        self.assertEqual(read(path), report.text)
 
     def test_colour_codes_are_read_through(self) -> None:
         output = "\x1b[0m\x1b[31mFAILED\x1b[0m | 1 passed | 1 failed\n\x1b[0m\x1b[38;5;12mWatcher\x1b[0m Test failed. Restarting..."
         report = codex.read_report(next(w for w in codex.WATCHERS if w["name"] == "deno"), output)
         assert report is not None, f"deno's summary was not found in {output!r}; check its summary pattern"
-        self.assertTrue(report["failed"])
-        self.assertEqual(report["summary"], "FAILED | 1 passed | 1 failed")
+        self.assertTrue(report.failed)
+        self.assertEqual(report.summary, "FAILED | 1 passed | 1 failed")
 
     def test_a_run_with_no_summary_that_exits_nonzero_fails(self) -> None:
         python = codex.WATCHERS[1]
         report = codex.read_report(python, "error: Failed to parse uv.lock", 2)
         assert report is not None, "a nonzero exit with no summary gave no report; read it by its exit code"
-        self.assertEqual((report["failed"], report["summary"]), (True, "exited with code 2"))
+        self.assertEqual((report.failed, report.summary), (True, "exited with code 2"))
         self.assertIsNone(codex.read_report(python, "nothing", 0))
 
     def test_every_codex_hook_has_a_branded_status_message(self) -> None:
