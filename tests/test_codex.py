@@ -24,9 +24,12 @@ CLAUDE_MANIFEST = ROOT / ".claude-plugin" / "plugin.json"
 PACKAGE_MANIFEST = ROOT / "package.json"
 
 
-def write(path: Path, text: str) -> None:
-    """Writes text to a fixture file whose directory already exists."""
+def write(path: Path, text: str, replacing: str | None = None) -> None:
+    """Writes text to a fixture file whose directory already exists: a new file when replacing is None, else the
+    file that holds exactly replacing, so a test only ever writes over the content it says it is replacing."""
     assert path.parent.is_dir(), f"{path.parent} does not exist; make it before writing {path.name}"
+    current = path.read_text() if path.exists() else None
+    assert current == replacing, f"{path} holds {current!r}, not {replacing!r}; pass what the test last wrote there as replacing"
     path.write_text(text)
     assert path.read_text() == text, f"{path} reads back differently from what was written"
 
@@ -45,6 +48,22 @@ def fixture_report(failed: bool = False, failures: tuple[str, ...] = (), summary
     assert report.failed or not report.failures, f"fixture report passed with failures {failures}; give failures only to a failure"
     assert report.summary == summary, f"fixture report summary {report.summary} is not {summary}"
     return report
+
+
+def tool_script(output: str, code: int) -> str:
+    """The script of a fake tool that prints output and exits with code."""
+    script = f"#!/bin/sh\ncat <<'EOF'\n{output}\nEOF\nexit {code}\n"
+    assert script.startswith("#!/bin/sh\n"), f"fake tool script {script[:40]!r} has no shell line"
+    assert script.endswith(f"exit {code}\n"), f"fake tool script does not exit with {code}"
+    return script
+
+
+def passing(summary: str) -> str:
+    """The script of a fake tool that prints summary and passes."""
+    script = f"#!/bin/sh\necho '{summary}'\nexit 0\n"
+    assert summary in script, f"passing script {script!r} does not print {summary!r}"
+    assert script.endswith("exit 0\n"), f"passing script {script!r} does not exit 0"
+    return script
 
 
 def mkdir(path: Path) -> None:
@@ -67,11 +86,12 @@ class CodexHookTests(unittest.TestCase):
         assert (self.cwd / ".git").is_dir(), f"git init made no repository in {self.cwd}"
         assert not any(self.bin.iterdir()), f"{self.bin} starts with tools in it; each test adds its own"
 
-    def tool(self, name: str, output: str, code: int) -> None:
-        """Puts a fake `name` on PATH that prints `output` and exits with `code`."""
+    def tool(self, name: str, output: str, code: int, replacing: tuple[str, int] | None = None) -> None:
+        """Puts a fake `name` on PATH that prints `output` and exits with `code`, in place of the fake that printed
+        and exited with replacing, when the test swaps one."""
         assert "\nEOF\n" not in f"\n{output}\n", f"output for {name} holds the heredoc's EOF line; pick another fixture output"
         script = self.bin / name
-        script.write_text(f"#!/bin/sh\ncat <<'EOF'\n{output}\nEOF\nexit {code}\n")
+        write(script, tool_script(output, code), None if replacing is None else tool_script(*replacing))
         script.chmod(0o755)
         assert os.access(script, os.X_OK), f"{script} is not executable; chmod it"
 
@@ -80,7 +100,7 @@ class CodexHookTests(unittest.TestCase):
         result = self.cwd / "result.txt"
         count = self.cwd / "count.txt"
         runner = self.cwd / "check.py"
-        runner.write_text(
+        write(runner,
             textwrap.dedent(
                 f"""
                 from pathlib import Path
@@ -100,7 +120,7 @@ class CodexHookTests(unittest.TestCase):
             "failed": "FAIL",
             "argv" if watch else "baseline": command,
         }
-        (self.cwd / ".overwatch.json").write_text(json.dumps(config))
+        write(self.cwd / ".overwatch.json", json.dumps(config))
         assert codex.find_watchers(self.cwd)[0]["name"] == "fixture", f"{self.cwd} does not run the fixture check first"
         assert not count.exists(), f"{count} exists before the fixture check ran"
         return result, count
@@ -140,10 +160,11 @@ class CodexHookTests(unittest.TestCase):
         assert scripts, f"{self.bin} has no tools to prime; add them with tool() first"
         for path in scripts:
             summary = {"gotestsum": "DONE 2 tests, 0 failures", "pytest": "=== 3 passed in 0.01s ==="}.get(path.name, "")
-            write(path, f"#!/bin/sh\necho '{summary}'\nexit 0\n")
+            write(path, passing(summary), scripts[path])
         self.call("SessionStart")
         for path, text in scripts.items():
-            write(path, text)
+            summary = {"gotestsum": "DONE 2 tests, 0 failures", "pytest": "=== 3 passed in 0.01s ==="}.get(path.name, "")
+            write(path, text, passing(summary))
         write(self.cwd / "changed.txt", "changed")
         assert all(read(path) == text for path, text in scripts.items()), f"tools in {self.bin} were not restored after priming"
 
@@ -151,7 +172,7 @@ class CodexHookTests(unittest.TestCase):
         result, count = self.configure()
         write(result, "RESULT: PASS")
         self.assertEqual(self.call("SessionStart")[0], {})
-        write(result, "details\nRESULT: FAIL")
+        write(result, "details\nRESULT: FAIL", "RESULT: PASS")
         failed, _ = self.call("PostToolUse", tool_name="apply_patch")
         self.assertNotIn("decision", failed)
         self.assertIn("Full output:", failed["hookSpecificOutput"]["additionalContext"])
@@ -167,9 +188,9 @@ class CodexHookTests(unittest.TestCase):
         result, _ = self.configure()
         write(result, "RESULT: PASS")
         self.call("SessionStart")
-        write(result, "RESULT: FAIL in 0.01s")
+        write(result, "RESULT: FAIL in 0.01s", "RESULT: PASS")
         self.assertIn("systemMessage", self.call("Stop")[0])
-        write(result, "RESULT: FAIL in 0.02s")
+        write(result, "RESULT: FAIL in 0.02s", "RESULT: FAIL in 0.01s")
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
 
     def test_existing_failure_stays_quiet(self) -> None:
@@ -184,7 +205,7 @@ class CodexHookTests(unittest.TestCase):
         result, _ = self.configure()
         write(result, "RESULT: PASS")
         self.call("SessionStart")
-        write(result, "RESULT: FAIL")
+        write(result, "RESULT: FAIL", "RESULT: PASS")
         self.assertEqual(self.call("Stop", stop_hook_active=True)[0]["decision"], "block")
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
@@ -193,9 +214,9 @@ class CodexHookTests(unittest.TestCase):
         result, _ = self.configure()
         write(result, "RESULT: FAIL 10000 errors")
         self.call("SessionStart")
-        write(result, "RESULT: FAIL 9999 errors")
+        write(result, "RESULT: FAIL 9999 errors", "RESULT: FAIL 10000 errors")
         self.assertEqual(self.call("PostToolUse")[0], {})
-        write(result, "RESULT: FAIL 10001 errors")
+        write(result, "RESULT: FAIL 10001 errors", "RESULT: FAIL 9999 errors")
         self.assertNotIn("decision", self.call("PostToolUse")[0])
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
@@ -231,7 +252,8 @@ class CodexHookTests(unittest.TestCase):
         write(result, "RESULT: PASS")
         self.call("SessionStart")
         [state] = [path for path in self.data.glob("*.json") if not path.name.endswith(".baseline.json")]
-        write(state, json.dumps({"reports": [{"name": "fixture", "failed": "yes"}]}))
+        saved = read(state)
+        write(state, json.dumps({"reports": [{"name": "fixture", "failed": "yes"}]}), saved)
         self.assertEqual(self.call("PostToolUse", tool_name="apply_patch")[0], {})
         self.assertEqual(read(count), "2")
 
@@ -272,15 +294,16 @@ class CodexHookTests(unittest.TestCase):
         """A new issue keeps completion guarded while cleanup preserves the inherited snapshot."""
         failures, _, inventory = self.legacy_project()
         snapshot = read(inventory)
-        self.tool("go", "\n".join([*failures, "--- FAIL: TestNew (0.00s)", "FAIL"]), 1)
+        self.tool("go", "\n".join([*failures, "--- FAIL: TestNew (0.00s)", "FAIL"]), 1, ("\n".join([*failures, "FAIL"]), 1))
         write(self.cwd / "edit.txt", "new change")
         changed = self.call("PostToolUse")[0]
         self.assertNotIn("decision", changed)
         self.assertIn("TestNew", changed["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
-        self.tool("go", "\n".join([*failures[100:], "--- FAIL: TestNew (0.00s)", "FAIL"]), 1)
-        write(self.cwd / "edit.txt", "legacy cleanup")
+        self.tool("go", "\n".join([*failures[100:], "--- FAIL: TestNew (0.00s)", "FAIL"]), 1,
+                  ("\n".join([*failures, "--- FAIL: TestNew (0.00s)", "FAIL"]), 1))
+        write(self.cwd / "edit.txt", "legacy cleanup", "new change")
         self.assertEqual(self.call("PostToolUse")[0], {})
         self.assertEqual(self.call("Stop")[0]["decision"], "block")
         self.assertEqual(read(inventory), snapshot)
@@ -289,10 +312,10 @@ class CodexHookTests(unittest.TestCase):
         result, count = self.configure()
         write(result, "RESULT: PASS")
         self.call("SessionStart", source="startup")
-        write(result, "RESULT: FAIL")
+        write(result, "RESULT: FAIL", "RESULT: PASS")
         self.call("PostToolUse")
 
-        write(result, "RESULT: PASS")
+        write(result, "RESULT: PASS", "RESULT: FAIL")
         recovered, _ = self.call("PostToolUse", tool_name="apply_patch")
         self.assertIn("green again", recovered["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(read(count), "3")
@@ -383,7 +406,7 @@ class CodexHookTests(unittest.TestCase):
         write(result, "RESULT: PASS")
         self.call("SessionStart")
         output = "details\n" * 2000 + "RESULT: FAIL"
-        write(result, output)
+        write(result, output, "RESULT: PASS")
         context = self.call("PostToolUse", tool_name="apply_patch")[0]["hookSpecificOutput"]["additionalContext"]
         log = context.split("Full output: `")[1].split("`")[0]
         self.assertEqual(read(Path(log)), output)
