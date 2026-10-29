@@ -379,9 +379,14 @@ class CodexHookTests(unittest.TestCase):
         self.assertEqual(started["systemMessage"], "Overwatch: python ✗ 1 failed, 2 passed in 0.03s: tests/test_add.py::test_add")
 
     def test_full_output_is_saved_without_truncation(self) -> None:
-        report = fixture_report(text="details\n" * 2000)
-        path = codex.write_log(codex.session_at(self.data / "state.json"), report)
-        self.assertEqual(read(path), report.text)
+        result, _ = self.configure()
+        write(result, "RESULT: PASS")
+        self.call("SessionStart")
+        output = "details\n" * 2000 + "RESULT: FAIL"
+        write(result, output)
+        context = self.call("PostToolUse", tool_name="apply_patch")[0]["hookSpecificOutput"]["additionalContext"]
+        log = context.split("Full output: `")[1].split("`")[0]
+        self.assertEqual(read(Path(log)), output)
 
     def test_colour_codes_are_read_through(self) -> None:
         output = "\x1b[0m\x1b[31mFAILED\x1b[0m | 1 passed | 1 failed\n\x1b[0m\x1b[38;5;12mWatcher\x1b[0m Test failed. Restarting..."

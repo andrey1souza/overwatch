@@ -163,5 +163,5 @@ class AcceptanceWorld(unittest.TestCase):
 
     def inspection_did_not_run_checks(self) -> None:
         self.assertEqual(self.response, {})
-        state = json.loads(self.fixture_read(next(self.data.glob("*.json"))))
+        state = json.loads(self.fixture_read(next(self.data.glob("*.json"))))["state"]
         self.assertEqual(state["reports"][0]["summary"], "zanity: 0 errors and 29 warnings in 1 of 1 files")

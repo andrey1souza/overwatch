@@ -28,12 +28,13 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from gating import protected_checks, read_gate, tool_command
+from gating import PolicyError, protected_checks, read_gate, tool_command
 from triage import InventoryError, parse_check, parse_inventory
 
 
@@ -237,6 +238,14 @@ def state_from(value: object) -> State:
     assert len(state.reports) == len(reports) and set(state.baseline) == set(baseline), f"state kept {len(state.reports)} of {len(reports)} reports or lost baseline entries; read every saved entry"
     assert state.fingerprint == fingerprint, f"state changed its fingerprint {fingerprint} while read; copy it as saved"
     return state
+
+
+def state_digest(value: object) -> str:
+    """The digest save_state stores beside a state's JSON, so load_state can tell a file it wrote whole from any other."""
+    digest = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+    assert len(digest) == 64, f"state digest {digest} is not a SHA-256 hex digest"
+    assert digest == digest.lower(), f"state digest {digest} is not lower-case hex; use hexdigest"
+    return digest
 
 
 def state_json(state: State) -> dict[str, object]:
@@ -474,7 +483,8 @@ def run_command(
     project, as its Makefile does; it runs as an argument list, never through a shell, with no input."""
     if stop_after_report and "summary" not in watcher:
         raise ConfigurationError(f"{watcher['name']} runs a watch command but has no summary; give it one in .overwatch.json or watchers.json")
-    assert argv, f"{watcher['name']} has an empty command; command_for must return None for it"
+    if not argv:
+        raise ConfigurationError(f"{watcher['name']} has an empty command; give it argv or baseline in .overwatch.json")
     command = command_line(argv)
     try:
         process = subprocess.Popen(
@@ -487,6 +497,7 @@ def run_command(
     except OSError as error:
         raise ConfigurationError(f"could not start {command}: {error}") from error
     assert process.stdout is not None, f"{command} started without an output pipe; open it with stdout=PIPE"
+    assert process.args == argv, f"started {process.args}, not {command}; pass argv to Popen as given"
 
     if not stop_after_report:
         try:
@@ -582,7 +593,7 @@ def run_check(cwd: Path, watcher: dict[str, Any]) -> Report | None:
     if selected is None:
         return None
     argv, stop_after_report = selected
-    output, code = run_command(cwd / watcher.get("dir", ""), watcher, argv, stop_after_report)
+    output, code = run_command(cwd.joinpath(*PurePosixPath(watcher.get("dir", "")).parts), watcher, argv, stop_after_report)
     report = read_report(watcher, output, code)
     if report is None:
         tail = output.strip()[-2_000:]
@@ -606,8 +617,9 @@ def run_checks(cwd: Path, watchers: list[dict[str, Any]]) -> list[Report]:
 
 
 def workspace_files(cwd: Path) -> list[Path]:
-    """Every file git would track in cwd. Where git cannot list them, which is no error, since a workspace need not
-    be one git can read, every file under cwd outside the UNTRACKED directories instead."""
+    """Every file git would track in cwd. Where git is not installed, refuses the directory or takes longer than
+    GIT_TIMEOUT, every file under cwd outside the UNTRACKED directories instead: the fingerprint only needs to change
+    when the workspace does, which either list gives. Any other failure is raised to the caller."""
     try:
         result = subprocess.run(
             ["git", "ls-files", "-co", "--exclude-standard", "-z"],
@@ -618,7 +630,7 @@ def workspace_files(cwd: Path) -> list[Path]:
             check=True,
         )
         paths = [cwd / os.fsdecode(part) for part in result.stdout.split(b"\0") if part]
-    except (OSError, subprocess.SubprocessError):
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         paths = []
         for root, directories, files in os.walk(cwd):
             directories[:] = [name for name in directories if name not in UNTRACKED]
@@ -701,7 +713,9 @@ def state_path(event: Event, cwd: Path) -> Path:
 
 
 def session_at(path: Path) -> Session:
-    """The files of the session whose state is kept at path: the lock, the inventory and the log directory beside it."""
+    """The files of the session whose state is kept at path, which must lie in data_root(): the lock, the inventory
+    and the log directory beside it."""
+    path = in_data(path)
     session = Session(state=path, lock=path.with_suffix(".lock"), inventory=path.with_suffix(".baseline.json"), logs=path.with_suffix(""))
     assert len({session.state, session.lock, session.inventory, session.logs}) == 4, f"session files of {path} share a name; give each its own suffix"
     assert all(each.parent == path.parent for each in (session.lock, session.inventory, session.logs)), f"session files of {path} are not beside it"
@@ -709,24 +723,30 @@ def session_at(path: Path) -> Session:
 
 
 def load_state(session: Session) -> State:
-    """The state saved in session, or an empty one when none was saved yet. A file save_state did not write, being
-    unreadable JSON or of another shape, is replaced: the session starts afresh and reruns its checks, as on its first
-    event. Save_state replaces the file in one step, so a reader never sees half of one; any other failure to read it
-    is raised to the caller, which reports it."""
+    """The state saved in session, or an empty one when none was saved yet. A file whose digest does not match its
+    state, or that is unreadable JSON or of another shape, is not one save_state wrote: it is replaced, and the
+    session starts afresh and reruns its checks, as on its first event. Any other failure to read it is raised to
+    the caller, which reports it."""
     try:
-        state = state_from(json.loads(in_data(session.state).read_text()))
+        saved = json.loads(session.state.read_text())
+        value = saved.get("state") if isinstance(saved, dict) else None
+        if not isinstance(saved, dict) or saved.get("digest") != state_digest(value):
+            raise StateError(f"{session.state} has no digest matching its state{REBUILT}")
+        state = state_from(value)
     except (FileNotFoundError, json.JSONDecodeError, StateError):
         state = State()
-    assert state.inherited in ("allow", "block"), f"state from {session.state} has gate {state.inherited}; make state_from refuse a gate other than allow or block"
-    assert all(report.name for report in state.reports), f"state from {session.state} holds an unnamed report; make state_from refuse a report without a name"
+    assert session.state.parent == session.lock.parent, f"state {session.state} is not beside its lock {session.lock}; build the session with session_at"
+    assert session.state.suffix == ".json", f"state {session.state} is not a .json file; name it with state_path"
     return state
 
 
 def save_state(session: Session, state: State) -> None:
     """Replaces the state of session with state in one step, writing it first to a new temporary file that only this
     process can name or read, in the same directory, and removing that file if the write fails. Only process_event
-    calls this, while it holds session.lock, for the session it read the state of."""
-    text = json.dumps(state_json(state))
+    calls this, while it holds session.lock, for the session it read the state of, which session_at placed in
+    data_root()."""
+    value = state_json(state)
+    text = json.dumps({"digest": state_digest(value), "state": value})
     with tempfile.NamedTemporaryFile("w", dir=session.state.parent, prefix=f"{session.state.stem}.", suffix=".tmp", delete=False) as handle:
         temporary = Path(handle.name)
         try:
@@ -817,9 +837,9 @@ def failure_counts(summary: str) -> dict[str, int]:
 
 
 def write_log(session: Session, report: Report, prefix: str = "") -> Path:
-    """Writes a report's full output into session.logs, under a name made from prefix and a digest of the report's
-    key, replacing that check's earlier log, keeping the output out of the conversation. Only overwatch writes there,
-    while it holds session.lock."""
+    """Writes a report's full output into session.logs, which session_at placed in data_root(), keeping the output
+    out of the conversation. The log is named by prefix and a digest of the report's key, so each check has one log
+    for each prefix, and writing it again replaces the earlier one."""
     log = session.logs / f"{prefix}{hashlib.sha256(report_key(report).encode()).hexdigest()[:16]}.log"
     assert log.parent == session.logs, f"log {log} is outside {session.logs}; name it by digest alone"
     log.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -979,15 +999,20 @@ def gate_reason(reports: list[Report]) -> str:
             "Inspection, edits, and check commands remain available. Rerun the checks after repairing the failure.")
 
 
-def inventory_checks(session: Session) -> dict[str, dict[str, object]]:
-    """The entries the session's triage inventory already lists, by their check's key, as triage.py parses them; none
-    when there is no inventory yet, or when it is not one triage.py can read, which baseline_inventory then rewrites
-    whole. Any other failure to read it is raised to the caller, which reports it."""
+def inventory_checks(session: Session) -> dict[str, dict[str, object]] | None:
+    """The entries the session's triage inventory already lists, by their check's key, as triage.py parses them:
+    none when there is no inventory yet, and None when it is not one triage.py can read, so the caller can say it
+    was replaced. Any other failure to read it is raised to the caller, which reports it."""
     try:
-        value = json.loads(in_data(session.inventory).read_text())
-        parse_inventory(value)
-    except (FileNotFoundError, json.JSONDecodeError, InventoryError):
+        value = json.loads(session.inventory.read_text())
+    except FileNotFoundError:
         return {}
+    except json.JSONDecodeError:
+        return None
+    try:
+        parse_inventory(value)
+    except InventoryError:
+        return None
     entries = {key_of(check.name, check.dir): entry for entry in value["checks"] for check in [parse_check(entry)]}
     assert len(entries) <= len(value["checks"]), f"inventory {session.inventory} gave {len(entries)} keys for {len(value['checks'])} entries"
     assert all("\0" in key for key in entries), f"inventory {session.inventory} keys {list(entries)} were not built with key_of"
@@ -1006,14 +1031,16 @@ def inherited_failures(old: State, current: State) -> list[Report]:
 def baseline_inventory(old: State, current: State, session: Session) -> str:
     """Keeps the inherited backlog inspectable without putting it in model context: writes session.inventory, the
     entries it already lists for other checks followed by one for each check that first failed in this run, each
-    linking its full log, so a repeated event leaves one entry per check. Only overwatch writes the inventory, while
-    it holds session.lock."""
+    linking its full log. Each check is added once: added holds only checks old.baseline lacks, and the state saved
+    after this event holds them all, so the same event delivered again adds nothing, and an entry for the same
+    check is replaced, not repeated."""
     added = inherited_failures(old, current)
     if not added:
         return ""
     inventory = session.inventory
     keys = {report_key(report): report for report in added}
-    checks = [entry for key, entry in inventory_checks(session).items() if key not in keys]
+    listed = inventory_checks(session)
+    checks = [entry for key, entry in (listed or {}).items() if key not in keys]
     checks.extend({**{name: value for name, value in asdict(report).items() if name != "text"},
                    "log": str(write_log(session, report, "baseline-"))} for report in keys.values())
     inventory.write_text(json.dumps({"checks": checks}, indent=2))
@@ -1026,7 +1053,8 @@ def baseline_inventory(old: State, current: State, session: Session) -> str:
               else "It is not a Stop blocker; only new failures are guarded. ")
     return (f"overwatch: inherited backlog in {len(added)} checks ({detail}). "
             f"{policy}"
-            f"Triage inventory: `{inventory}`. Filter or page it with hooks/triage.py; full logs are linked there.")
+            f"Triage inventory: `{inventory}`. Filter or page it with hooks/triage.py; full logs are linked there."
+            f"{' The earlier inventory could not be read, so it now lists only these checks.' if listed is None else ''}")
 
 
 def new_environment(reports: tuple[Report, ...] | list[Report], told: tuple[str, ...]) -> list[Report]:
@@ -1047,8 +1075,7 @@ def process_event(event: Event) -> dict[str, Any]:
     path = state_path(event, cwd)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     session = session_at(path)
-    with open(session.lock, "a") as lock:
-        hold(lock)
+    with locked(session):
         if event.hook_event_name == "PreToolUse":
             return protected_output(event, cwd, session)
         old, current = checked_state(session, cwd)
@@ -1059,12 +1086,19 @@ def process_event(event: Event) -> dict[str, Any]:
     return output
 
 
-def hold(lock: Any) -> None:
-    """Waits for, then holds, an exclusive flock on the open lock file, until the file is closed. The one place that
-    locks, so the POSIX call is here alone."""
-    fcntl.flock(lock, fcntl.LOCK_EX)
-    assert not lock.closed, f"lock {lock.name} closed while it was taken; hold it open for the whole event"
-    assert lock.name.endswith(".lock"), f"took a lock on {lock.name}; lock the session's .lock file"
+@contextmanager
+def locked(session: Session) -> Iterator[None]:
+    """Holds an exclusive flock on session.lock for the block, releasing it and closing the file however the block
+    ends. The lock file is in the user's own data directory, so only the user's own processes can take it. The one
+    place that locks, so the POSIX call is here alone."""
+    assert session.lock.suffix == ".lock", f"asked to lock {session.lock}; lock the session's .lock file"
+    with open(session.lock, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+    assert lock.closed, f"lock {session.lock} is still open after the block; close it with the block"
 
 
 def checked_state(session: Session, cwd: Path) -> tuple[State, State]:
@@ -1115,24 +1149,22 @@ def report_output(event: Event, old: State, current: State, session: Session) ->
     return output
 
 
-def main() -> int:
+def main() -> None:
     """Answers one hook event on stdin with JSON on stdout. The event comes from the agent host that started this
-    process, through the pipe it holds, so no one else can write it. A hook's exit code is not where a host reads
-    problems, and a failing exit would stop the agent's turn, so this always exits 0 and reports any problem as a
-    system message in its output instead: a configuration error as itself, anything else as an unexpected error."""
+    process, through the pipe it holds, so no one else can write it. A failing exit would stop the agent's turn, so
+    every problem is reported in the output, as a system message, and the process ends normally: a mistake in
+    .overwatch.json, its gate or the event as the error says, anything else as an unexpected error to report."""
     try:
         output = json.dumps(process_event(read_event()))
-        assert output.startswith("{"), f"hook output {output[:40]} is not a JSON object; return a dict from process_event"
-        assert "\n" not in output, "hook output spans lines; print it as one JSON line"
-        print(output)
-        return 0
-    except ConfigurationError as error:
-        print(json.dumps({"systemMessage": f"overwatch: {error}"}))
-        return 0
+    except (ConfigurationError, PolicyError) as error:
+        output = json.dumps({"systemMessage": f"overwatch: {error}"})
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
-        print(json.dumps({"systemMessage": f"overwatch: unexpected error: {error}"}))
-        return 0
+        output = json.dumps({"systemMessage": f"overwatch: unexpected error: {error}; report it at "
+                                              "https://github.com/benomahony/overwatch/issues with the hook event"})
+    assert output.startswith("{"), f"hook output {output[:40]} is not a JSON object; return a dict from process_event"
+    assert "\n" not in output, "hook output spans lines; print it as one JSON line"
+    print(output)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
