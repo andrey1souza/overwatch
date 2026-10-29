@@ -8,21 +8,18 @@ result for later hooks. A configured watch command is stopped after its first
 complete report. The first result of each check is its baseline: only failures
 it did not have are reported, each once, with the full output in a log file.
 
-It runs on POSIX systems: it reads a watch command's output through selectors
-on a pipe and holds each session's state under an flock.
+It runs on POSIX systems; the calls that need one are in unix.py.
 
 Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import selectors
 import shutil
 import subprocess
 import sys
@@ -32,19 +29,17 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
-from typing import IO, Any
+from typing import Any, Required, TypedDict
 
 from gating import PolicyError, protected_checks, read_gate, tool_command
 from triage import InventoryError, parse_check, parse_inventory
+from unix import exclusive, is_owned, output_selector, read_available
 
 
 OVERRIDE_PATH = ".overwatch.json"
 COMMAND_TIMEOUT = 540
 # How long a stopped command has to exit before it is killed, in seconds.
 TERMINATE_GRACE = 3
-# How long one read of a watch command's output waits for more, in seconds, and the most it reads at once, in bytes.
-READ_WAIT = 0.1
-READ_CHUNK = 65_536
 # How long a git query may take, in seconds, before overwatch gives up on it.
 GIT_TIMEOUT = 5
 # The size, in bytes, of a workspace fingerprint's digest.
@@ -60,8 +55,27 @@ SUMMARY_DECORATION = re.compile(
 # The table every runtime reads; patterns are JavaScript regexes that Python reads the same way.
 # Alternatives of one language are tried in order: the first whose marker, and tool if it needs one, are present runs.
 TABLE: dict[str, Any] = json.loads((Path(__file__).resolve().parent.parent / "watchers.json").read_text())
-WATCHERS: tuple[dict[str, Any], ...] = tuple(TABLE["watchers"])
-CHECKERS: tuple[dict[str, Any], ...] = tuple(TABLE["checkers"])
+
+
+class Watcher(TypedDict, total=False):
+    """A check overwatch can run: a watchers.json entry, whose fields scripts/table.py checks, after apply_override,
+    which checks each field it takes from .overwatch.json. Patterns are regular expressions as strings, argv and
+    baseline lists of strings, and dir a POSIX path relative to the repository."""
+    name: Required[str]
+    marker: Required[str]
+    language: str
+    requires: str
+    argv: list[str] | None
+    baseline: list[str] | None
+    summary: str
+    failed: str
+    result: str
+    failure: str
+    dir: str
+
+
+WATCHERS: tuple[Watcher, ...] = tuple(TABLE["watchers"])
+CHECKERS: tuple[Watcher, ...] = tuple(TABLE["checkers"])
 # A language the project's root lacks is looked for in the directories this many levels down, leaving out hidden ones
 # and these.
 SEARCH_DEPTH: int = TABLE["search"]["depth"]
@@ -263,13 +277,17 @@ def state_json(state: State) -> dict[str, object]:
 
 
 def read_override(cwd: Path) -> dict[str, Any]:
+    """The project's .overwatch.json, which may name commands to run, so it is read only when the user running the
+    hook owns it; none when there is none."""
     path = cwd / OVERRIDE_PATH
     try:
         value = json.loads(path.read_text())
     except FileNotFoundError:
         return {}
     except (OSError, json.JSONDecodeError) as error:
-        raise ConfigurationError(f"could not read {path}: {error}") from error
+        raise ConfigurationError(f"could not read {path}: {error}; fix the JSON in it") from error
+    if not is_owned(path):
+        raise ConfigurationError(f"{path} belongs to another user, so its commands are not run; take ownership of it or remove it")
     if not isinstance(value, dict):
         raise ConfigurationError(f"{path} must contain a JSON object")
     assert path.name == OVERRIDE_PATH, f"read {path} instead of {OVERRIDE_PATH}; build the path from cwd and OVERRIDE_PATH"
@@ -289,7 +307,7 @@ def string_list(value: Any, field: str) -> list[str] | None:
     return strings
 
 
-def apply_override(watcher: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+def apply_override(watcher: Watcher, override: dict[str, Any]) -> Watcher:
     result = dict(watcher)
     result["language"] = watcher.get("language", watcher["name"])
     for field in ("name", "summary", "failed"):
@@ -314,7 +332,7 @@ def apply_override(watcher: dict[str, Any], override: dict[str, Any]) -> dict[st
     return result
 
 
-def language_of(watcher: dict[str, Any]) -> str:
+def language_of(watcher: Watcher) -> str:
     """The language a watcher checks: its language field, else its name. Watchers come from watchers.json, whose
     entries scripts/table.py checks, or through apply_override, which checks each field it takes from .overwatch.json;
     a language that is still not a non-empty string is reported as a configuration error."""
@@ -338,7 +356,17 @@ def marker_in(directory: Path, marker: str) -> Path:
     return path
 
 
-def first_present(alternatives: list[dict[str, Any]], directory: Path) -> dict[str, Any] | None:
+def subproject(cwd: Path, directory: str) -> Path:
+    """The directory a sub-project path names inside cwd. Overwatch writes sub-project paths in POSIX form, the form
+    find_subprojects builds, and joins them part by part, so the platform's own separator is used."""
+    parts = PurePosixPath(directory).parts
+    path = cwd.joinpath(*parts)
+    assert path.is_relative_to(cwd), f"sub-project {directory} is outside {cwd}; keep sub-project paths relative"
+    assert len(path.parts) == len(cwd.parts) + len(parts), f"sub-project {directory} joined to {path}; join each part once"
+    return path
+
+
+def first_present(alternatives: list[Watcher], directory: Path) -> Watcher | None:
     """The first of a language's alternatives whose marker is in directory and whose tool, if it needs one, is on PATH."""
     assert len({language_of(watcher) for watcher in alternatives}) <= 1, f"alternatives span {[watcher['name'] for watcher in alternatives]}; pass one language's"
     present = next((watcher for watcher in alternatives
@@ -356,7 +384,7 @@ def find_subprojects(cwd: Path) -> list[str]:
         level: list[str] = []
         for parent in parents:
             try:
-                entries = list(os.scandir(cwd.joinpath(*PurePosixPath(parent).parts)))
+                entries = list(os.scandir(subproject(cwd, parent)))
             except OSError:
                 continue
             for entry in entries:
@@ -370,11 +398,11 @@ def find_subprojects(cwd: Path) -> list[str]:
     return found
 
 
-def find_project_watchers(cwd: Path, override: dict[str, Any]) -> list[dict[str, Any]]:
+def find_project_watchers(cwd: Path, override: dict[str, Any]) -> list[Watcher]:
     # One watcher for each language the project has, or else for each sub-project that has it, one not inside
     # another that does; the override applies to the first. Sub-projects are POSIX paths relative to cwd, joined
     # onto it part by part, so they read the same on every platform.
-    found: list[dict[str, Any]] = []
+    found: list[Watcher] = []
     subprojects: list[str] | None = None
     for language in dict.fromkeys(language_of(watcher) for watcher in WATCHERS):
         alternatives = [watcher for watcher in WATCHERS if language_of(watcher) == language]
@@ -388,7 +416,7 @@ def find_project_watchers(cwd: Path, override: dict[str, Any]) -> list[dict[str,
         for directory in subprojects:
             if any(PurePosixPath(directory).is_relative_to(parent) for parent in claimed):
                 continue
-            watcher = first_present(alternatives, cwd.joinpath(*PurePosixPath(directory).parts))
+            watcher = first_present(alternatives, subproject(cwd, directory))
             if watcher is None:
                 continue
             claimed.append(directory)
@@ -400,7 +428,7 @@ def find_project_watchers(cwd: Path, override: dict[str, Any]) -> list[dict[str,
     return found
 
 
-def find_watchers(cwd: Path) -> list[dict[str, Any]]:
+def find_watchers(cwd: Path) -> list[Watcher]:
     """The watchers and checkers to run in cwd, after its .overwatch.json override."""
     override = read_override(cwd)
     if override.get("enabled") is False:
@@ -419,8 +447,8 @@ def find_watchers(cwd: Path) -> list[dict[str, Any]]:
                 override,
             ))
 
-    # A checker runs wherever its executable is on PATH, as shutil.which finds it there, with PATHEXT where the
-    # platform has one.
+    # A checker runs wherever its executable is on PATH: on POSIX, where this hook runs, shutil.which finds an
+    # executable file of that name in a PATH directory.
     for checker in CHECKERS:
         if shutil.which(checker["marker"]):
             found.append(dict(checker))
@@ -430,7 +458,7 @@ def find_watchers(cwd: Path) -> list[dict[str, Any]]:
     return found
 
 
-def command_for(watcher: dict[str, Any]) -> tuple[list[str], bool] | None:
+def command_for(watcher: Watcher) -> tuple[list[str], bool] | None:
     """The command to run for a watcher's first result, and whether to stop it after its report."""
     baseline, argv = watcher.get("baseline"), watcher.get("argv")
     selected = (list(baseline), False) if baseline else (list(argv), True) if argv else None
@@ -460,52 +488,28 @@ def terminate(process: subprocess.Popen[bytes]) -> bytes:
     return tail or b""
 
 
-def read_available(selector: selectors.BaseSelector) -> bytes:
-    """Whatever the registered output holds within READ_WAIT seconds, up to READ_CHUNK bytes; nothing when it holds none."""
-    selected = selector.select(timeout=READ_WAIT)
-    if not selected:
-        return b""
-    key, _ = selected[0]
-    assert len(selected) == 1, f"selector watched {len(selected)} outputs; register only the process's stdout"
-    chunk = os.read(key.fd, READ_CHUNK)
-    assert len(chunk) <= READ_CHUNK, f"read {len(chunk)} bytes; read at most READ_CHUNK at once"
-    return chunk
-
-
-def output_selector(stdout: IO[bytes]) -> selectors.BaseSelector:
-    """A selector that read_available waits on for a command's output: on POSIX a pipe can be selected on."""
-    selector = selectors.DefaultSelector()
-    key = selector.register(stdout, selectors.EVENT_READ)
-    assert key.fileobj is stdout, f"selector registered {key.fileobj}, not the command's output; register stdout"
-    assert key.events == selectors.EVENT_READ, f"selector waits for events {key.events}; wait only to read"
-    return selector
-
-
 @contextmanager
 def locked(path: Path) -> Iterator[Session]:
     """The session whose state is kept at path, which must lie in data_root(), for the block, while this process
-    holds an exclusive flock on the state's .lock sibling, released however the block ends. data_root() refuses a
-    directory another user owns, and one this makes is readable by its owner alone. The lock file is kept after the
-    block: removing it while another process waits on it would let a third lock a new file at the same path."""
+    holds the state's .lock sibling exclusively, released however the block ends. The lock only orders overwatch's
+    own hook processes, so it records nothing: it grants and refuses no one access. data_root() refuses a directory
+    another user owns, and one this makes is readable by its owner alone."""
     path = in_data(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     session = Session(state=path, lock=path.with_suffix(".lock"), inventory=path.with_suffix(".baseline.json"), logs=path.with_suffix(""))
     assert len({session.state, session.lock, session.inventory, session.logs}) == 4, f"session files of {path} share a name; give each its own suffix"
-    with open(session.lock, "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        try:
-            yield session
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
-    assert lock.closed, f"lock {session.lock} is still open after the block; close it with the block"
+    assert session.state.parent == data_root(), f"session {session.state} is outside {data_root()}; name it with state_path"
+    with open(session.lock, "a") as handle, exclusive(handle):
+        yield session
 
 
-def run_command(
-    cwd: Path, watcher: dict[str, Any], argv: list[str], stop_after_report: bool,
+def _run_command(
+    cwd: Path, watcher: Watcher, argv: list[str], stop_after_report: bool,
 ) -> tuple[str, int | None]:
-    """Runs argv in cwd, returning what it printed and its exit code; None when stopped after its report. argv is
-    a watcher's command from watchers.json or the project's own .overwatch.json, which belongs to whoever owns the
-    project, as its Makefile does; it runs as an argument list, never through a shell, with no input."""
+    """Runs argv in cwd, returning what it printed and its exit code; None when stopped after its report. Private:
+    only _run_check calls it, with a watcher's command from watchers.json or the project's own .overwatch.json, which
+    read_override accepts only from the user who runs the hook. It runs as an argument list, never through a shell,
+    with no input."""
     if stop_after_report and "summary" not in watcher:
         raise ConfigurationError(f"{watcher['name']} runs a watch command but has no summary; give it one in .overwatch.json or watchers.json")
     if not argv:
@@ -554,7 +558,7 @@ def run_command(
     raise ConfigurationError(f"{command} gave no report within {COMMAND_TIMEOUT}s")
 
 
-def failures_in(watcher: dict[str, Any], output: str) -> list[str]:
+def failures_in(watcher: Watcher, output: str) -> list[str]:
     """Each failing test or error the output names, once each, in order."""
     if "failure" not in watcher:
         return []
@@ -578,7 +582,7 @@ def environment_in(output: str) -> str | None:
     return line
 
 
-def read_report(watcher: dict[str, Any], output: str, code: int | None = None) -> Report | None:
+def read_report(watcher: Watcher, output: str, code: int | None = None) -> Report | None:
     """Reads one build's output; a run with no summary line is read by its exit code. The watcher's patterns are
     strings that apply_override or scripts/table.py checked compile, and its name a non-empty string."""
     clean = ANSI.sub("", output)
@@ -611,13 +615,14 @@ def read_report(watcher: dict[str, Any], output: str, code: int | None = None) -
     return report
 
 
-def run_check(cwd: Path, watcher: dict[str, Any]) -> Report | None:
-    """Runs one watcher's command and reads its report, or None when it has no command."""
+def _run_check(cwd: Path, watcher: Watcher) -> Report | None:
+    """Runs one watcher's command and reads its report, or None when it has no command. Private: run_checks calls it
+    for each watcher find_watchers returned, after apply_override checked what it took from .overwatch.json."""
     selected = command_for(watcher)
     if selected is None:
         return None
     argv, stop_after_report = selected
-    output, code = run_command(cwd.joinpath(*PurePosixPath(watcher.get("dir", "")).parts), watcher, argv, stop_after_report)
+    output, code = _run_command(subproject(cwd, watcher.get("dir", "")), watcher, argv, stop_after_report)
     report = read_report(watcher, output, code)
     if report is None:
         tail = output.strip()[-2_000:]
@@ -628,12 +633,12 @@ def run_check(cwd: Path, watcher: dict[str, Any]) -> Report | None:
     return report
 
 
-def run_checks(cwd: Path, watchers: list[dict[str, Any]]) -> list[Report]:
+def run_checks(cwd: Path, watchers: list[Watcher]) -> list[Report]:
     """Runs every watcher's check at once, so a polyglot project waits for its slowest suite, not the sum of them."""
     if not watchers:
         return []
     with ThreadPoolExecutor(max_workers=len(watchers)) as pool:
-        reports = list(pool.map(lambda watcher: run_check(cwd, watcher), watchers))
+        reports = list(pool.map(lambda watcher: _run_check(cwd, watcher), watchers))
     assert len(reports) == len(watchers), f"ran {len(reports)} of {len(watchers)} checks; map every watcher"
     ran = [report for report in reports if report is not None]
     assert [report.name for report in ran] == [watcher["name"] for watcher, report in zip(watchers, reports) if report], f"reports {[report.name for report in ran]} are out of watcher order"
@@ -700,14 +705,15 @@ def repository_of(cwd: Path) -> Path | None:
 
 
 def data_root() -> Path:
-    """The directory overwatch keeps session state in, resolved: PLUGIN_DATA, which the agent host that runs this
-    hook sets to the plugin's own data directory, else ~/.cache/overwatch. A PLUGIN_DATA that is not an absolute
+    """The directory overwatch keeps session state in, resolved: PLUGIN_DATA, which the agent host the user started
+    sets to the plugin's own data directory in this process's environment, else ~/.cache/overwatch. Only the user and
+    the programs they run set that environment, and a directory another user owns is refused. A PLUGIN_DATA that is not an absolute
     path is refused, so state never lands relative to whatever directory the hook was started in."""
     given = os.environ.get("PLUGIN_DATA")
     if given is not None and not Path(given).is_absolute():
         raise ConfigurationError(f"PLUGIN_DATA is {given!r}, not an absolute path; set it to the plugin's data directory")
     root = Path(given or Path.home() / ".cache" / "overwatch").resolve()
-    if root.exists() and root.stat().st_uid != os.getuid():
+    if root.exists() and not is_owned(root):
         raise ConfigurationError(f"data directory {root} belongs to another user; set PLUGIN_DATA to a directory of your own")
     assert root.is_absolute(), f"data root {root} is relative; resolve it"
     assert root == root.resolve(), f"data root {root} still holds a link or a parent step; resolve it"
@@ -754,8 +760,10 @@ def load_state(session: Session) -> State:
 
 def save_state(session: Session, state: State) -> None:
     """Replaces the state of session with state in one step, writing it first to a new temporary file that only this
-    process can name or read, in the same directory, and removing that file if the write fails. session comes from
-    locked(), so this process holds its lock, and it is the session the state was read from."""
+    process can name or read, in the same directory, and removing that file if the write fails. The state file is
+    overwatch's own cache, which only overwatch reads and which it rebuilds by rerunning the checks, so replacing it
+    loses nothing the user made. session comes from locked(), so this process holds its lock, and it is the session
+    the state was read from."""
     value = state_json(state)
     text = json.dumps({"digest": digest_of(value), "state": value})
     with tempfile.NamedTemporaryFile("w", dir=session.state.parent, prefix=f"{session.state.stem}.", suffix=".tmp", delete=False) as handle:
@@ -847,7 +855,8 @@ def failure_counts(summary: str) -> dict[str, int]:
 
 
 def write_log(session: Session, report: Report, prefix: str = "") -> Path:
-    """Writes a report's full output into session.logs, keeping the output out of the conversation. session comes
+    """Writes a report's full output into session.logs, keeping the output out of the conversation. Logs are
+    overwatch's own cache of output a rerun reproduces, so replacing one loses nothing the user made. session comes
     from locked(), so this process holds its lock and no other is writing there. The log is named by prefix and a digest of the report's key, so each check has one log
     for each prefix, and writing it again replaces the earlier one."""
     log = session.logs / f"{prefix}{hashlib.sha256(report_key(report).encode()).hexdigest()[:16]}.log"
@@ -1040,6 +1049,15 @@ def inherited_failures(old: State, current: State) -> list[Report]:
     return failing
 
 
+def inventory_entry(report: Report, log: Path) -> dict[str, object]:
+    """A report as the triage inventory lists it: every field but its output, which log holds instead."""
+    entry: dict[str, object] = {name: value for name, value in asdict(report).items() if name != "text"}
+    entry["log"] = str(log)
+    assert entry["name"] == report.name and "text" not in entry, f"inventory entry {entry} does not list {report.name} without its output"
+    assert entry["log"] == str(log), f"inventory entry for {report.name} links {entry['log']}, not {log}"
+    return entry
+
+
 def baseline_inventory(old: State, current: State, session: Session) -> str:
     """Keeps the inherited backlog inspectable without putting it in model context: writes session.inventory, the
     entries it already lists for other checks followed by one for each check that first failed in this run, each
@@ -1053,8 +1071,7 @@ def baseline_inventory(old: State, current: State, session: Session) -> str:
     keys = {report_key(report): report for report in added}
     listed = inventory_checks(session)
     checks = [entry for key, entry in (listed or {}).items() if key not in keys]
-    checks.extend({**{name: value for name, value in asdict(report).items() if name != "text"},
-                   "log": str(write_log(session, report, "baseline-"))} for report in keys.values())
+    checks.extend(inventory_entry(report, write_log(session, report, "baseline-")) for report in keys.values())
     inventory.write_text(json.dumps({"digest": digest_of(checks), "checks": checks}, indent=2))
     assert len(checks) >= len(added), f"inventory {inventory} holds {len(checks)} checks after adding {len(added)}; append every one"
     assert all("text" not in check for check in checks[-len(added):]), f"inventory {inventory} kept a report's output; link its log instead"

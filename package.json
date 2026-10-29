@@ -8,6 +8,7 @@
     "hooks/codex.py",
     "hooks/gating.py",
     "hooks/triage.py",
+    "hooks/unix.py",
     "integrations",
     "watchers.json"
   ],
