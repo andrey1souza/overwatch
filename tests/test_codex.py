@@ -1,8 +1,13 @@
+"""Tests of overwatch's Codex hook, driven through its stdin as Codex drives it, with fake tools on PATH.
+
+Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
+"""
 from __future__ import annotations
 
 from dataclasses import replace
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -22,23 +27,34 @@ HOOKS_CONFIG = ROOT / "hooks" / "codex-hooks.json"
 CODEX_MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
 CLAUDE_MANIFEST = ROOT / ".claude-plugin" / "plugin.json"
 PACKAGE_MANIFEST = ROOT / "package.json"
+# How long one hook call may take, in seconds, before the test fails.
+HOOK_TIMEOUT = 5
+# How many failures the inherited backlog of a legacy project holds.
+LEGACY_FAILURES = 10_000
 
 
 def write(path: Path, text: str, replacing: str | None = None) -> None:
-    """Writes text to a fixture file whose directory already exists: a new file when replacing is None, else the
-    file that holds exactly replacing, so a test only ever writes over the content it says it is replacing."""
-    assert path.parent.is_dir(), f"{path.parent} does not exist; make it before writing {path.name}"
-    current = path.read_text() if path.exists() else None
-    assert current == replacing, f"{path} holds {current!r}, not {replacing!r}; pass what the test last wrote there as replacing"
-    path.write_text(text)
-    assert path.read_text() == text, f"{path} reads back differently from what was written"
+    """Writes text to a fixture file in the test's own temporary directory: a new file when replacing is None, else
+    the file that holds exactly replacing, read and rewritten through one handle, so a test only ever writes over
+    the content it says it is replacing."""
+    with path.open("x" if replacing is None else "r+") as handle:
+        current = None if replacing is None else handle.read()
+        if current != replacing:
+            raise AssertionError(f"{path} holds {current!r}, not {replacing!r}; pass what the test last wrote there as replacing")
+        handle.seek(0)
+        handle.truncate()
+        handle.write(text)
+        handle.flush()
+        assert handle.tell() == len(text.encode()), f"{path} took {handle.tell()} bytes of {len(text.encode())}; write all of it"
+        assert os.fstat(handle.fileno()).st_size == handle.tell(), f"{path} kept bytes past what was written; truncate it first"
 
 
 def read(path: Path) -> str:
-    """The text of a fixture file the hook or a fake tool wrote."""
-    assert path.is_file(), f"{path} was not written; check the step that should create it"
-    text = path.read_text()
-    assert len(text.encode()) == path.stat().st_size, f"{path} changed while it was read"
+    """The text of a fixture file the hook or a fake tool wrote, read through one handle."""
+    data = path.read_bytes()
+    text = data.decode()
+    assert text.encode() == data, f"{path} did not decode back to its own bytes; read it as UTF-8 text"
+    assert len(text) <= len(data), f"{path} gave {len(text)} characters from {len(data)} bytes; decode it as UTF-8"
     return text
 
 
@@ -59,22 +75,37 @@ def tool_script(output: str, code: int) -> str:
 
 
 def passing(summary: str) -> str:
-    """The script of a fake tool that prints summary and passes."""
-    script = f"#!/bin/sh\necho '{summary}'\nexit 0\n"
-    assert summary in script, f"passing script {script!r} does not print {summary!r}"
-    assert script.endswith("exit 0\n"), f"passing script {script!r} does not exit 0"
+    """The script of a fake tool that prints summary, quoted for the shell, and passes."""
+    script = f"#!/bin/sh\necho {shlex.quote(summary)}\nexit 0\n"
+    assert shlex.quote(summary) in script, f"passing script {script!r} does not print {summary!r}; echo it quoted"
+    assert script.endswith("exit 0\n"), f"passing script {script!r} does not exit 0; end it with exit 0"
+    return script
+
+
+def barrier_script(mine: Path, theirs: Path, output: str) -> str:
+    """A fake tool that marks it has started at mine, waits for another to mark theirs, then prints output and
+    passes; if the other never starts, it gives up after HOOK_TIMEOUT / 2 seconds and fails."""
+    tries = int(HOOK_TIMEOUT / 2 / 0.05)
+    script = (f"#!/bin/sh\ntouch {shlex.quote(str(mine))}\ni=0\n"
+              f"while [ ! -e {shlex.quote(str(theirs))} ] && [ $i -lt {tries} ]; do sleep 0.05; i=$((i+1)); done\n"
+              f"[ -e {shlex.quote(str(theirs))} ] || exit 3\necho {shlex.quote(output)}\n")
+    assert shlex.quote(str(theirs)) in script, f"barrier script does not wait for {theirs}; quote it into the loop"
+    assert script.endswith(f"echo {shlex.quote(output)}\n"), f"barrier script does not end by printing {output!r}"
     return script
 
 
 def mkdir(path: Path) -> None:
-    """Makes a fixture directory that does not exist yet."""
-    assert not path.exists(), f"{path} already exists; give each fixture directory its own name"
+    """Makes a fixture directory that does not exist yet; one that does raises FileExistsError."""
     path.mkdir(parents=True)
-    assert path.is_dir(), f"{path} was not made"
+    assert path.is_dir(), f"{path} was not made; check its parent is writable"
+    assert not any(path.iterdir()), f"{path} is not empty just after it was made; give each fixture directory its own name"
 
 
 class CodexHookTests(unittest.TestCase):
     def setUp(self) -> None:
+        """Gives each test its own temporary directory, removed when it ends, holding a fresh git repository for the
+        project, a data directory for the hook's state, and an empty bin directory for fake tools, which call puts
+        first on PATH."""
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.cwd = Path(self.temporary.name) / "project"
@@ -87,16 +118,22 @@ class CodexHookTests(unittest.TestCase):
         assert not any(self.bin.iterdir()), f"{self.bin} starts with tools in it; each test adds its own"
 
     def tool(self, name: str, output: str, code: int, replacing: tuple[str, int] | None = None) -> None:
-        """Puts a fake `name` on PATH that prints `output` and exits with `code`, in place of the fake that printed
-        and exited with replacing, when the test swaps one."""
+        """Puts a fake `name` in the test's bin directory, a POSIX shell script that prints `output` and exits with
+        `code`, in place of the fake that printed and exited with replacing, when the test swaps one. The hook runs
+        on POSIX only, so its tests do too."""
         assert "\nEOF\n" not in f"\n{output}\n", f"output for {name} holds the heredoc's EOF line; pick another fixture output"
+        if Path(name).name != name or name in ("", ".", ".."):
+            raise ValueError(f"fake tool name {name!r} is not a plain file name; name it as it is run")
         script = self.bin / name
         write(script, tool_script(output, code), None if replacing is None else tool_script(*replacing))
         script.chmod(0o755)
         assert os.access(script, os.X_OK), f"{script} is not executable; chmod it"
 
     def configure(self, *, watch: bool = False) -> tuple[Path, Path]:
-        """Configures a fixture check that prints result.txt and counts its runs in count.txt; watch keeps it running."""
+        """Writes the fixture check, check.py, which prints result.txt and counts its runs in count.txt, and the
+        project's .overwatch.json, which runs it as its baseline, or as its watch command, which keeps running, when
+        watch is set. Returns result.txt and count.txt; both are in the test's temporary directory, removed with it,
+        and a second call fails, since each file is written new."""
         result = self.cwd / "result.txt"
         count = self.cwd / "count.txt"
         runner = self.cwd / "check.py"
@@ -121,12 +158,14 @@ class CodexHookTests(unittest.TestCase):
             "argv" if watch else "baseline": command,
         }
         write(self.cwd / ".overwatch.json", json.dumps(config))
-        assert codex.find_watchers(self.cwd)[0]["name"] == "fixture", f"{self.cwd} does not run the fixture check first"
-        assert not count.exists(), f"{count} exists before the fixture check ran"
+        watchers = codex.find_watchers(self.cwd)
+        assert [watcher["name"] for watcher in watchers][:1] == ["fixture"], f"{self.cwd} runs {[watcher['name'] for watcher in watchers]}, not the fixture check first; check .overwatch.json"
+        assert not count.exists(), f"{count} exists before the fixture check ran; nothing but check.py should write it"
         return result, count
 
     def call(self, event: str, **fields: object) -> tuple[dict[str, object], float]:
-        """Sends one hook event to the hook script, returning its output and how long it took."""
+        """Sends one hook event to the hook script, as Codex does, returning its output and how long it took. Only
+        the test's fake tools and the system's default PATH are on PATH, so the hook runs only what the test gave it."""
         payload = {
             "session_id": "session-1",
             "cwd": str(self.cwd),
@@ -135,7 +174,7 @@ class CodexHookTests(unittest.TestCase):
         }
         environment = {
             **os.environ,
-            "PATH": f"{self.bin}:/usr/bin:/bin",
+            "PATH": f"{self.bin}{os.pathsep}{os.defpath}",
             "PLUGIN_DATA": str(self.data),
         }
         started = time.monotonic()
@@ -146,18 +185,20 @@ class CodexHookTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=environment,
-            timeout=5,
+            timeout=HOOK_TIMEOUT,
             check=True,
         )
         output, elapsed = json.loads(process.stdout), time.monotonic() - started
-        assert type(output) is dict, f"the hook answered {event} with {process.stdout[:80]}, not a JSON object"
-        assert not process.stderr, f"the hook wrote to stderr for {event}: {process.stderr[-400:]}"
+        assert type(output) is dict, f"the hook answered {event} with {process.stdout[:80]}, not a JSON object; print one object from main"
+        assert not process.stderr, f"the hook wrote to stderr for {event}: {process.stderr[-400:]}; fix the error it reports"
         return output, elapsed
 
-    def prime_tools(self) -> None:
-        """Starts the session with every fake tool passing, then restores them and changes the workspace."""
+    def start_passing_session(self) -> None:
+        """Starts the session with every fake tool passing, so its baseline is green, then puts back the tools the
+        test set up and changes the workspace. The next event reruns the real tools, and what they report is a new
+        failure against that baseline, which is what the test checks."""
         scripts = {path: read(path) for path in self.bin.iterdir()}
-        assert scripts, f"{self.bin} has no tools to prime; add them with tool() first"
+        assert scripts, f"{self.bin} has no tools to start passing; add them with tool() first"
         for path in scripts:
             summary = {"gotestsum": "DONE 2 tests, 0 failures", "pytest": "=== 3 passed in 0.01s ==="}.get(path.name, "")
             write(path, passing(summary), scripts[path])
@@ -166,7 +207,7 @@ class CodexHookTests(unittest.TestCase):
             summary = {"gotestsum": "DONE 2 tests, 0 failures", "pytest": "=== 3 passed in 0.01s ==="}.get(path.name, "")
             write(path, text, passing(summary))
         write(self.cwd / "changed.txt", "changed")
-        assert all(read(path) == text for path, text in scripts.items()), f"tools in {self.bin} were not restored after priming"
+        assert all(read(path) == text for path, text in scripts.items()), f"tools in {self.bin} were not put back after the passing start; write each back"
 
     def test_failure_notifies_once_but_completion_remains_guarded(self) -> None:
         result, count = self.configure()
@@ -257,20 +298,20 @@ class CodexHookTests(unittest.TestCase):
         self.assertEqual(self.call("PostToolUse", tool_name="apply_patch")[0], {})
         self.assertEqual(read(count), "2")
 
-    def legacy_project(self) -> tuple[list[str], dict[str, object], Path]:
-        """Starts a session in a Go project with 10,000 inherited failures, returning them, the hook output and the
-        inventory it saved."""
+    def start_legacy_session(self) -> tuple[list[str], dict[str, object], Path]:
+        """Makes a Go project whose tests have LEGACY_FAILURES inherited failures and starts a session in it,
+        returning the failures, the hook's output and the triage inventory it saved."""
         write(self.cwd / "go.mod", "module legacy")
-        failures = [f"--- FAIL: TestCase{i} (0.00s)" for i in range(10_000)]
+        failures = [f"--- FAIL: TestCase{i} (0.00s)" for i in range(LEGACY_FAILURES)]
         self.tool("go", "\n".join([*failures, "FAIL"]), 1)
         started = self.call("SessionStart")[0]
         inventories = list(self.data.glob("*.baseline.json"))
-        assert len(inventories) == 1, f"the session saved inventories {inventories}; it should save one"
-        assert "hookSpecificOutput" in started, f"the session start said nothing of the inherited backlog: {started}"
+        assert len(inventories) == 1, f"the session saved inventories {inventories}; baseline_inventory should save one"
+        assert "hookSpecificOutput" in started, f"the session start said nothing of the inherited backlog: {started}; check baseline_inventory's notice"
         return failures, started, inventories[0]
 
     def test_large_legacy_baseline_is_compact_and_inspectable(self) -> None:
-        _, started, inventory = self.legacy_project()
+        _, started, inventory = self.start_legacy_session()
         context = started["hookSpecificOutput"]["additionalContext"]
         self.assertLess(len(context), 1000)
         self.assertIn("10000 named issues", context)
@@ -281,7 +322,7 @@ class CodexHookTests(unittest.TestCase):
         self.assertIn("TestCase9999", read(Path(check["log"])))
 
     def test_triage_filters_and_pages_a_large_baseline(self) -> None:
-        _, _, inventory = self.legacy_project()
+        _, _, inventory = self.start_legacy_session()
         checks = triage.parse_inventory(json.loads(read(inventory)))
         selected = triage.triage(checks, "GO", "TestCase99")
         batch = triage.triage_page(selected, 3, 3)
@@ -292,7 +333,7 @@ class CodexHookTests(unittest.TestCase):
 
     def test_legacy_cleanup_preserves_the_new_failure_gate(self) -> None:
         """A new issue keeps completion guarded while cleanup preserves the inherited snapshot."""
-        failures, _, inventory = self.legacy_project()
+        failures, _, inventory = self.start_legacy_session()
         snapshot = read(inventory)
         self.tool("go", "\n".join([*failures, "--- FAIL: TestNew (0.00s)", "FAIL"]), 1, ("\n".join([*failures, "FAIL"]), 1))
         write(self.cwd / "edit.txt", "new change")
@@ -325,12 +366,12 @@ class CodexHookTests(unittest.TestCase):
         self.assertEqual(read(count), "3")
 
     def test_watch_command_stops_after_its_first_report(self) -> None:
-        result, _ = self.configure(watch=True)
+        result, count = self.configure(watch=True)
         write(result, "RESULT: PASS")
 
-        output, elapsed = self.call("SessionStart", source="startup")
+        output, _ = self.call("SessionStart", source="startup")
         self.assertEqual(output, {})
-        self.assertLess(elapsed, 3)
+        self.assertEqual(read(count), "1")
 
     def test_enabled_false_runs_nothing(self) -> None:
         write(self.cwd / ".overwatch.json", json.dumps({"enabled": False}))
@@ -349,7 +390,7 @@ class CodexHookTests(unittest.TestCase):
         self.tool("go", "--- FAIL: TestAdd (0.00s)\n    calc_test.go:3: Add(3, 7) = 10\nFAIL", 1)
         self.tool("cargo", "test tests::adds ... ok\ntest result: ok. 1 passed", 0)
 
-        self.prime_tools()
+        self.start_passing_session()
         started, _ = self.call("PostToolUse")
         self.assertEqual(started["systemMessage"], "Overwatch: go ✗ 1 failed: TestAdd")
         self.assertIn("Failing: `TestAdd`.", started["hookSpecificOutput"]["additionalContext"])
@@ -357,14 +398,15 @@ class CodexHookTests(unittest.TestCase):
     def test_each_language_is_checked_at_once(self) -> None:
         write(self.cwd / "go.mod", "module example.com/calc\n")
         write(self.cwd / "Cargo.toml", "[package]\n")
-        for name, output in (("go", "ok  example.com/calc 0.1s"), ("cargo", "test result: ok. 1 passed")):
+        # Each fake waits for the other to start, so only checks run at once both pass; run one after the other,
+        # the first gives up waiting and fails.
+        for name, other, output in (("go", "cargo", "ok  example.com/calc 0.1s"), ("cargo", "go", "test result: ok. 1 passed")):
             script = self.bin / name
-            write(script, f"#!/bin/sh\nsleep 2\necho '{output}'\n")
+            write(script, barrier_script(self.bin / f"{name}.started", self.bin / f"{other}.started", output))
             script.chmod(0o755)
 
-        started, elapsed = self.call("SessionStart", source="startup")
+        started, _ = self.call("SessionStart", source="startup")
         self.assertEqual(started, {})
-        self.assertLess(elapsed, 3.5)
 
     def test_a_language_the_root_lacks_is_checked_in_each_subproject(self) -> None:
         for directory, marker in (("services/api", "go.mod"), ("tools", "Cargo.toml"), ("node_modules/pad", "go.mod")):
@@ -375,7 +417,7 @@ class CodexHookTests(unittest.TestCase):
         go.chmod(0o755)
         self.tool("cargo", "test result: ok. 1 passed", 0)
 
-        self.prime_tools()
+        self.start_passing_session()
         started, _ = self.call("PostToolUse")
         self.assertEqual(started["systemMessage"], "Overwatch: go services/api ✗ 1 failed: TestAdd")
         self.assertIn("`go test ./...` in `services/api` failed", started["hookSpecificOutput"]["additionalContext"])
@@ -386,7 +428,7 @@ class CodexHookTests(unittest.TestCase):
         self.tool("go", "", 0)
         self.tool("gotestsum", "=== FAIL: . TestAdd (0.00s)\n\nDONE 2 tests, 1 failure in 0.184s", 1)
 
-        self.prime_tools()
+        self.start_passing_session()
         started, _ = self.call("PostToolUse")
         self.assertEqual(started["systemMessage"], "Overwatch: go ✗ 2 tests, 1 failure in 0.184s: . TestAdd")
 
@@ -397,9 +439,11 @@ class CodexHookTests(unittest.TestCase):
         write(self.cwd / "pyproject.toml", "[project]\n")
         self.tool("pytest", "FAILED tests/test_add.py::test_add - assert 10 == 11\n=== 1 failed, 2 passed in 0.03s ===", 1)
 
-        self.prime_tools()
+        self.start_passing_session()
         started, _ = self.call("PostToolUse")
         self.assertEqual(started["systemMessage"], "Overwatch: python ✗ 1 failed, 2 passed in 0.03s: tests/test_add.py::test_add")
+        self.assertIn("`pytest", started["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("`uv run", started["hookSpecificOutput"]["additionalContext"])
 
     def test_full_output_is_saved_without_truncation(self) -> None:
         result, _ = self.configure()
