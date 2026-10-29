@@ -7,6 +7,7 @@
   "files": [
     "hooks/codex.py",
     "hooks/gating.py",
+    "hooks/records.py",
     "hooks/triage.py",
     "hooks/unix.py",
     "integrations",

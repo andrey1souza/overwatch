@@ -20,7 +20,6 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,12 +27,13 @@ import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, replace
 from typing import Any, Required, TypedDict
 
 from gating import PolicyError, protected_checks, read_gate, tool_command
 from triage import InventoryError, parse_check, parse_inventory
-from unix import exclusive, is_owned, output_selector, read_available
+from records import REBUILT, Event, First, Report, Session, State, StateError, digest_of, state_from, state_json
+from unix import exclusive, is_private, on_path, output_selector, read_available
 
 
 OVERRIDE_PATH = ".overwatch.json"
@@ -88,69 +88,7 @@ class ConfigurationError(Exception):
     """The project, its .overwatch.json or the hook event cannot be used; the message says what to change."""
 
 
-class StateError(ValueError):
-    """The saved state does not have the shape save_state writes, so the session starts afresh."""
-
-
-@dataclass(frozen=True)
-class Event:
-    """One hook event as read_event checked it: the fields overwatch reads, each a string, and the tool's input."""
-    hook_event_name: str
-    session_id: str
-    cwd: str
-    tool_name: str
-    tool_input: object
-
-
-@dataclass(frozen=True)
-class Report:
-    """One check's result, as read_report reads it from the check's output."""
-    name: str
-    language: str
-    command: str
-    dir: str | None
-    summary: str
-    failed: bool
-    failures: tuple[str, ...]
-    environment: str | None
-    text: str
-
-
-@dataclass(frozen=True)
-class First:
-    """A check's first result in the session, its baseline: whether it failed, with what, and its summary."""
-    failed: bool
-    failures: tuple[str, ...]
-    summary: str
-
-
-@dataclass(frozen=True)
-class Session:
-    """The files of one session in one repository, named from the state file's path: the state, its lock, the
-    triage inventory and the directory of full logs. Only locked() makes one, and only for the block in which this
-    process holds the lock, so a function given a Session writes files no other overwatch process is writing."""
-    state: Path
-    lock: Path
-    inventory: Path
-    logs: Path
-
-
-@dataclass(frozen=True)
-class State:
-    """What one session in one repository knows between hook events. Saved by save_state, read back by state_from."""
-    reports: tuple[Report, ...] = ()
-    baseline: Mapping[str, First] = field(default_factory=dict)
-    failed: bool = False
-    told: str | None = None
-    signatures: tuple[str, ...] = ()
-    inherited: str = "allow"
-    fingerprint: str | None = None
-    environment: tuple[str, ...] = ()
-
-
 EVENT_FIELDS = ("hook_event_name", "session_id", "cwd", "tool_name")
-# What a StateError adds: what happens next, and what to do when it keeps happening.
-REBUILT = "; the session starts afresh and reruns its checks, and if this repeats, delete the state files under PLUGIN_DATA"
 
 
 def read_event() -> Event:
@@ -172,110 +110,6 @@ def read_event() -> Event:
     return event
 
 
-def string_tuple(value: object, where: str) -> tuple[str, ...]:
-    """value as a tuple of strings, or StateError naming where it was read when it is not a list of strings."""
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise StateError(f"{where} must be a list of strings, not {type(value).__name__}{REBUILT}")
-    strings = tuple(value)
-    assert len(strings) == len(value), f"{where} kept {len(strings)} of {len(value)} strings; copy every item with tuple()"
-    assert list(strings) == value, f"{where} reordered its strings; keep them in order"
-    return strings
-
-
-def check_fields(value: dict[str, object], names: tuple[str, ...], optional: tuple[str, ...], where: str) -> None:
-    """Raises StateError naming each field of value that is not what save_state writes: each of names a string, each
-    of optional a string or null, failed a boolean, and no field outside names, optional, failed and failures."""
-    unexpected = sorted(set(value) - {*names, *optional, "failed", "failures"})
-    if unexpected:
-        raise StateError(f"{where} has fields {unexpected} save_state never writes{REBUILT}")
-    given = {name: value.get(name) for name in (*names, *optional)}
-    wrong = [name for name, item in given.items() if not isinstance(item, str) and not (item is None and name in optional)]
-    if not isinstance(value.get("failed"), bool):
-        wrong.append("failed")
-    if wrong:
-        raise StateError(f"{where} has fields {wrong} of the wrong type{REBUILT}")
-    assert all(isinstance(value[name], str) for name in names), f"{where} passed with a field of {names} that is not a string; add it to the type check above"
-    assert isinstance(value["failed"], bool), f"{where} passed with failed {value['failed']}, not a boolean; check it before returning"
-
-
-def report_from(value: object) -> Report:
-    """A report as save_state wrote it, or StateError naming the fields that do not match."""
-    if not isinstance(value, dict):
-        raise StateError(f"a saved report is a JSON {type(value).__name__}, not an object{REBUILT}")
-    check_fields(value, ("name", "language", "command", "summary", "text"), ("dir", "environment"), "a saved report")
-    report = Report(name=value["name"], language=value["language"], command=value["command"], dir=value.get("dir"),
-                    summary=value["summary"], failed=value["failed"],
-                    failures=string_tuple(value.get("failures"), f"saved report {value['name']}'s failures"),
-                    environment=value.get("environment"), text=value["text"])
-    assert report.name == value["name"] and report.failed == value["failed"], f"saved report {value['name']} changed while read; copy each field as save_state wrote it"
-    assert list(report.failures) == value["failures"], f"saved report {report.name} lost failures; keep each in order"
-    return report
-
-
-def first_from(key: str, value: object) -> First:
-    """A check's saved first result, or StateError naming the check whose entry does not match."""
-    if not isinstance(value, dict):
-        raise StateError(f"the baseline of {key!r} is a JSON {type(value).__name__}, not an object{REBUILT}")
-    check_fields(value, ("summary",), (), f"the baseline of {key!r}")
-    first = First(value["failed"], string_tuple(value.get("failures"), f"the baseline of {key!r}'s failures"), value["summary"])
-    assert first.summary == value["summary"], f"the baseline of {key!r} changed its summary while read; copy it as save_state wrote it"
-    assert list(first.failures) == value["failures"], f"the baseline of {key!r} lost failures; keep each in order"
-    return first
-
-
-def state_from(value: object) -> State:
-    """A state as save_state wrote it, or StateError naming the part that does not match."""
-    if not isinstance(value, dict):
-        raise StateError(f"the saved state is a JSON {type(value).__name__}, not an object{REBUILT}")
-    reports, baseline, gate = value.get("reports", []), value.get("baseline", {}), value.get("gate", {})
-    told, fingerprint = value.get("told"), value.get("fingerprint")
-    if not isinstance(reports, list) or not isinstance(baseline, dict) or not isinstance(gate, dict):
-        raise StateError(f"the saved state's reports, baseline or gate is not a list, object and object{REBUILT}")
-    if not isinstance(value.get("failed", False), bool) or not all(item is None or isinstance(item, str) for item in (told, fingerprint)):
-        raise StateError(f"the saved state's failed, told or fingerprint has the wrong type{REBUILT}")
-    if gate.get("inherited", "allow") not in ("allow", "block"):
-        raise StateError(f"the saved state's gate.inherited is {gate.get('inherited')}, not allow or block{REBUILT}")
-    state = State(
-        reports=tuple(report_from(report) for report in reports),
-        baseline={key: first_from(key, first) for key, first in baseline.items()},
-        failed=value.get("failed", False),
-        told=told,
-        signatures=string_tuple(value.get("signatures", []), "the saved state's signatures"),
-        inherited=gate.get("inherited", "allow"),
-        fingerprint=fingerprint,
-        environment=string_tuple(value.get("environment", []), "the saved state's environment"),
-    )
-    assert len(state.reports) == len(reports) and set(state.baseline) == set(baseline), f"state kept {len(state.reports)} of {len(reports)} reports or lost baseline entries; read every saved entry"
-    assert state.fingerprint == fingerprint, f"state changed its fingerprint {fingerprint} while read; copy it as saved"
-    return state
-
-
-def digest_of(value: object) -> str:
-    """The digest overwatch stores beside the JSON it saves, state or inventory, so it can tell a file it wrote whole
-    from any other when it reads one back."""
-    digest = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
-    assert len(digest) == 64, f"state digest {digest} is not a SHA-256 hex digest"
-    assert digest == digest.lower(), f"state digest {digest} is not lower-case hex; use hexdigest"
-    return digest
-
-
-def state_json(state: State) -> dict[str, object]:
-    """state as save_state writes it, the shape state_from reads."""
-    value: dict[str, object] = {
-        "reports": [asdict(report) for report in state.reports],
-        "baseline": {key: asdict(first) for key, first in state.baseline.items()},
-        "failed": state.failed,
-        "told": state.told,
-        "signatures": list(state.signatures),
-        "gate": {"inherited": state.inherited},
-        "fingerprint": state.fingerprint,
-        "environment": list(state.environment),
-    }
-    assert len(value["reports"]) == len(state.reports), f"state JSON holds {len(value['reports'])} of {len(state.reports)} reports; write every report"
-    assert value["gate"] == {"inherited": state.inherited}, f"state JSON gate {value['gate']} does not hold {state.inherited}; write the gate as state_from reads it"
-    return value
-
-
 def read_override(cwd: Path) -> dict[str, Any]:
     """The project's .overwatch.json, which may name commands to run, so it is read only when the user running the
     hook owns it; none when there is none."""
@@ -286,8 +120,8 @@ def read_override(cwd: Path) -> dict[str, Any]:
         return {}
     except (OSError, json.JSONDecodeError) as error:
         raise ConfigurationError(f"could not read {path}: {error}; fix the JSON in it") from error
-    if not is_owned(path):
-        raise ConfigurationError(f"{path} belongs to another user, so its commands are not run; take ownership of it or remove it")
+    if not is_private(path):
+        raise ConfigurationError(f"{path} is owned or writable by another user, so its commands are not run; make it yours alone with chmod go-w or remove it")
     if not isinstance(value, dict):
         raise ConfigurationError(f"{path} must contain a JSON object")
     assert path.name == OVERRIDE_PATH, f"read {path} instead of {OVERRIDE_PATH}; build the path from cwd and OVERRIDE_PATH"
@@ -370,7 +204,7 @@ def first_present(alternatives: list[Watcher], directory: Path) -> Watcher | Non
     """The first of a language's alternatives whose marker is in directory and whose tool, if it needs one, is on PATH."""
     assert len({language_of(watcher) for watcher in alternatives}) <= 1, f"alternatives span {[watcher['name'] for watcher in alternatives]}; pass one language's"
     present = next((watcher for watcher in alternatives
-                    if marker_in(directory, watcher["marker"]).exists() and ("requires" not in watcher or shutil.which(watcher["requires"]))), None)
+                    if marker_in(directory, watcher["marker"]).exists() and ("requires" not in watcher or on_path(watcher["requires"]))), None)
     assert present is None or directory.is_dir(), f"found {present['name'] if present else ''} in {directory}, which is not a directory"
     return present
 
@@ -434,7 +268,7 @@ def find_watchers(cwd: Path) -> list[Watcher]:
     if override.get("enabled") is False:
         return []
     if "enabled" in override and not isinstance(override["enabled"], bool):
-        raise ConfigurationError(f"{OVERRIDE_PATH} field 'enabled' must be a boolean")
+        raise ConfigurationError(f"{OVERRIDE_PATH} field 'enabled' is {override['enabled']!r}, not a boolean; set it to true or false")
 
     found = find_project_watchers(cwd, override)
     if not found:
@@ -447,14 +281,13 @@ def find_watchers(cwd: Path) -> list[Watcher]:
                 override,
             ))
 
-    # A checker runs wherever its executable is on PATH: on POSIX, where this hook runs, shutil.which finds an
-    # executable file of that name in a PATH directory.
+    # A checker runs wherever its executable is on PATH.
     for checker in CHECKERS:
-        if shutil.which(checker["marker"]):
+        if on_path(checker["marker"]):
             found.append(dict(checker))
-    assert all("name" in watcher for watcher in found), f"found {found} with an unnamed watcher; every watcher needs a name"
+    assert all("name" in watcher for watcher in found), f"found {found} with an unnamed watcher; give every watcher a name in watchers.json"
     keys = [key_of(watcher["name"], watcher.get("dir")) for watcher in found]
-    assert len(set(keys)) == len(found), f"found {keys} in {cwd}; find each check once"
+    assert len(set(keys)) == len(found), f"found {keys} in {cwd}; add each checker only when no watcher has its name"
     return found
 
 
@@ -489,18 +322,23 @@ def terminate(process: subprocess.Popen[bytes]) -> bytes:
 
 
 @contextmanager
-def locked(path: Path) -> Iterator[Session]:
-    """The session whose state is kept at path, which must lie in data_root(), for the block, while this process
-    holds the state's .lock sibling exclusively, released however the block ends. The lock only orders overwatch's
-    own hook processes, so it records nothing: it grants and refuses no one access. data_root() refuses a directory
-    another user owns, and one this makes is readable by its owner alone."""
-    path = in_data(path)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    session = Session(state=path, lock=path.with_suffix(".lock"), inventory=path.with_suffix(".baseline.json"), logs=path.with_suffix(""))
-    assert len({session.state, session.lock, session.inventory, session.logs}) == 4, f"session files of {path} share a name; give each its own suffix"
-    assert session.state.parent == data_root(), f"session {session.state} is outside {data_root()}; name it with state_path"
-    with open(session.lock, "a") as handle, exclusive(handle):
-        yield session
+def locked(path: Path, root: Path) -> Iterator[Session]:
+    """The session whose state is kept at path, which must lie in root, for the block, while this process holds an
+    exclusive flock on the session's log directory, released however the block ends. The lock orders overwatch's own
+    hook processes; it grants or refuses no one access to anything. The directory is one the session keeps for its
+    logs, so taking the lock leaves nothing behind, and root and the directories this makes are writable by the user
+    alone, so only the user's own processes can take it."""
+    path = in_data(path, root)
+    session = Session(state=path, inventory=path.with_suffix(".baseline.json"), logs=path.with_suffix(""))
+    assert len({session.state, session.inventory, session.logs}) == 3, f"session files of {path} share a name; give each its own suffix"
+    assert session.state.parent == root, f"session {session.state} is outside {root}; name it with state_path"
+    session.logs.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(session.logs, os.O_RDONLY)
+    try:
+        with exclusive(descriptor):
+            yield session
+    finally:
+        os.close(descriptor)
 
 
 def _run_command(
@@ -634,7 +472,8 @@ def _run_check(cwd: Path, watcher: Watcher) -> Report | None:
 
 
 def run_checks(cwd: Path, watchers: list[Watcher]) -> list[Report]:
-    """Runs every watcher's check at once, so a polyglot project waits for its slowest suite, not the sum of them."""
+    """The reports of the watchers that have a command, in watcher order, after running every one at once, so a
+    polyglot project waits for its slowest suite, not the sum of them. A watcher with no command gives no report."""
     if not watchers:
         return []
     with ThreadPoolExecutor(max_workers=len(watchers)) as pool:
@@ -704,25 +543,25 @@ def repository_of(cwd: Path) -> Path | None:
     return root
 
 
-def data_root() -> Path:
-    """The directory overwatch keeps session state in, resolved: PLUGIN_DATA, which the agent host the user started
-    sets to the plugin's own data directory in this process's environment, else ~/.cache/overwatch. Only the user and
-    the programs they run set that environment, and a directory another user owns is refused. A PLUGIN_DATA that is not an absolute
-    path is refused, so state never lands relative to whatever directory the hook was started in."""
-    given = os.environ.get("PLUGIN_DATA")
+def data_root(given: str | None) -> Path:
+    """The directory overwatch keeps session state in, resolved and made when missing: given, the PLUGIN_DATA the
+    agent host passes the hook, else ~/.cache/overwatch. A directory another user owns or can write is refused, so no
+    one else can plant or read the state, and a relative one, so state never lands relative to wherever the hook
+    was started."""
     if given is not None and not Path(given).is_absolute():
         raise ConfigurationError(f"PLUGIN_DATA is {given!r}, not an absolute path; set it to the plugin's data directory")
     root = Path(given or Path.home() / ".cache" / "overwatch").resolve()
-    if root.exists() and not is_owned(root):
-        raise ConfigurationError(f"data directory {root} belongs to another user; set PLUGIN_DATA to a directory of your own")
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not is_private(root):
+        raise ConfigurationError(f"data directory {root} is owned or writable by another user; set PLUGIN_DATA to a directory only you can write")
     assert root.is_absolute(), f"data root {root} is relative; resolve it"
     assert root == root.resolve(), f"data root {root} still holds a link or a parent step; resolve it"
     return root
 
 
-def in_data(path: Path) -> Path:
-    """path resolved, or ConfigurationError when it lies outside data_root(), the only place overwatch reads state from."""
-    root, resolved = data_root(), path.resolve()
+def in_data(path: Path, root: Path) -> Path:
+    """path resolved, or ConfigurationError when it lies outside root, the only place overwatch keeps state."""
+    resolved = path.resolve()
     if not resolved.is_relative_to(root):
         raise ConfigurationError(f"state file {path} is outside {root}; set PLUGIN_DATA to the directory that holds it")
     assert resolved.is_absolute() and ".." not in resolved.parts, f"state file {resolved} is not a plain absolute path"
@@ -730,9 +569,9 @@ def in_data(path: Path) -> Path:
     return resolved
 
 
-def state_path(event: Event, cwd: Path) -> Path:
-    """Where the state of one session in one repository is kept: named by a digest of both, so neither shapes the path."""
-    data = data_root()
+def state_path(event: Event, cwd: Path, data: Path) -> Path:
+    """Where in data the state of one session in one repository is kept: named by a digest of both, so neither
+    shapes the path."""
     identity = f"{event.session_id}\0{cwd}"
     path = data / f"{hashlib.sha256(identity.encode()).hexdigest()}.json"
     assert path.parent == data, f"state path {path} is outside {data}; name it by digest alone"
@@ -753,7 +592,7 @@ def load_state(session: Session) -> State:
         state = state_from(value)
     except (FileNotFoundError, json.JSONDecodeError, StateError):
         state = State()
-    assert session.state.parent == session.lock.parent, f"state {session.state} is not beside its lock {session.lock}; build the session with locked"
+    assert session.state.parent == session.logs.parent, f"state {session.state} is not beside its logs {session.logs}; build the session with locked"
     assert session.state.suffix == ".json", f"state {session.state} is not a .json file; name it with state_path"
     return state
 
@@ -762,8 +601,7 @@ def save_state(session: Session, state: State) -> None:
     """Replaces the state of session with state in one step, writing it first to a new temporary file that only this
     process can name or read, in the same directory, and removing that file if the write fails. The state file is
     overwatch's own cache, which only overwatch reads and which it rebuilds by rerunning the checks, so replacing it
-    loses nothing the user made. session comes from locked(), so this process holds its lock, and it is the session
-    the state was read from."""
+    loses nothing the user made. session comes from locked(), so this process holds its lock."""
     value = state_json(state)
     text = json.dumps({"digest": digest_of(value), "state": value})
     with tempfile.NamedTemporaryFile("w", dir=session.state.parent, prefix=f"{session.state.stem}.", suffix=".tmp", delete=False) as handle:
@@ -784,7 +622,7 @@ def failing_line(failures: list[str]) -> str:
     hidden = len(failures) - len(shown)
     more = f", and {hidden} more" if hidden else ""
     line = f"Failing: {', '.join(f'`{name}`' for name in shown)}{more}.\n" if shown else ""
-    assert not shown or line.startswith(f"Failing: `{shown[0]}`"), f"line {line} does not name {shown[0] if shown else ''} first; quote the first {FAILURE_LIMIT} in order"
+    assert not shown or line.startswith(f"Failing: `{shown[0]}`"), f"line {line} does not name {shown} first; quote the first {FAILURE_LIMIT} in order"
     assert (hidden > 0) == line.endswith(" more.\n"), f"line {line} for {len(failures)} failures miscounts the {hidden} not shown"
     return line
 
@@ -854,16 +692,23 @@ def failure_counts(summary: str) -> dict[str, int]:
     return counts
 
 
-def write_log(session: Session, report: Report, prefix: str = "") -> Path:
-    """Writes a report's full output into session.logs, keeping the output out of the conversation. Logs are
-    overwatch's own cache of output a rerun reproduces, so replacing one loses nothing the user made. session comes
-    from locked(), so this process holds its lock and no other is writing there. The log is named by prefix and a digest of the report's key, so each check has one log
-    for each prefix, and writing it again replaces the earlier one."""
+def log_path(session: Session, report: Report, prefix: str = "") -> Path:
+    """Where report's full output is kept in session.logs: named by prefix and a digest of the report's key, so each
+    check has one log for each prefix."""
     log = session.logs / f"{prefix}{hashlib.sha256(report_key(report).encode()).hexdigest()[:16]}.log"
     assert log.parent == session.logs, f"log {log} is outside {session.logs}; name it by digest alone"
-    log.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    assert log.name.startswith(prefix) and log.suffix == ".log", f"log {log} is not named {prefix}<digest>.log"
+    return log
+
+
+def write_log(session: Session, report: Report, prefix: str = "") -> Path:
+    """Writes report's full output to its log_path in session.logs, keeping the output out of the conversation. Logs
+    are overwatch's own cache of output a rerun reproduces, so replacing that check's earlier log loses nothing the
+    user made. session comes from locked(), so this process holds its lock and no other is writing there."""
+    log = log_path(session, report, prefix)
     log.write_text(report.text)
     assert log.read_text() == report.text, f"{log} does not hold {report.name}'s output as given; write it whole"
+    assert log.parent == session.logs, f"wrote {report.name}'s output to {log}, outside {session.logs}"
     return log
 
 
@@ -1053,8 +898,8 @@ def inventory_entry(report: Report, log: Path) -> dict[str, object]:
     """A report as the triage inventory lists it: every field but its output, which log holds instead."""
     entry: dict[str, object] = {name: value for name, value in asdict(report).items() if name != "text"}
     entry["log"] = str(log)
-    assert entry["name"] == report.name and "text" not in entry, f"inventory entry {entry} does not list {report.name} without its output"
-    assert entry["log"] == str(log), f"inventory entry for {report.name} links {entry['log']}, not {log}"
+    assert entry["name"] == report.name and "text" not in entry, f"inventory entry {entry} does not list {report.name} without its output; drop only the text field"
+    assert entry["log"] == str(log), f"inventory entry for {report.name} links {entry['log']}, not {log}; set log last"
     return entry
 
 
@@ -1094,14 +939,14 @@ def new_environment(reports: tuple[Report, ...] | list[Report], told: tuple[str,
     return fresh
 
 
-def process_event(event: Event) -> dict[str, Any]:
-    """The hook output for one event, saving the state it leaves. Hooks of one session can run at once, so each
-    holds an exclusive flock on the state's .lock sibling from reading the state to saving it: the next one waits,
-    then sees the saved fingerprint and reuses the results instead of running the checks again."""
+def process_event(event: Event, root: Path) -> dict[str, Any]:
+    """The hook output for one event, saving the state it leaves in root. Hooks of one session can run at once, so
+    each holds the session's lock from reading the state to saving it: the next one waits, then sees the saved
+    fingerprint and reuses the results instead of running the checks again."""
     cwd = repository_of(Path(event.cwd or os.getcwd()).resolve())
     if cwd is None:
         return {}
-    with locked(state_path(event, cwd)) as session:
+    with locked(state_path(event, cwd, root), root) as session:
         if event.hook_event_name == "PreToolUse":
             return protected_output(event, cwd, session)
         old, current = checked_state(session, cwd)
@@ -1162,14 +1007,15 @@ def report_output(event: Event, old: State, current: State, session: Session) ->
 
 def main() -> None:
     """Answers one hook event on stdin with JSON on stdout. The event comes from the agent host that started this
-    process, through the pipe it holds, so no one else can write it. A failing exit would stop the agent's turn, so
-    every problem is reported in the output, as a system message, and the process ends normally: a mistake in
-    .overwatch.json, its gate or the event as the error says, anything else as an unexpected error to report."""
+    process, through the pipe it holds, so no one else can write it. Every problem is told to the host in that
+    output, as a system message it shows the user: a mistake in .overwatch.json, its gate or the event as the error
+    says. An unexpected error is also written to stderr, where the host logs it."""
     try:
-        output = json.dumps(process_event(read_event()))
+        output = json.dumps(process_event(read_event(), data_root(os.environ.get("PLUGIN_DATA"))))
     except (ConfigurationError, PolicyError) as error:
         output = json.dumps({"systemMessage": f"overwatch: {error}"})
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
+        print(f"overwatch: unexpected {type(error).__name__}: {error}", file=sys.stderr)
         output = json.dumps({"systemMessage": f"overwatch: unexpected error: {error}; report it at "
                                               "https://github.com/benomahony/overwatch/issues with the hook event"})
     assert output.startswith("{"), f"hook output {output[:40]} is not a JSON object; return a dict from process_event"

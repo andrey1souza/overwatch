@@ -8,6 +8,8 @@ from __future__ import annotations
 import fcntl
 import os
 import selectors
+import shutil
+import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -19,17 +21,16 @@ READ_CHUNK = 65_536
 
 
 @contextmanager
-def exclusive(handle: IO[str]) -> Iterator[None]:
-    """Holds an exclusive flock on the open file handle for the block, released however the block ends. The caller
-    opens the lock file and keeps it afterwards: removing it while another process waits on it would let a third
-    lock a new file at the same path."""
-    assert not handle.closed, f"lock {handle.name} is closed; open it before taking the lock"
-    fcntl.flock(handle, fcntl.LOCK_EX)
+def exclusive(descriptor: int) -> Iterator[None]:
+    """Waits for, then holds, an exclusive flock on the open file or directory descriptor for the block, and releases
+    it however the block ends. The descriptor stays open: closing it is the caller's."""
+    assert descriptor >= 0, f"lock descriptor {descriptor} is not an open one; pass what os.open returned"
+    fcntl.flock(descriptor, fcntl.LOCK_EX)
     try:
         yield
     finally:
-        fcntl.flock(handle, fcntl.LOCK_UN)
-    assert not handle.closed, f"lock {handle.name} closed inside the block; leave closing it to the caller"
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+    assert os.fstat(descriptor) is not None, f"lock descriptor {descriptor} closed inside the block; leave closing it to the caller"
 
 
 def output_selector(stdout: IO[bytes]) -> selectors.BaseSelector:
@@ -53,9 +54,19 @@ def read_available(selector: selectors.BaseSelector) -> bytes:
     return chunk
 
 
-def is_owned(path: Path) -> bool:
-    """Whether the current user owns the existing file or directory at path."""
-    owner, user = path.stat().st_uid, os.getuid()
-    assert owner >= 0, f"{path} has owner id {owner}, which no user has"
-    assert user >= 0, f"the current user has id {user}, which no user has"
-    return owner == user
+def is_private(path: Path) -> bool:
+    """Whether the existing file or directory at path is the current user's alone to change: owned by them, and not
+    writable by its group or anyone else."""
+    status, user = path.stat(), os.getuid()
+    private = status.st_uid == user and not status.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    assert status.st_uid >= 0 and user >= 0, f"{path} has owner id {status.st_uid} and the user id {user}; read them with stat and getuid"
+    assert not private or status.st_uid == user, f"{path} owned by {status.st_uid} was called private for user {user}; compare the owner first"
+    return private
+
+
+def on_path(name: str) -> bool:
+    """Whether an executable named name is on PATH: on POSIX, an executable file of that name in a PATH directory."""
+    found = shutil.which(name)
+    assert found is None or Path(found).name == name, f"PATH lookup for {name} found {found}; look up the bare name"
+    assert found is None or os.access(found, os.X_OK), f"PATH lookup for {name} found {found}, which is not executable"
+    return found is not None
