@@ -131,7 +131,7 @@ function protectionOutput(event, failing) {
   return denial
 }
 
-test("Pi permits repair tools and blocks a protected tool before it runs", async () => {
+test("Pi refuses a tool the checker denies and runs the tools it allows", async () => {
   const handlers = {}
   const pi = { on: (name, handler) => { handlers[name] = handler } }
   let failing = true

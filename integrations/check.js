@@ -12,8 +12,9 @@ const HOOK = fileURLToPath(new URL("../hooks/codex.py", import.meta.url))
 const TIMEOUT_MS = 550_000
 
 /**
- * The fields of a harness event the checker reads, each checked: the event's name and the project directory as
- * non-empty strings, and the session's ID as a string when there is one. Throws a TypeError naming the field.
+ * The fields of a harness event the checker reads, and only those, each checked: the event's name and the project
+ * directory as non-empty strings, the session's ID and the tool's name as strings when given, and the tool's input
+ * as it came. Throws a TypeError naming the field.
  */
 function checkedPayload(payload) {
   if (payload === null || typeof payload !== "object") throw new TypeError(`the hook event is ${String(payload)}; pass an object`)
@@ -21,17 +22,20 @@ function checkedPayload(payload) {
   if (typeof event !== "string" || event === "") throw new TypeError(`the hook event's name is ${String(event)}; set hook_event_name`)
   if (typeof cwd !== "string" || cwd === "") throw new TypeError(`the ${event} event's cwd is ${String(cwd)}; set it to the project's directory`)
   if (session !== undefined && typeof session !== "string") throw new TypeError(`the ${event} event's session_id is ${typeof session}; pass it as text`)
-  const checked = { ...payload, hook_event_name: event, cwd }
-  assert(checked.hook_event_name === event && checked.cwd === cwd, `checked event ${JSON.stringify(checked)} lost its name or cwd`)
-  assert(Object.keys(checked).length >= Object.keys(payload).length, `checked event dropped fields of ${JSON.stringify(payload)}`)
+  const { tool_name: tool, tool_input: input } = payload
+  if (tool !== undefined && typeof tool !== "string") throw new TypeError(`the ${event} event's tool_name is ${typeof tool}; pass it as text`)
+  const checked = { hook_event_name: event, session_id: session, cwd, tool_name: tool, tool_input: input }
+  assert(checked.hook_event_name === event && checked.cwd === cwd, `checked event ${JSON.stringify(checked)} lost its name or cwd; copy both`)
+  assert(Object.keys(checked).length === 5, `checked event has fields ${Object.keys(checked)}; forward only the five the checker reads`)
   return checked
 }
 
 /**
- * Runs overwatch's checker on one harness event and resolves to its JSON output. It always runs hooks/codex.py
- * with the python3 on PATH, in the event's project directory: nothing a caller passes chooses what runs.
+ * Runs overwatch's checker on one harness event and resolves to its JSON output. Private to this module, which
+ * calls it only through serialChecker. It always runs hooks/codex.py with the python3 on PATH, in the event's
+ * project directory, with the environment of the agent the user started: nothing a caller passes chooses what runs.
  */
-export function runCheck(payload, timeout = TIMEOUT_MS) {
+function runCheck(payload, timeout = TIMEOUT_MS) {
   const event = checkedPayload(payload)
   assert(Number.isFinite(timeout) && timeout > 0, `timeout ${timeout}ms must be a positive number; pass it in milliseconds`)
   assert(HOOK.endsWith("codex.py"), `the checker is ${HOOK}, not hooks/codex.py; resolve it beside this file`)

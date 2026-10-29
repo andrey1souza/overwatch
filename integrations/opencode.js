@@ -27,10 +27,11 @@ function payload(event, cwd, sessionID) {
  * published fields in turn: sessionID, then properties.sessionID, then properties.info.id.
  */
 function sessionIDOf(event) {
-  assert(event !== null && typeof event === "object", `OpenCode gave event ${String(event)}; pass the event object`)
-  const properties = event.properties
-  const info = properties?.info
-  const sessionID = event.sessionID ?? properties?.sessionID ?? info?.id
+  if (event === null || typeof event !== "object") throw new TypeError(`OpenCode gave event ${String(event)}; pass the event object`)
+  const { sessionID: own, properties } = event
+  const found = own ?? properties?.sessionID ?? properties?.info?.id
+  const sessionID = typeof found === "string" && found !== "" ? found : undefined
+  assert(sessionID === undefined || sessionID === found, `event ${event.type} read session ${sessionID} from ${String(found)}; take it as given`)
   assert(sessionID === undefined || typeof sessionID === "string", `event ${event.type} has session ID ${String(sessionID)}, not text`)
   return sessionID
 }
