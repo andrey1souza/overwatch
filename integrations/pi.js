@@ -1,9 +1,20 @@
+/**
+ * Overwatch for pi: registers pi extension handlers that send each session, tool and settle event to overwatch's
+ * shared checker, show its status line, add what it reports to the agent's context, and refuse a protected tool or
+ * a finish while relevant checks fail. The checker runs on this machine, so the session ID and project directory
+ * it is given never leave it.
+ *
+ * Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
+ */
 import assert from "node:assert/strict"
 import { contextOf, deniedAction, serialChecker } from "./check.js"
 
 const EDITING_TOOLS = new Set(["bash", "edit", "powershell", "write"])
 
-/** The checker's hook event for event in pi's current session. */
+/**
+ * The checker's hook event for event in pi's current session: its name, the session's ID and the project
+ * directory, the fields every event the checker answers carries. Each handler below builds its event from this.
+ */
 function base(event, ctx) {
   assert(typeof event === "string" && event !== "", `base for event ${event}; name the hook event`)
   const sessionID = ctx.sessionManager.getSessionId()
@@ -20,6 +31,7 @@ export function registerPi(pi, checker = serialChecker()) {
   const check = checker
   let startupContext
 
+  // Shows the checker's status line, or clears it when the checker gives none; any handler may call it.
   const showStatus = (ctx, output) => {
     assert(typeof ctx.ui?.setStatus === "function", "pi's context has no ui.setStatus; pass the event's context")
     assert(output.systemMessage === undefined || typeof output.systemMessage === "string", `status is ${typeof output.systemMessage}; the checker writes it as text`)
@@ -73,6 +85,7 @@ export function registerPi(pi, checker = serialChecker()) {
   })
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    assert(typeof ctx.ui?.setStatus === "function", "pi's context has no ui.setStatus; pass the event's context")
     ctx.ui.setStatus("overwatch", undefined)
   })
 }

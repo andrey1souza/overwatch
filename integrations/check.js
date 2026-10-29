@@ -1,3 +1,9 @@
+/**
+ * Overwatch's shared checker for the agent integrations in this directory. Each event runs the Codex hook,
+ * hooks/codex.py, once and reads its JSON answer, so every integration reports exactly what the Codex hook does.
+ *
+ * Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
+ */
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
@@ -5,26 +11,43 @@ import { fileURLToPath } from "node:url"
 const HOOK = fileURLToPath(new URL("../hooks/codex.py", import.meta.url))
 const TIMEOUT_MS = 550_000
 
-/** Run Overwatch's shared one-shot checker with a harness event. */
-export function runCheck(payload, options = {}) {
-  const command = options.command ?? "python3"
-  const hook = options.hook ?? HOOK
-  const timeout = options.timeout ?? TIMEOUT_MS
-  assert(typeof payload.hook_event_name === "string" && payload.hook_event_name !== "", `payload names event ${payload.hook_event_name}; pass the hook event's name`)
-  assert(Number.isFinite(timeout) && timeout > 0, `timeout ${timeout}ms must be a positive number; pass options.timeout in milliseconds`)
+/**
+ * The fields of a harness event the checker reads, each checked: the event's name and the project directory as
+ * non-empty strings, and the session's ID as a string when there is one. Throws a TypeError naming the field.
+ */
+function checkedPayload(payload) {
+  if (payload === null || typeof payload !== "object") throw new TypeError(`the hook event is ${String(payload)}; pass an object`)
+  const { hook_event_name: event, cwd, session_id: session } = payload
+  if (typeof event !== "string" || event === "") throw new TypeError(`the hook event's name is ${String(event)}; set hook_event_name`)
+  if (typeof cwd !== "string" || cwd === "") throw new TypeError(`the ${event} event's cwd is ${String(cwd)}; set it to the project's directory`)
+  if (session !== undefined && typeof session !== "string") throw new TypeError(`the ${event} event's session_id is ${typeof session}; pass it as text`)
+  const checked = { ...payload, hook_event_name: event, cwd }
+  assert(checked.hook_event_name === event && checked.cwd === cwd, `checked event ${JSON.stringify(checked)} lost its name or cwd`)
+  assert(Object.keys(checked).length >= Object.keys(payload).length, `checked event dropped fields of ${JSON.stringify(payload)}`)
+  return checked
+}
+
+/**
+ * Runs overwatch's checker on one harness event and resolves to its JSON output. It always runs hooks/codex.py
+ * with the python3 on PATH, in the event's project directory: nothing a caller passes chooses what runs.
+ */
+export function runCheck(payload, timeout = TIMEOUT_MS) {
+  const event = checkedPayload(payload)
+  assert(Number.isFinite(timeout) && timeout > 0, `timeout ${timeout}ms must be a positive number; pass it in milliseconds`)
+  assert(HOOK.endsWith("codex.py"), `the checker is ${HOOK}, not hooks/codex.py; resolve it beside this file`)
 
   return new Promise((resolve, reject) => {
-    const child = spawn(command, [hook], {
-      cwd: payload.cwd,
+    const child = spawn("python3", [HOOK], {
+      cwd: event.cwd,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     })
-    let stdout = ""
-    let stderr = ""
+    const stdout = []
+    const stderr = []
     let settled = false
     const timer = setTimeout(() => {
       child.kill("SIGTERM")
-      finish(new Error(`overwatch check timed out after ${timeout}ms`))
+      finish(new Error(`overwatch check timed out after ${timeout}ms; raise the timeout or speed up the project's checks`))
     }, timeout)
 
     /** Settles the check once, with error or else value, and stops its timer. */
@@ -40,22 +63,23 @@ export function runCheck(payload, options = {}) {
 
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
-    child.stdout.on("data", chunk => { stdout += chunk })
-    child.stderr.on("data", chunk => { stderr += chunk })
+    child.stdout.on("data", chunk => stdout.push(chunk))
+    child.stderr.on("data", chunk => stderr.push(chunk))
     child.on("error", error => finish(error))
     child.stdin.on("error", error => finish(error))
     child.on("close", code => {
       if (code !== 0) {
-        finish(new Error(`overwatch checker exited with code ${code}: ${stderr.trim()}`))
+        finish(new Error(`overwatch checker exited with code ${code}: ${stderr.join("").trim()}; run hooks/codex.py with this event to see why`))
         return
       }
       try {
-        finish(undefined, stdout.trim() ? JSON.parse(stdout) : {})
+        const text = stdout.join("").trim()
+        finish(undefined, text ? JSON.parse(text) : {})
       } catch (error) {
-        finish(new Error(`overwatch checker returned invalid JSON: ${String(error)}`))
+        finish(new Error(`overwatch checker returned invalid JSON: ${String(error)}; run hooks/codex.py with this event to see its output`))
       }
     })
-    child.stdin.end(JSON.stringify(payload))
+    child.stdin.end(JSON.stringify(event))
   })
 }
 

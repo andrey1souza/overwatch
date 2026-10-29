@@ -1,3 +1,8 @@
+/**
+ * Tests of overwatch's OpenCode and pi integrations, each given a fake checker in place of hooks/codex.py.
+ *
+ * Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
+ */
 import assert from "node:assert/strict"
 import test from "node:test"
 
@@ -19,12 +24,15 @@ function output(message, failed = true) {
   return result
 }
 
-/** The hooks OpenCode 2's setup registers with checker, by surface and name. */
+/** The project directory every fixture event names; the fake checkers never read it. */
+const PROJECT = "/project"
+
+/** A copy of the hooks OpenCode 2's setup registers with checker, by surface and name. */
 async function v2Hooks(checker) {
   assert(typeof checker === "function", `checker is ${typeof checker}; pass a function from payload to output`)
   const hooks = {}
   const ctx = {
-    location: { directory: "/project" },
+    location: { directory: PROJECT },
     session: {
       hook: async (name, callback) => { hooks[`session:${name}`] = callback },
       prompt: async () => undefined,
@@ -34,8 +42,8 @@ async function v2Hooks(checker) {
   }
   await setupV2(ctx, checker)
   assert.deepEqual(Object.keys(hooks).sort(), ["session:context", "tool:execute.after", "tool:execute.before"])
-  assert(Object.values(hooks).every(hook => typeof hook === "function"), `setup registered ${Object.keys(hooks)} with a hook that is not a function`)
-  return hooks
+  assert(Object.values(hooks).every(hook => typeof hook === "function"), `setup registered ${Object.keys(hooks)} with a hook that is not a function; register functions`)
+  return { ...hooks }
 }
 
 test("the OpenCode package exposes V1 and V2 entrypoints", () => {
@@ -47,7 +55,7 @@ test("the OpenCode package exposes V1 and V2 entrypoints", () => {
 
 test("OpenCode V1 appends a failed check to an editing tool result", async () => {
   const hooks = createV1Hooks(
-    { directory: "/project", client: { tui: { showToast: async () => undefined } } },
+    { directory: PROJECT, client: { tui: { showToast: async () => undefined } } },
     async event => output(`failure after ${event.tool_name}`),
   )
   const result = { output: "edited file" }
@@ -62,7 +70,7 @@ test("OpenCode V2 checks edits and adds a cached failure to model context", asyn
   const hooks = {}
   const checks = []
   const ctx = {
-    location: { directory: "/project" },
+    location: { directory: PROJECT },
     session: {
       hook: async (name, callback) => { hooks[`session:${name}`] = callback },
       prompt: async () => undefined,
@@ -88,7 +96,7 @@ test("Pi appends failures and guards settlement until the check passes", async (
   registerPi(pi, async event => output(`failure at ${event.hook_event_name}`, failing))
   const statuses = []
   const ctx = {
-    cwd: "/project",
+    cwd: PROJECT,
     sessionManager: { getSessionId: () => "session-1" },
     ui: { setStatus: (_key, value) => statuses.push(value) },
   }
@@ -109,12 +117,17 @@ test("Pi appends failures and guards settlement until the check passes", async (
   assert.equal(await handlers.agent_before_settle(settling, ctx), undefined)
 })
 
-/** The checker's output for a project whose 29 warnings protect only the publish tool while failing. */
+/**
+ * The fake checker's output for a project whose 29 warnings protect only the publish tool while failing. The
+ * integrations under test build every event, so a field of another type is a bug in them, reported as such.
+ */
 function protectionOutput(event, failing) {
-  assert(event.hook_event_name === "PreToolUse", `protection asked of ${event.hook_event_name}; only PreToolUse protects a tool`)
+  if (event?.hook_event_name !== "PreToolUse") throw new TypeError(`protection asked of ${event?.hook_event_name}; only send PreToolUse to protect a tool`)
+  if (typeof event.tool_name !== "string") throw new TypeError(`PreToolUse names tool ${String(event.tool_name)}; set tool_name`)
   if (!failing || event.tool_name !== "publish") return {}
   const denial = { hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "29 warnings" } }
   assert(event.tool_name === "publish" && failing, `denied ${event.tool_name} while failing=${failing}; deny only publish while failing`)
+  assert(denial.hookSpecificOutput.permissionDecision === "deny", `denial ${JSON.stringify(denial)} does not deny; set permissionDecision`)
   return denial
 }
 
@@ -123,7 +136,7 @@ test("Pi permits repair tools and blocks a protected tool before it runs", async
   const pi = { on: (name, handler) => { handlers[name] = handler } }
   let failing = true
   registerPi(pi, async event => protectionOutput(event, failing))
-  const ctx = { cwd: "/project", sessionManager: { getSessionId: () => "s1" } }
+  const ctx = { cwd: PROJECT, sessionManager: { getSessionId: () => "s1" } }
   for (const toolName of ["read", "edit", "bash"]) {
     assert.equal(await handlers.tool_call({ toolName, input: { command: "rg --files" } }, ctx), undefined)
   }
@@ -134,7 +147,7 @@ test("Pi permits repair tools and blocks a protected tool before it runs", async
 
 test("OpenCode V1 protects only configured actions in its before-tool hook", async () => {
   let failing = true
-  const hooks = createV1Hooks({ directory: "/project" }, async event => protectionOutput(event, failing))
+  const hooks = createV1Hooks({ directory: PROJECT }, async event => protectionOutput(event, failing))
   await hooks["tool.execute.before"]({ tool: "bash", sessionID: "s1" }, { args: { command: "cat example.py" } })
   await assert.rejects(hooks["tool.execute.before"]({ tool: "publish", sessionID: "s1" }, { args: {} }), /29 warnings/)
   failing = false

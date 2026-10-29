@@ -1,16 +1,31 @@
+/**
+ * Overwatch for OpenCode, both plugin APIs. OpenCode 1 calls createV1Hooks, or OverwatchPlugin by name, for a table
+ * of hooks; OpenCode 2 calls setupV2 to register them. Either way each tool call, edit, prompt and idle session is
+ * sent to overwatch's shared checker, a protected tool is refused while relevant checks fail, and a refused finish
+ * is shown as a warning or queued as the next prompt. The events come from the OpenCode process this plugin runs
+ * in, which loaded it, so there is no other sender to check.
+ *
+ * Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
+ */
 import assert from "node:assert/strict"
 import { contextOf, deniedAction, serialChecker } from "./check.js"
 
 const EDITING_TOOLS = new Set(["apply_patch", "bash", "edit", "shell", "write"])
 
-/** The checker's hook event for event in cwd's session sessionID. */
+/**
+ * The checker's hook event for event in cwd's session sessionID: the fields every event the checker answers
+ * carries. Each hook below builds its event from this.
+ */
 function payload(event, cwd, sessionID) {
   assert(typeof event === "string" && event !== "", `payload for event ${event}; name the hook event`)
   assert(typeof cwd === "string" && cwd !== "", `payload for ${event} has cwd ${cwd}; pass OpenCode's directory`)
   return { hook_event_name: event, session_id: sessionID, cwd }
 }
 
-/** The session an OpenCode event belongs to, wherever that version puts it. */
+/**
+ * The session an OpenCode event belongs to. OpenCode's event shape differs between versions, so this reads its
+ * published fields in turn: sessionID, then properties.sessionID, then properties.info.id.
+ */
 function sessionIDOf(event) {
   assert(event !== null && typeof event === "object", `OpenCode gave event ${String(event)}; pass the event object`)
   const properties = event.properties
@@ -28,10 +43,17 @@ function warningText(output) {
   return text
 }
 
+/**
+ * OpenCode 1's hooks for the project in directory: before a tool runs, refuse it when the checker denies it; after
+ * an editing tool, add what the checker reports to the tool's output; when a session starts or goes idle, warn with
+ * the checker's status or refusal through client's toast, once for each event OpenCode sends.
+ */
 export function createV1Hooks({ directory, client }, checker = serialChecker()) {
   assert(typeof directory === "string" && directory !== "", `OpenCode gave directory ${directory}; the hooks need the project's directory`)
   assert(typeof checker === "function", `checker is ${typeof checker}; pass a function from payload to output`)
   const check = checker
+  // Shows message as a warning toast. A toast that cannot be shown is logged, as OpenCode's own plugins do, since
+  // failing the hook would stop the agent for a notice it can do without.
   const warn = async message => {
     assert(message === undefined || typeof message === "string", `warning is ${typeof message}; pass text`)
     assert(!message || message.trim() !== "", `warning ${JSON.stringify(message)} is only whitespace; pass the checker's reason or status`)
@@ -76,6 +98,11 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
   }
 }
 
+/**
+ * OpenCode 2's setup for the project in ctx.location: registers the before and after tool hooks and the session
+ * context hook, and follows idle sessions on ctx.event to queue the checker's refusal as the session's next prompt.
+ * Resolves to a function that stops following.
+ */
 export async function setupV2(ctx, checker = serialChecker()) {
   assert(typeof checker === "function", `checker is ${typeof checker}; pass a function from payload to output`)
   const check = checker
