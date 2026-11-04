@@ -75,8 +75,10 @@ def step_text(step: dsl.Step) -> str:
     assert step.text.strip(), f"a {step.keyword} step has blank text; describe it in the catalog"
     if step.action is None:
         return step.text
-    path = Path(inspect.getsourcefile(step.action) or "")
-    text = f"[{step.text}]({source_link(path, inspect.getsourcelines(step.action)[1])})"
+    action = getattr(step.action, "__partialmethod__", getattr(step.action, "_partialmethod", None))
+    action = action.func if action is not None else step.action
+    path = Path(inspect.getsourcefile(action) or "")
+    text = f"[{step.text}]({source_link(path, inspect.getsourcelines(action)[1])})"
     assert text.startswith(f"[{step.text}]("), f"{step.keyword} step renders as {text!r}, which loses its text"
     return text
 

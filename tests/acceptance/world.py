@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+from functools import partialmethod
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class AcceptanceWorld(unittest.TestCase):
     def setUp(self) -> None:
+        """An isolated git project with one Python file, a gate protecting git push and Publish, and a passing fake zanity."""
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.fixture_root = Path(temporary.name)
@@ -32,28 +35,37 @@ class AcceptanceWorld(unittest.TestCase):
         script.write_text(f"#!/bin/sh\ncat '{self.result}'\n")
         script.chmod(0o755)
         self.configure()
+        assert (self.project / ".git").is_dir(), f"git init made no repository in {self.project}"
+        assert os.access(script, os.X_OK), f"the fake zanity {script} is not executable"
 
     def fixture_read(self, path: Path) -> str:
         """Only read files owned by this test's automatically cleaned fixture."""
         resolved = path.resolve()
-        resolved.relative_to(self.fixture_root.resolve())
-        return resolved.read_text()
+        assert resolved.is_relative_to(self.fixture_root.resolve()), f"{resolved} is outside the fixture {self.fixture_root}"
+        text = resolved.read_text()
+        assert len(text.encode()) == resolved.stat().st_size, f"{resolved} changed while it was read"
+        return text
 
     def fixture_write(self, path: Path, text: str) -> None:
         """Only change files owned by this test's automatically cleaned fixture."""
         resolved = path.resolve()
-        resolved.relative_to(self.fixture_root.resolve())
+        assert resolved.is_relative_to(self.fixture_root.resolve()), f"{resolved} is outside the fixture {self.fixture_root}"
         resolved.write_text(text)
+        assert resolved.read_text() == text, f"{resolved} reads back differently from what was written"
 
     def configure(self, **gate: object) -> None:
+        """Writes the project's gate: git push and Publish guarded by zanity, with gate's fields over those."""
         protected = [
             {"tool": "Bash", "command": r"\bgit\s+push\b", "checks": ["zanity"]},
             {"tool": "Publish", "checks": ["zanity"]},
         ]
         config = {"gate": {"protected_actions": protected, **gate}}
+        assert set(gate) <= {"inherited", "protected_actions"}, f"gate fields {set(gate)} are not ones overwatch reads"
         (self.project / ".overwatch.json").write_text(json.dumps(config))
+        assert json.loads((self.project / ".overwatch.json").read_text()) == config, f"{self.project}/.overwatch.json does not hold {config}"
 
     def hook(self, event: str, **fields: object) -> dict[str, object]:
+        """Sends one hook event to the real command hook and returns its JSON answer."""
         payload = {"session_id": "acceptance", "cwd": str(self.project),
                    "hook_event_name": event, **fields}
         result = subprocess.run(
@@ -62,14 +74,21 @@ class AcceptanceWorld(unittest.TestCase):
             env={**os.environ, "PATH": f"{self.bin}:/usr/bin:/bin", "PLUGIN_DATA": str(self.data)},
             timeout=5,
         )
-        return json.loads(result.stdout)
+        output = json.loads(result.stdout)
+        assert type(output) is dict, f"the hook answered {event} with {result.stdout[:80]}, not a JSON object"
+        assert not result.stderr, f"the hook wrote to stderr for {event}: {result.stderr[-400:]}"
+        return output
 
     def new_warnings(self) -> None:
-        self.hook("SessionStart")
+        """The session starts clean, then an edit brings 29 warnings."""
+        started = self.hook("SessionStart")
         self.result.write_text("zanity: 0 errors and 29 warnings in 1 of 1 files\n")
-        self.hook("PostToolUse", tool_name="Edit")
+        edited = self.hook("PostToolUse", tool_name="Edit")
+        assert "decision" not in started, f"a clean session start was refused: {started}"
+        assert "29 warnings" in json.dumps(edited), f"the edit that brought 29 warnings was not reported: {edited}"
 
     def inspect_and_repair(self) -> None:
+        """Inspects the project with every read-only and repair tool, then edits the source."""
         source = str(self.source)
         operations = [
             ("Glob", {"pattern": "**/*"}), ("Grep", {"pattern": "value"}),
@@ -83,85 +102,421 @@ class AcceptanceWorld(unittest.TestCase):
         self.listing = [path.name for path in self.project.iterdir()]
         self.before_edit = self.fixture_read(self.source)
         self.fixture_write(self.source, "value = 2\n")
+        assert len(self.responses) == len(operations) == 10, f"{len(self.responses)} answers for {len(operations)} operations"
+        assert self.fixture_read(self.source) != self.before_edit, f"the edit left {self.source} as {self.before_edit!r}"
 
     def repair_operations_allowed(self) -> None:
-        self.assertEqual(self.responses, [{}] * 10)
-        self.assertIn("example.py", self.listing)
-        self.assertEqual(self.before_edit, "value = 1\n")
-        self.assertEqual(self.fixture_read(self.source), "value = 2\n")
+        """Every inspection and repair went through, and the edit landed."""
+        assert self.responses == [{}] * 10, f"inspection or repair was refused: {self.responses}"
+        assert "example.py" in self.listing, f"listing {self.listing} does not show example.py"
+        assert self.before_edit == "value = 1\n", f"the source read {self.before_edit!r} before the edit"
+        assert self.fixture_read(self.source) == "value = 2\n", f"the source reads {self.fixture_read(self.source)!r} after the edit"
 
     def attempt_protected_actions(self) -> None:
+        """Tries git push and Publish twice each."""
         attempts = [("Bash", {"command": "git push origin main"}), ("Publish", {})] * 2
         self.responses = [self.hook("PreToolUse", tool_name=tool, tool_input=arguments)
                           for tool, arguments in attempts]
+        assert len(self.responses) == 4, f"{len(self.responses)} answers for 4 protected attempts"
+        assert all(type(output) is dict for output in self.responses), f"answers {self.responses} are not all objects"
 
     def protected_actions_denied(self) -> None:
+        """Every protected attempt was denied, naming the 29 warnings."""
+        assert self.responses, "no protected attempts were made; run attempt_protected_actions first"
         for output in self.responses:
             decision = output.get("hookSpecificOutput", {})
-            self.assertEqual(decision.get("permissionDecision"), "deny")
-            self.assertIn("29 warnings", decision.get("permissionDecisionReason", ""))
+            assert decision.get("permissionDecision") == "deny", f"a protected attempt was not denied: {output}"
+            assert "29 warnings" in decision.get("permissionDecisionReason", ""), f"the denial does not name the 29 warnings: {output}"
 
     def attempt_completion(self) -> None:
+        """Tries to stop three times, once as a continuation."""
         self.responses = [self.hook("Stop"), self.hook("Stop", stop_hook_active=True), self.hook("Stop")]
+        assert len(self.responses) == 3, f"{len(self.responses)} answers for 3 Stop attempts"
+        assert all(type(output) is dict for output in self.responses), f"answers {self.responses} are not all objects"
 
     def completion_denied(self) -> None:
-        self.assertEqual([output.get("decision") for output in self.responses], ["block"] * 3)
+        """Each Stop attempt was refused."""
+        decisions = [output.get("decision") for output in self.responses]
+        assert len(decisions) == 3, f"{len(decisions)} Stop answers; run attempt_completion first"
+        assert decisions == ["block"] * 3, f"Stop attempts were answered {decisions}, not all refused"
 
     def report_success(self) -> None:
+        """zanity passes again and the agent's check run reports it."""
         self.fixture_write(self.result, "zanity: checked 1 file, no issues found.\n")
-        self.hook("PostToolUse", tool_name="Bash", tool_input={"command": "zanity check ."})
+        output = self.hook("PostToolUse", tool_name="Bash", tool_input={"command": "zanity check ."})
+        assert "decision" not in output, f"a passing check run was refused: {output}"
+        assert "29 warnings" not in json.dumps(output), f"a passing check run still reports the warnings: {output}"
 
     def gates_cleared(self) -> None:
-        self.assertNotIn("decision", self.hook("Stop"))
-        self.assertEqual(self.hook("PreToolUse", tool_name="Publish", tool_input={}), {})
+        """Stop and Publish both go through once zanity passes."""
+        stopped, published = self.hook("Stop"), self.hook("PreToolUse", tool_name="Publish", tool_input={})
+        assert "decision" not in stopped, f"Stop was refused after zanity passed: {stopped}"
+        assert published == {}, f"Publish was refused after zanity passed: {published}"
 
     def inherited_warnings(self) -> None:
+        """The session starts with 29 warnings already there."""
         self.fixture_write(self.result, "zanity: 0 errors and 29 warnings in 1 of 1 files\n")
-        self.hook("SessionStart")
+        started = self.hook("SessionStart")
+        assert "decision" not in started, f"the session start was refused: {started}"
+        assert "inherited backlog" in json.dumps(started), f"the session start did not report the inherited backlog: {started}"
 
     def strict_inherited_policy(self) -> None:
+        """The project's gate blocks on inherited findings too."""
         self.configure(inherited="block")
+        gate = json.loads(self.fixture_read(self.project / ".overwatch.json"))["gate"]
+        assert gate["inherited"] == "block", f"the gate is {gate}, not blocking inherited findings"
+        assert len(gate["protected_actions"]) == 2, f"the strict gate lost its protected actions: {gate}"
 
     def inherited_findings_guarded(self) -> None:
-        self.assertEqual(self.stop_response.get("decision"), "block")
-        self.assertEqual(self.publish_response.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
-        self.assertEqual(self.read_response, {})
+        """Inherited findings refuse Stop and Publish but not Read."""
+        assert self.stop_response.get("decision") == "block", f"Stop went through on inherited findings: {self.stop_response}"
+        assert self.publish_response.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", f"Publish went through on inherited findings: {self.publish_response}"
+        assert self.read_response == {}, f"Read was refused on inherited findings: {self.read_response}"
 
     def attempt_completion_and_publication(self) -> None:
+        """Tries to stop, to publish and to read."""
         self.stop_response = self.hook("Stop")
         self.publish_response = self.hook("PreToolUse", tool_name="Publish", tool_input={})
         self.read_response = self.hook("PreToolUse", tool_name="Read", tool_input={})
+        assert type(self.stop_response) is dict, f"Stop was answered {self.stop_response}"
+        assert self.read_response == {} or "hookSpecificOutput" in self.read_response, f"Read was answered {self.read_response}"
 
     def inherited_findings_allowed(self) -> None:
-        self.assertNotIn("decision", self.stop_response)
-        self.assertEqual(self.publish_response, {})
+        """Inherited findings leave Stop and Publish open."""
+        assert "decision" not in self.stop_response, f"Stop was refused on inherited findings: {self.stop_response}"
+        assert self.publish_response == {}, f"Publish was refused on inherited findings: {self.publish_response}"
 
     def warnings_increase(self) -> None:
+        """An edit takes the warnings from 29 to 30."""
         self.fixture_write(self.result, "zanity: 0 errors and 30 warnings in 1 of 1 files\n")
-        self.hook("PostToolUse", tool_name="Edit")
+        output = self.hook("PostToolUse", tool_name="Edit")
+        assert "decision" not in output, f"the edit itself was refused: {output}"
+        assert "30 warnings" in json.dumps(output), f"the edit that added a warning was not reported: {output}"
 
     def new_findings_guarded(self) -> None:
-        self.assertEqual(self.hook("Stop").get("decision"), "block")
+        """Stop is refused once findings grow."""
+        stopped = self.hook("Stop")
+        assert stopped.get("decision") == "block", f"Stop went through with new findings: {stopped}"
+        assert "30 warnings" in stopped.get("reason", ""), f"the refusal does not name the 30 warnings: {stopped}"
 
     def passing_go_required(self) -> None:
+        """Publish is guarded by a passing Go project instead of zanity."""
         self.configure(protected_actions=[{"tool": "Publish", "checks": ["go"]}])
         self.fixture_write(self.project / "go.mod", "module example.com/passing\n")
         go = self.bin / "go"
         self.fixture_write(go, "#!/bin/sh\necho 'ok example.com/passing 0.1s'\n")
         go.chmod(0o755)
+        assert os.access(go, os.X_OK), f"the fake go {go} is not executable"
+        assert (self.project / "go.mod").is_file(), f"{self.project} has no go.mod to mark it a Go project"
 
     def publication_allowed_completion_guarded(self) -> None:
-        self.assertEqual(self.publish_response, {})
-        self.assertEqual(self.stop_response.get("decision"), "block")
+        """Publish goes through on passing Go while zanity's warnings still refuse Stop."""
+        assert self.publish_response == {}, f"Publish was refused with Go passing: {self.publish_response}"
+        assert self.stop_response.get("decision") == "block", f"Stop went through with zanity failing: {self.stop_response}"
 
     def checker_cannot_run(self) -> None:
+        """zanity's fake now exits 97 before printing anything."""
         self.fixture_write(self.result, "zanity: checked 1 file, no issues found.\n")
         self.fixture_write(self.bin / "zanity", "#!/bin/sh\nexit 97\n")
+        assert os.access(self.bin / "zanity", os.X_OK), f"the fake zanity {self.bin / 'zanity'} is no longer executable"
+        assert "exit 97" in self.fixture_read(self.bin / "zanity"), f"the fake zanity in {self.bin} still runs its checks"
 
     def list_files(self) -> None:
+        """Lists the project's files with rg."""
         self.response = self.hook("PreToolUse", tool_name="Bash", tool_input={"command": "rg --files"})
+        assert type(self.response) is dict, f"listing files was answered {self.response}"
+        assert self.response.get("hookSpecificOutput", {}).get("permissionDecision") != "deny", f"listing files was denied: {self.response}"
 
     def inspection_did_not_run_checks(self) -> None:
-        self.assertEqual(self.response, {})
+        """Listing files left the saved report as it was, without rerunning zanity."""
+        assert self.response == {}, f"listing files was answered {self.response}"
         state = json.loads(self.fixture_read(next(self.data.glob("*.json"))))["state"]
-        self.assertEqual(state["reports"][0]["summary"], "zanity: 0 errors and 29 warnings in 1 of 1 files")
+        assert state["reports"][0]["summary"] == "zanity: 0 errors and 29 warnings in 1 of 1 files", f"the saved report changed to {state['reports'][0]['summary']}"
+
+    def claude_new_failure(self) -> None:
+        """Prepare a real Claude hook chain with a passing baseline followed by warnings."""
+        assert not hasattr(self, "claude_steps"), f"Start in a fresh acceptance world; existing transcript: {getattr(self, 'claude_steps', None)!r}"
+        assert (ROOT / "tests" / "fixtures" / "gating.ts").is_file(), "Claude scenarios require the shared watcher fixture"
+        self.claude_phase = "ready"
+        self.claude_steps = [
+            "await $.session.start(start)",
+            "await clock.advance(1500)",
+            "await $.turn.start({ text: 'finish', turnId: 't1' })",
+            "prompts.length = 0",
+        ]
+
+    def prepare_claude_steps(self, *, expected_phase: str, phase: str, steps: tuple[str, ...]) -> None:
+        """Compose an action only after its required scenario phase has been prepared."""
+        assert self.claude_phase == expected_phase, f"Expected {expected_phase}, got {self.claude_phase}"
+        assert self.claude_steps and steps, "Prepare the watcher and supply executable action steps"
+        self.claude_phase = phase
+        self.claude_steps.extend(steps)
+
+    def verify_claude(self, *, phase: str, expectations: tuple[str, ...]) -> None:
+        """Run the scenario transcript and its observable outcome assertions once."""
+        assert self.claude_phase == phase, f"Expected {phase}, got {self.claude_phase}"
+        assert not (self.fixture_root / "claude-plugin").exists(), "Verify each transcript once"
+        self.claude_steps.extend(expectations)
+        self.run_claude_scenario()
+
+    claude_empty_corrections = partialmethod(prepare_claude_steps, expected_phase='ready', phase='settled', steps=(
+        'await $.turn.complete(ended)',
+        'expect(prompts.length).toBe(1)',
+        'for (let i = 0; i < 3; i++) {',
+        'await $.turn.start({ text: prompts[0]!, turnId: `retry-${i}` })',
+        'await $.turn.complete({ ...ended, turnId: `retry-${i}` })',
+        '}',
+    ))
+
+    claude_loop_stops = partialmethod(verify_claude, phase='settled', expectations=(
+        'expect(prompts.length).toBe(1)',
+        "expect(calls).toEqual(['complete', 'complete', 'complete'])",
+        "try { await $.tool.call({ tool: 'Publish' }) } catch {}",
+        "expect(calls).toEqual(['complete', 'complete', 'complete'])",
+    ))
+
+    def claude_work_resumes(self) -> None:
+        """After an empty correction settles, start a new turn and inspect the project."""
+        assert self.claude_phase == "ready", "Resume work only after preparing a failing turn"
+        self.claude_empty_corrections()
+        assert self.claude_phase == "settled", "Work must resume after the empty correction settles"
+        self.claude_phase = "resumed"
+        self.claude_steps.extend([
+            "await $.turn.start({ text: 'investigate', turnId: 'investigate' })",
+            "await $.tool.call({ tool: 'Read', file_path: '/repo/example.py' })",
+            "await $.turn.complete({ ...ended, turnId: 'investigate' })",
+        ])
+
+    claude_correction_resumes = partialmethod(verify_claude, phase='resumed', expectations=(
+        "expect(calls).toEqual(['complete', 'complete', 'complete', 'Read'])",
+        'expect(prompts.length).toBe(2)',
+        "expect(prompts[1]).toContain('29 warnings')",
+    ))
+
+    claude_abort = partialmethod(prepare_claude_steps, expected_phase='ready', phase='aborted', steps=(
+        "await $.turn.complete({ ...ended, reason: 'aborted', isAborted: true })",
+    ))
+
+    claude_abort_settles = partialmethod(verify_claude, phase='aborted', expectations=(
+        'expect(prompts).toEqual([])',
+        "expect(calls).toEqual(['complete'])",
+    ))
+
+    def claude_denied_tools(self) -> None:
+        """A rejected publication attempt does not count as completed work."""
+        assert self.claude_phase == "ready", "Prepare the failing turn before testing denied tools"
+        self.claude_empty_corrections()
+        assert self.claude_phase == "settled", "First let the empty correction settle"
+        self.claude_steps.extend([
+            "await $.turn.start({ text: 'publish', turnId: 'publish' })",
+            "for (let i = 0; i < 3; i++) {",
+            "try { await $.tool.call({ tool: 'Publish' }) } catch {}",
+            "await $.turn.complete({ ...ended, turnId: 'publish' })",
+            "}",
+        ])
+
+    claude_denials_do_not_restart = partialmethod(verify_claude, phase='settled', expectations=(
+        'expect(prompts.length).toBe(1)',
+        "expect(calls).toEqual(Array(6).fill('complete'))",
+    ))
+
+    def claude_findings_change(self) -> None:
+        """New findings arrive after an unchanged correction has settled."""
+        assert self.claude_phase == "ready", "Prepare the watcher before changing findings"
+        self.claude_empty_corrections()
+        assert self.claude_phase == "settled", "Exercise the retry limit before reporting new findings"
+        self.claude_phase = "changed"
+        self.claude_steps.extend([
+            "await $.turn.start({ text: 'review changed findings', turnId: 'changed' })",
+            "setReport('zanity: 0 errors and 30 warnings in 1 of 1 files\\n')",
+            "await clock.advance(1000)",
+            "await $.turn.complete({ ...ended, turnId: 'changed' })",
+            "await $.turn.start({ text: prompts[1]!, turnId: 'changed-retry' })",
+            "await $.turn.complete({ ...ended, turnId: 'changed-retry' })",
+        ])
+
+    claude_changed_findings_get_one_correction = partialmethod(verify_claude, phase='changed', expectations=(
+        'expect(prompts.length).toBe(2)',
+        "expect(prompts[1]).toContain('30 warnings')",
+        "expect(calls).toEqual(Array(4).fill('complete'))",
+    ))
+
+    claude_checks_recover = partialmethod(prepare_claude_steps, expected_phase='ready', phase='recovered', steps=(
+        'await $.turn.complete(ended)',
+        "await $.turn.start({ text: prompts[0]!, turnId: 'repair' })",
+        'repair()',
+        'await clock.advance(1000)',
+        "await $.tool.call({ tool: 'Publish' })",
+        "await $.turn.complete({ ...ended, turnId: 'repair' })",
+    ))
+
+    claude_recovery_releases_gate = partialmethod(verify_claude, phase='recovered', expectations=(
+        'expect(prompts.length).toBe(1)',
+        "expect(calls).toEqual(['Publish', 'complete'])",
+    ))
+
+    claude_abort_correction = partialmethod(prepare_claude_steps, expected_phase='ready', phase='correction-aborted', steps=(
+        'await $.turn.complete(ended)',
+        "await $.turn.start({ text: prompts[0]!, turnId: 'correction' })",
+        "await $.turn.complete({ ...ended, turnId: 'correction', isAborted: true })",
+        'await clock.advance(1000)',
+    ))
+
+    claude_interrupted_correction_stays_stopped = partialmethod(verify_claude, phase='correction-aborted', expectations=(
+        'expect(prompts.length).toBe(1)',
+        "expect(calls).toEqual(['complete'])",
+    ))
+
+    claude_api_error = partialmethod(prepare_claude_steps, expected_phase='ready', phase='api-error', steps=(
+        "await $.turn.complete({ ...ended, reason: 'error', isAborted: false })",
+        'await clock.advance(1000)',
+    ))
+
+    claude_api_error_settles = partialmethod(verify_claude, phase='api-error', expectations=(
+        'expect(prompts).toEqual([])',
+        "expect(calls).toEqual(['complete'])",
+    ))
+
+    claude_resume_after_interruption = partialmethod(prepare_claude_steps, expected_phase='ready', phase='user-resumed', steps=(
+        "await $.turn.complete({ ...ended, reason: 'aborted', isAborted: true })",
+        'await clock.advance(1000)',
+        'expect(prompts).toEqual([])',
+        "await $.turn.start({ text: 'continue investigation', turnId: 'user-resumed' })",
+        "await $.tool.call({ tool: 'Read', file_path: '/repo/example.py' })",
+        "await $.turn.complete({ ...ended, turnId: 'user-resumed' })",
+    ))
+
+    claude_user_resume_reports_again = partialmethod(verify_claude, phase='user-resumed', expectations=(
+        'expect(prompts.length).toBe(1)',
+        "expect(prompts[0]).toContain('29 warnings')",
+        "expect(calls).toEqual(['complete', 'Read'])",
+    ))
+
+    claude_repeat_failure_cycle = partialmethod(prepare_claude_steps, expected_phase='ready', phase='failed-again', steps=(
+        'await $.turn.complete(ended)',
+        "await $.turn.start({ text: prompts[0]!, turnId: 'repair-cycle' })",
+        'repair()',
+        'await clock.advance(1000)',
+        "await $.turn.complete({ ...ended, turnId: 'repair-cycle' })",
+        "expect(calls).toEqual(['complete'])",
+        "await $.turn.start({ text: 'review next change', turnId: 'failed-again' })",
+        "setReport('zanity: 0 errors and 29 warnings in 1 of 1 files\\n')",
+        'await clock.advance(1000)',
+        "await $.turn.complete({ ...ended, turnId: 'failed-again' })",
+        "await $.turn.start({ text: prompts[1]!, turnId: 'retry-again' })",
+        "await $.turn.complete({ ...ended, turnId: 'retry-again' })",
+    ))
+
+    claude_repeat_failure_is_fresh = partialmethod(verify_claude, phase='failed-again', expectations=(
+        'expect(prompts.length).toBe(2)',
+        "expect(prompts[1]).toContain('29 warnings')",
+        "expect(calls).toEqual(['complete', 'complete'])",
+    ))
+
+    def claude_two_watchers(self) -> None:
+        """Use two independent watcher outputs and retain the configured Zanity publication scope."""
+        assert not hasattr(self, 'claude_steps'), f"Configure both watchers before preparing transcript {getattr(self, 'claude_steps', None)!r}"
+        self.claude_with_zig = True
+        self.claude_new_failure()
+        assert self.claude_phase == 'ready', "Both watchers must start before exercising mixed recovery"
+
+    claude_mixed_recovery = partialmethod(prepare_claude_steps, expected_phase='ready', phase='mixed-recovery', steps=(
+        'await $.turn.complete(ended)',
+        "expect(prompts[0]).toContain('zig')",
+        "expect(prompts[0]).toContain('zanity')",
+        "await $.turn.start({ text: 'repair zanity', turnId: 'partial-repair' })",
+        'repair()',
+        'await clock.advance(1000)',
+        "await $.tool.call({ tool: 'Publish' })",
+        "await $.turn.complete({ ...ended, turnId: 'partial-repair' })",
+        'expect(prompts.length).toBe(2)',
+        "expect(prompts[1]).toContain('zig')",
+        "expect(prompts[1]).not.toContain('zanity')",
+        "expect(calls).toEqual(['Publish'])",
+        "await $.turn.start({ text: 'repair zig', turnId: 'all-repaired' })",
+        "setZigReport('Build Summary: 3/3 steps succeeded; 1/1 tests passed\\n')",
+        'await clock.advance(1000)',
+        "await $.turn.complete({ ...ended, turnId: 'all-repaired' })",
+    ))
+
+    claude_mixed_gates_follow_reports = partialmethod(verify_claude, phase='mixed-recovery', expectations=(
+        'expect(prompts.length).toBe(2)',
+        "expect(calls).toEqual(['Publish', 'complete'])",
+    ))
+
+    claude_restart_session = partialmethod(prepare_claude_steps, expected_phase='ready', phase='restarted', steps=(
+        'await $.turn.complete(ended)',
+        "await $.turn.start({ text: prompts[0]!, turnId: 'old-correction' })",
+        "await $.turn.complete({ ...ended, turnId: 'old-correction', reason: 'aborted', isAborted: true })",
+        'expect(prompts.length).toBe(1)',
+        '// fresh hook instance after restart',
+        'await $.session.start(start)',
+        'await clock.advance(1500)',
+        'await clock.advance(1000)',
+        'expect(prompts.length).toBe(1)',
+        "await $.turn.start({ text: prompts[0]!, turnId: 'new-session' })",
+        "await $.turn.complete({ ...ended, turnId: 'new-session' })",
+    ))
+
+    claude_restarted_session_corrects = partialmethod(verify_claude, phase='restarted', expectations=(
+        'expect(prompts.length).toBe(2)',
+        "expect(prompts[1]).toContain('29 warnings')",
+        'expect(calls).toEqual([])',
+    ))
+
+    claude_resume_session = partialmethod(prepare_claude_steps, expected_phase='ready', phase='session-resumed', steps=(
+        'await $.turn.complete(ended)',
+        "await $.turn.start({ text: prompts[0]!, turnId: 'old-correction' })",
+        "await $.turn.complete({ ...ended, turnId: 'old-correction', reason: 'aborted', isAborted: true })",
+        "const resuming = $.session.end({ reason: 'resume', sessionId: 's1', resume: { id: 's1' } })",
+        'await clock.advance(1000)',
+        'await resuming',
+        'prompts.length = 0',
+        'calls.length = 0',
+        'await clock.advance(1500)',
+        'expect(prompts.length).toBe(1)',
+        "await $.turn.start({ text: prompts[0]!, turnId: 'resumed-session' })",
+        "await $.turn.complete({ ...ended, turnId: 'resumed-session' })",
+    ))
+
+    claude_resumed_session_corrects = partialmethod(verify_claude, phase='session-resumed', expectations=(
+        'expect(prompts.length).toBe(2)',
+        "expect(prompts[1]).toContain('29 warnings')",
+        'expect(calls).toEqual([])',
+    ))
+
+    def run_claude_scenario(self) -> None:
+        """Run the accumulated DSL steps against the plugin in an isolated Claude test directory."""
+        executable = shutil.which("claude")
+        assert executable is not None, "Claude Code is required to verify Claude acceptance scenarios"
+        plugin = self.fixture_root / "claude-plugin"
+        plugin.mkdir()
+        shutil.copytree(ROOT / "hooks", plugin / "hooks", ignore=shutil.ignore_patterns("__pycache__"))
+        (plugin / ".claude-plugin").mkdir()
+        shutil.copyfile(ROOT / ".claude-plugin" / "plugin.json", plugin / ".claude-plugin" / "plugin.json")
+        # The fixture keeps its place beside hooks/, so its imports of the hooks resolve as they do in the repository.
+        (plugin / "tests" / "fixtures").mkdir(parents=True)
+        shutil.copyfile(ROOT / "tests" / "fixtures" / "gating.ts", plugin / "tests" / "fixtures" / "gating.ts")
+        fixture = json.dumps("./tests/fixtures/gating")
+        bodies = "\n".join(self.claude_steps).split("// fresh hook instance after restart")
+        source = f'''
+import {{ expect, test }} from 'claude-code/testing'
+import {{ start, ended, gatingProject }} from {fixture}
+'''
+        for number, body in enumerate(bodies):
+            source += f'''
+test('Claude acceptance scenario {number + 1}', async ($, on) => {{
+  const {{ clock, calls, prompts, setReport, setZigReport, repair }} = gatingProject(on, {{ withZig: {str(getattr(self, 'claude_with_zig', False)).lower()} }})
+  try {{
+    {body}
+  }} finally {{
+    const ending = $.session.end({{ reason: 'prompt_input_exit', sessionId: 's1', resume: {{ id: 's1' }} }})
+    await clock.advance(1000)
+    await ending
+  }}
+}})
+'''
+        (plugin / "scenario.test.ts").write_text(source)
+        result = subprocess.run([executable, "plugin", "test", str(plugin)],
+                                text=True, capture_output=True, timeout=30)
+        assert result.returncode == 0, result.stdout + result.stderr

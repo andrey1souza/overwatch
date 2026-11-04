@@ -4,6 +4,71 @@ from .world import AcceptanceWorld as World
 
 
 SCENARIOS = (
+    Scenario("Claude stops repeating corrections when no work occurs", "Claude retry limits", ("claude", "completion", "retry-loop"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("The correction turns repeatedly finish without using tools", World.claude_empty_corrections)
+    .then("Only one correction is requested and the turns settle while publication stays guarded", World.claude_loop_stops),
+
+    Scenario("Denied publication does not restart Claude corrections", "Claude retry limits", ("claude", "completion", "protected-actions"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("An empty correction settles and publication is repeatedly denied", World.claude_denied_tools)
+    .then("Publication never executes and no further correction is submitted", World.claude_denials_do_not_restart),
+
+    Scenario("Claude requests a fresh correction after work resumes", "Claude recovery and changed findings", ("claude", "completion", "repair"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("An empty correction settles and the agent resumes inspection in a new turn", World.claude_work_resumes)
+    .then("Inspection succeeds and the remaining warnings request another correction", World.claude_correction_resumes),
+
+    Scenario("Changed findings give Claude one fresh correction", "Claude recovery and changed findings", ("claude", "completion", "new-findings"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("An empty correction settles and the watcher reports additional warnings", World.claude_findings_change)
+    .then("The new warnings request one fresh correction and empty retries settle", World.claude_changed_findings_get_one_correction),
+
+    Scenario("Passing checks release a queued Claude correction", "Claude recovery and changed findings", ("claude", "completion", "recovery"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("The checks recover during the correction turn and the agent attempts publication", World.claude_checks_recover)
+    .then("Publication and completion succeed without another correction", World.claude_recovery_releases_gate),
+
+    Scenario("A recovered Claude failure can request correction again", "Claude recovery and changed findings", ("claude", "completion", "failure-cycle"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("The failure is corrected and the same warnings return after another change", World.claude_repeat_failure_cycle)
+    .then("The returning failure gets one fresh correction and empty retries settle", World.claude_repeat_failure_is_fresh),
+
+    Scenario("An interrupted Claude turn settles without a correction", "Claude interruption", ("claude", "completion", "interruption"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("The agent turn is interrupted", World.claude_abort)
+    .then("The turn settles without submitting a correction prompt", World.claude_abort_settles),
+
+    Scenario("An interrupted Claude correction stays stopped", "Claude interruption", ("claude", "completion", "interruption", "retry-loop"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("The correction turn is interrupted and the watcher repeats the same failure", World.claude_abort_correction)
+    .then("The interrupted turn settles without submitting another correction", World.claude_interrupted_correction_stays_stopped),
+
+    Scenario("Claude API-error completion does not queue a correction", "Claude interruption", ("claude", "completion", "api-error", "rate-limit"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("Claude completes with the runtime's API-error event and the watcher repeats its failure", World.claude_api_error)
+    .then("The unsuccessful turn settles without requesting another correction", World.claude_api_error_settles),
+
+    Scenario("A user turn restores Claude reporting after interruption", "Claude interruption", ("claude", "completion", "user-resume"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("The turn is interrupted and the user starts a new investigation turn", World.claude_resume_after_interruption)
+    .then("Inspection succeeds and the remaining failure requests a fresh correction", World.claude_user_resume_reports_again),
+
+    Scenario("Claude gates follow each watcher's recovery", "Claude multiple watchers", ("claude", "completion", "check-scope", "recovery"))
+    .given("Claude has failing Zig and Zanity watchers and publication requires only Zanity", World.claude_two_watchers)
+    .when("Zanity recovers before Zig and the agent attempts publication and completion", World.claude_mixed_recovery)
+    .then("Publication follows Zanity while completion waits for both watchers to recover", World.claude_mixed_gates_follow_reports),
+
+    Scenario("A restarted Claude session resets correction suppression", "Claude session lifecycle", ("claude", "session", "restart"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("A correction is interrupted and the session is ended and started again", World.claude_restart_session)
+    .then("The new session reports its new failure and requests a fresh correction", World.claude_restarted_session_corrects),
+
+    Scenario("A resumed Claude session resets correction suppression", "Claude session lifecycle", ("claude", "session", "resume"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("A correction is interrupted and Claude resumes the session", World.claude_resume_session)
+    .then("The resumed session reports its new failure and requests a fresh correction", World.claude_resumed_session_corrects),
+
     Scenario("Repair remains possible during failure", "Failure gates", ("repair", "warnings"))
     .given("A previously passing check now reports 29 warnings", World.new_warnings)
     .when("The agent lists, searches, reads, edits, and runs check commands", World.inspect_and_repair)

@@ -1,4 +1,5 @@
 import type { EngineInterface, FsEntry, Register, Timer } from 'claude-code'
+import { assert } from './assert'
 import { protectedChecks, type GatePolicy } from './gating'
 import {
   CHECKERS,
@@ -74,6 +75,8 @@ type State = {
   epoch: number
   isTurnRunning: boolean
   isPromptQueued: boolean
+  /** Last completion correction; only useful work or changed findings may request another pass. */
+  completionCorrection: string | undefined
   /** Whether the running turn has had its one message from overwatch. */
   isToldThisTurn: boolean
   /** The messages not yet sent, by their slot's key and kind. */
@@ -555,6 +558,10 @@ async function restart($: EngineInterface, { state, slot, watcher, ending }: Res
 /** Stops every watcher and forgets what the session found and told, so the next session starts afresh. */
 async function stop($: EngineInterface, state: State) {
   state.cwd = undefined
+  state.completionCorrection = undefined
+  state.isTurnRunning = false
+  state.isPromptQueued = false
+  state.isToldThisTurn = false
   state.epoch += 1
   state.flushing?.cancel()
   state.outbox.clear()
@@ -613,14 +620,24 @@ function guardedFailure(state: State, policy: GatePolicy, checks: readonly strin
 
 /** Completion hooks return text; queue a correction instead of returning a tool-only denial. */
 async function completionGuard($: EngineInterface, state: State): Promise<string | undefined> {
-  if (!state.slots.some(each => each.report?.isFailed)) return undefined
+  if (!state.slots.some(each => each.report?.isFailed)) {
+    state.completionCorrection = undefined
+    return undefined
+  }
   const reason = guardedFailure(state, await projectPolicy($, state))
-  if (reason === undefined) return undefined
+  if (reason === undefined) {
+    state.completionCorrection = undefined
+    return undefined
+  }
+  if (state.completionCorrection === reason) return undefined
+  assert(reason.startsWith('overwatch: '), `completion correction ${reason} does not say it is from overwatch`)
+  state.completionCorrection = reason
   state.isTurnRunning = false
   if (!state.isPromptQueued) {
     state.isPromptQueued = true
     await $.prompt.submit({ text: reason })
   }
+  assert(state.isPromptQueued, `the correction ${reason} was neither queued nor already waiting`)
   return reason
 }
 
@@ -629,6 +646,7 @@ const initialState = (): State => ({
   epoch: 0,
   isTurnRunning: false,
   isPromptQueued: false,
+  completionCorrection: undefined,
   isToldThisTurn: false,
   outbox: new Map(),
   flushing: undefined,
@@ -658,6 +676,7 @@ export const register: Register = on => {
       if (reason !== undefined) return { deny: reason }
     }
     const result = await next(e)
+    state.completionCorrection = undefined
     if (!EDITING_TOOLS.has(e.tool)) return result
     for (const each of state.slots) {
       each.isEdited = true
@@ -677,6 +696,13 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
+      // A cancelled or unsuccessful turn cannot carry out a correction pass.
+      if (e.isAborted || e.reason !== 'answer') {
+        state.isTurnRunning = false
+        // Hold automatic wakeups until the next turn starts, including queued watcher reports.
+        state.isPromptQueued = true
+        return next(e)
+      }
       const reason = await completionGuard($, state)
       if (reason !== undefined) return { text: reason }
       state.isTurnRunning = false
