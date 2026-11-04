@@ -282,6 +282,36 @@ test('an edit made while the suite reruns stops that run and starts another', as
   expect(prompts[0]).not.toContain('stale')
 })
 
+test('an edit made during the first full run is rechecked and its failures are not inherited', async ($, on) => {
+  const clock = mock.clock(on)
+  const spawned: string[][] = []
+  const prompts: string[] = []
+  const override = { name: 'cargo', baseline: ['cargo', 'test'], summary: '^test result: .*$', failed: 'FAILED' }
+  let output = 'test result: ok.\n'
+  on('fs.read', ($, e) => (e.path === '/repo/.overwatch.json' ? { value: JSON.stringify(override) } : { deny: 'no such file' }))
+  on('fs.exists', ($, e) => ({ value: e.path === '/repo/.git' }))
+  on('process.spawn', async function* ($, e) {
+    spawned.push([...e.argv])
+    if (spawned.length === 1) await clock.sleep(10_000)
+    yield { stream: 'stdout' as const, text: output }
+    return { value: { code: 0, signal: null } }
+  })
+  on('prompt.submit', ($, e) => {
+    prompts.push(e.text)
+    return { text: e.text }
+  })
+  on('tool.call', () => ({ result: 'ok' }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start(start)
+  await clock.advance(1000)
+  output = 'test result: FAILED. broken by the edit\n'
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/src/lib.rs', old_string: 'a', new_string: 'b' })
+  await clock.advance(30_000)
+  expect(spawned).toEqual([override.baseline, override.baseline])
+  expect(prompts.length).toBe(1)
+  expect(prompts[0]).toContain('broken by the edit')
+})
+
 test('an override with no command starts nothing in a project with no marker', async ($, on) => {
   const clock = mock.clock(on)
   const spawned: string[][] = []
