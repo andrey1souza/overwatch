@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Filter and page an Overwatch baseline inventory without rerunning checks."""
+"""Filter and page an Overwatch baseline inventory without rerunning checks.
+
+Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
+"""
 from __future__ import annotations
 
 import argparse
@@ -64,10 +67,12 @@ class Triage:
 
 
 def text_value(value: object, name: object, field: str) -> str:
-    """value as a non-empty, single-line string, or InventoryError naming the entry and field when it is not one."""
-    if not isinstance(value, str) or not value or any(character in value for character in CONTROL):
+    """value as a non-empty string of printable characters, so one line however it is split, or InventoryError naming
+    the entry and field when it is not one. Every control, format and line or paragraph separator character, Unicode's
+    as well as ASCII's, is unprintable."""
+    if not isinstance(value, str) or not value or not value.isprintable():
         raise InventoryError(f"inventory entry {name!r} has {field} {value!r}, not one line of text; rerun overwatch to rewrite the inventory")
-    assert value.strip(CONTROL_TEXT) == value, f"{field} {value!r} kept a control character; check CONTROL"
+    assert not any(character in value for character in CONTROL), f"{field} {value!r} kept a control character; check isprintable"
     assert value.splitlines() == [value], f"{field} {value!r} spans lines; check CONTROL covers line breaks"
     return value
 
@@ -116,10 +121,15 @@ def triage(checks: tuple[Check, ...], check: str = "", match: str = "") -> Triag
 
 
 def triage_page(result: Triage, offset: int, limit: int) -> Page:
-    """One page of a triage: the first limit groups, limit issues from offset, and the total that matched."""
+    """One page of a triage: limit issues from offset, the total that matched, and the first limit groups whatever
+    the offset, since the groups summarise the whole triage. An offset past the last issue is refused, as is a limit
+    outside 1 to MAX_LIMIT."""
     if offset < 0 or not 1 <= limit <= MAX_LIMIT:
         raise InventoryError(f"offset {offset} must be at least 0 and limit {limit} between 1 and {MAX_LIMIT}; pass --offset and --limit in range")
-    page = Page(result.checks[:limit], result.issues[offset:offset + limit], len(result.issues), offset, limit)
+    issues = len(result.issues)
+    if offset > 0 and offset >= issues:
+        raise InventoryError(f"offset {offset} is past the {issues} matching issues; pass an --offset below {issues}")
+    page = Page(result.checks[:limit], result.issues[offset:offset + limit], issues, offset, limit)
     assert len(page.issues) <= page.limit, f"page holds {len(page.issues)} issues over the limit {page.limit}; slice by limit"
     assert page.offset >= page.total or page.issues[0] is result.issues[page.offset], f"page starts at the wrong issue for offset {page.offset}"
     return page
