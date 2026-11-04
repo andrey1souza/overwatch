@@ -68,3 +68,22 @@ export const treeEntry = (name: string) => {
   assert((entry.kind === 'dir') === name.endsWith('/'), `tree entry ${name} read as a ${entry.kind}`)
   return entry
 }
+
+/** `go test` output with one failing test, which several tests read. */
+export const GO_FAILING = `--- FAIL: TestAdd (0.00s)
+    calc_test.go:3: Add(3, 7) = 10
+FAIL
+FAIL	example.com/calc	0.343s
+FAIL
+`
+
+/** `cargo test` output with one failing test, which several tests read. */
+export const CARGO_FAILING = `running 2 tests
+test tests::ok ... ok
+test tests::adds ... FAILED
+
+failures:
+    tests::adds
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+`
