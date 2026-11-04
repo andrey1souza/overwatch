@@ -102,8 +102,10 @@ type Restart = { state: State; slot: Slot; watcher: Watcher; ending: Ending }
 
 /** Sets this slot's part of the status line, which shows every running watcher's. */
 function setStatus($: EngineInterface, state: State, slot: Slot, text: string | undefined) {
+  assert(state.slots.includes(slot), `slot ${slot.key} is not one of the session's; push it to state.slots first`)
   slot.status = text
   const parts = state.slots.flatMap(({ status }) => (status === undefined ? [] : [status]))
+  assert(text === undefined || parts.includes(text), `status ${text} for ${slot.key} is missing from the line ${parts}`)
   $.ui.status(parts.length === 0 ? undefined : parts.join(' · '))
 }
 
@@ -121,6 +123,8 @@ async function send($: EngineInterface, state: State) {
   const reports = messages.flatMap(({ text, kind }) => (kind === 'environment' ? [] : [text]))
   const environment = messages.flatMap(({ text, kind }) => (kind === 'environment' ? [text] : []))
   const text = [...reports, ...(environment.length === 0 ? [] : [environmentMessage(environment)])].join('\n\n')
+  assert(reports.length + environment.length === messages.length, `sent ${reports.length + environment.length} of ${messages.length} waiting messages; send each`)
+  assert(text !== '', `${messages.length} waiting messages joined to nothing; each message needs text`)
   if (state.isTurnRunning) {
     state.isToldThisTurn = true
     await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
@@ -132,25 +136,32 @@ async function send($: EngineInterface, state: State) {
 
 /** Sends the waiting messages once the reports arriving with them are in. */
 function schedule($: EngineInterface, state: State) {
-  state.flushing?.cancel()
+  const previous = state.flushing
+  previous?.cancel()
   state.flushing = $.clock.after(QUIET_MS, () => void send($, state))
+  assert(state.flushing !== undefined, `the clock gave ${typeof state.flushing} for the flush; $.clock.after must return a timer`)
+  assert(state.flushing !== previous, `the flush timer ${typeof previous} was not replaced; schedule a new one each time`)
 }
 
 /** Holds a message for the agent in place of any of its kind this slot has waiting, unless the agent was already given it, by its `signature`. */
 function queue($: EngineInterface, { state, slot }: { state: State; slot: Slot }, signature: string, message: Message) {
+  assert(signature !== '', `message for ${slot.key} has signature ${JSON.stringify(signature)}; sign it by what it reports`)
   const key = `${slot.key}:${message.kind}`
   if (slot.told === signature && !state.outbox.has(key)) return
   slot.told = signature
   state.outbox.set(key, message)
+  assert(state.outbox.get(key) === message, `the ${message.kind} message for ${slot.key} is not waiting after queueing it`)
   schedule($, state)
 }
 
 /** Holds a watcher's environment error for the one summary of them, once for each. */
 function queueEnvironment($: EngineInterface, { state, slot, watcher }: Omit<Run, 'cwd'>, line: string) {
+  assert(line !== '' && !line.includes('\n'), `environment line ${JSON.stringify(line)} for ${slot.key} must be one line of text`)
   const key = `${slot.key}\n${line}`
   if (state.environment.has(key)) return
   state.environment.add(key)
   state.outbox.set(`${slot.key}:environment`, { text: environmentLine(watcher, line), isWaking: false, kind: 'environment' })
+  assert(state.outbox.get(`${slot.key}:environment`)?.isWaking === false, `${slot.key}'s environment error would wake the agent; it never should`)
   schedule($, state)
 }
 
@@ -158,7 +169,10 @@ function queueEnvironment($: EngineInterface, { state, slot, watcher }: Omit<Run
 async function writeLog($: EngineInterface, slot: Slot, text: string, suffix = ''): Promise<string | undefined> {
   const home = await $.env.get('HOME').catch(() => undefined)
   if (home === undefined || home === '') return undefined
-  const path = `${home}/.cache/overwatch/logs/${slot.key.replace(/[^\w.-]+/g, '-')}${suffix}.log`
+  const name = slot.key.replace(/[^\w.-]+/g, '-')
+  const path = `${home}/.cache/overwatch/logs/${name}${suffix}.log`
+  assert(name !== '' && !name.includes('/'), `log name ${name} for ${slot.key} must be one file name`)
+  assert(path.startsWith(`${home}/.cache/overwatch/logs/`), `log path ${path} for ${slot.key} is outside the logs directory`)
   return $.fs.write(path, text).then(
     () => path,
     () => undefined,
@@ -180,6 +194,8 @@ async function baselineInventory($: EngineInterface, run: Run, report: Report) {
   const text = 'overwatch: inherited backlog (' + detail + '). ' +
     'Inherited findings follow the configured failure policy. Triage inventory: ' + path +
     '. Filter or page it with hooks/triage.py; full output is linked there.'
+  assert(path === `${log}.json`, `inventory ${path} is not beside its log ${log}`)
+  assert(text.includes(path), `the backlog notice for ${slot.key} does not name its inventory ${path}`)
   state.outbox.set(slot.key + ':baseline', { text, isWaking: false, kind: 'baseline' })
   schedule($, state)
 }
@@ -197,8 +213,10 @@ const TIMING = /\d+(?:\.\d+)?m?s\b/g
  */
 async function deliver($: EngineInterface, run: Run, report: Report) {
   const { state, slot, watcher } = run
+  assert(slot.watcher === undefined || slot.watcher.marker === watcher.marker, `${watcher.name} reported into slot ${slot.key}, which runs ${slot.watcher?.name}`)
   slot.report = report
   setStatus($, state, slot, statusLine(watcher, report))
+  assert(slot.status === statusLine(watcher, report), `${slot.key}'s status was not set to ${watcher.name}'s report`)
   if (report.environment !== undefined) {
     queueEnvironment($, run, report.environment)
     return
@@ -232,6 +250,8 @@ async function deliver($: EngineInterface, run: Run, report: Report) {
 /** Runs a command to its end and reports what it printed, unless it was stopped for a newer run first. */
 async function runOnce($: EngineInterface, run: Run, argv: readonly string[], isStale = () => false) {
   const { state, slot, watcher, cwd } = run
+  assert(argv.length > 0, `${watcher.name} was asked to run an empty command; give it argv or baseline`)
+  assert(slot.kill === undefined, `${slot.key} starts ${commandLine(watcher, argv)} while another run is still killable; stop it first`)
   const child = $.process.spawn({ argv, cwd })
   slot.kill = () => child.return({ code: null, signal: null })
   let output = ''
@@ -262,6 +282,7 @@ async function runOnce($: EngineInterface, run: Run, argv: readonly string[], is
  * date, and starts another.
  */
 function rerunOnChange($: EngineInterface, run: Run, argv: readonly string[]) {
+  assert(argv.length > 0, `${run.watcher.name} reruns an empty command; give it a baseline`)
   let timer: Timer | undefined
   let isRunning = false
   let isPending = false
@@ -275,13 +296,16 @@ function rerunOnChange($: EngineInterface, run: Run, argv: readonly string[]) {
     isRunning = true
     isPending = false
     await runOnce($, run, argv, () => isPending)
+    assert(run.slot.kill === undefined, `${run.slot.key}'s run ended but is still killable; clear slot.kill when it ends`)
     isRunning = false
     if (isPending) await rerun()
+    assert(!isRunning || isPending, `${run.slot.key} is marked running after its last run ended`)
   }
   run.slot.changed = () => {
     timer?.cancel()
     timer = $.clock.after(QUIET_MS, () => void rerun())
   }
+  assert(run.slot.changed !== undefined, `${run.slot.key} has no change handler after rerunOnChange`)
 }
 
 /** How a watcher ended of itself, its process exited or never started, when, and what it printed after its last report. */
@@ -290,6 +314,7 @@ type Ending = { isStarted: boolean; startedAt: number; endedAt: number; output: 
 /** Watches until the watcher ends of itself, resolving how; a watcher with no command never ends. */
 async function watch($: EngineInterface, run: Run): Promise<Ending | undefined> {
   const { state, slot, watcher, cwd } = run
+  assert(slot.isWatching, `${slot.key} is asked to watch ${watcher.name} while not watching; set isWatching first`)
   if (watcher.baseline !== undefined && watcher.baseline.length > 0) {
     const text = `overwatch ${watcher.name}: running the full suite with ${commandLine(watcher, watcher.baseline)}`
     setStatus($, state, slot, text)
@@ -333,46 +358,64 @@ async function watch($: EngineInterface, run: Run): Promise<Ending | undefined> 
   }
   if (!slot.isWatching) return undefined
   const endedAt = await $.clock.now()
+  assert(endedAt >= startedAt, `${watcher.name} ended at ${endedAt}, before it started at ${startedAt}; read both from $.clock`)
   if (isStarted) await deliverExit($, run, output)
   return { isStarted, startedAt, endedAt, output }
 }
 
 /** Delivers the last report before showing that the watcher exited. */
 async function deliverExit($: EngineInterface, run: Run, output: string) {
+  assert(run.slot.kill === undefined, `${run.slot.key} exited but is still killable; clear slot.kill when it ends`)
   const report = readReport(run.watcher, output)
   if (report !== undefined) await deliver($, run, report)
+  assert(report === undefined || run.slot.report === report, `${run.watcher.name}'s last report was not delivered to ${run.slot.key}`)
   if (run.slot.isWatching) $.ui.toast(`overwatch: ${commandLine(run.watcher)} exited`)
 }
 
 /** Where `path` lands once its links are followed; the path itself when it cannot be resolved. */
 async function realPath($: EngineInterface, path: string): Promise<string> {
-  return $.fs
+  assert(path !== '', `realPath was given ${JSON.stringify(path)}; pass the directory to resolve`)
+  const resolved = await $.fs
     .stat(path, { resolve: true })
     .then(({ realPath }) => realPath ?? path)
     .catch(() => path)
+  assert(resolved !== '', `${path} resolved to an empty path; fall back to the path itself`)
+  return resolved
 }
 
 /** The real path of the git repository holding `dir`, the nearest directory with a `.git`; undefined outside one. */
 async function repositoryOf($: EngineInterface, dir: string): Promise<string | undefined> {
   let at = (await realPath($, dir)).replace(/\/$/, '')
-  while (true) {
-    if (await $.fs.exists(`${at}/.git`)) return at === '' ? '/' : at
+  // Each step drops the last part of the path, so this ends by the root at most.
+  while (!(await $.fs.exists(`${at}/.git`))) {
     if (at === '') return undefined
-    at = at.slice(0, at.lastIndexOf('/'))
+    const parent = at.slice(0, at.lastIndexOf('/'))
+    assert(parent.length < at.length, `the parent of ${at} is ${parent}; each step must climb one directory`)
+    at = parent
   }
+  const root = at === '' ? '/' : at
+  assert(root.startsWith('/') || !dir.startsWith('/'), `repository ${root} of ${dir} is not an absolute path`)
+  return root
 }
 
+/** The project's .overwatch.json in cwd, or no override when it has none or it is not JSON. */
 async function readOverride($: EngineInterface, cwd: string): Promise<Override> {
-  return $.fs
+  assert(cwd !== '' && !cwd.endsWith(`/${OVERRIDE_PATH}`), `readOverride was given ${cwd}; pass the project's directory`)
+  const override: Override = await $.fs
     .read(`${cwd}/${OVERRIDE_PATH}`)
     .then(text => JSON.parse(text) as Override)
     .catch(() => ({}))
+  assert(override !== null && typeof override === 'object', `${cwd}/${OVERRIDE_PATH} holds ${JSON.stringify(override)}, not an object; make it a JSON object`)
+  return override
 }
 
 /** Whether `marker`, a path, is in `dir`, whose own entries are `names`. */
 async function hasMarker($: EngineInterface, dir: string, names: ReadonlySet<string>, marker: string): Promise<boolean> {
+  assert(marker !== '' && !marker.startsWith('/'), `marker ${marker} must be a path relative to ${dir}`)
   const [first = '', ...rest] = marker.split('/')
-  return names.has(first) && (rest.length === 0 || $.fs.exists(`${dir}/${marker}`))
+  const has = names.has(first) && (rest.length === 0 || (await $.fs.exists(`${dir}/${marker}`)))
+  assert(!has || names.has(first), `${dir} has marker ${marker} without its first part ${first}`)
+  return has
 }
 
 /** A directory below the project's root, relative to it, and its entries' names. */
@@ -397,15 +440,19 @@ async function findSubprojects($: EngineInterface, cwd: string): Promise<Subproj
     }
     parents = level
   }
+  assert(new Set(found.map(({ dir }) => dir)).size === found.length, `subprojects of ${cwd} repeat a directory; list each parent once`)
+  assert(found.every(({ dir }) => dir.split('/').length <= SEARCH.depth), `subprojects of ${cwd} go past ${SEARCH.depth} levels; stop at SEARCH.depth`)
   return found
 }
 
 /** The first of a language's alternatives whose marker `has` finds and whose tool, if it needs one, is on PATH. */
 async function firstPresent($: EngineInterface, alternatives: readonly Watcher[], has: (marker: string) => Promise<boolean>) {
+  assert(new Set(alternatives.map(languageOf)).size <= 1, `alternatives ${alternatives.map(({ name }) => name)} span languages; pass one language's`)
   for (const watcher of alternatives) {
     if (!(await has(watcher.marker))) continue
     if (watcher.requires === undefined || (await isOnPath($, watcher.requires))) return watcher
   }
+  assert(alternatives.length > 0 || LANGUAGES.length === 0, `firstPresent was given ${alternatives.length} alternatives of ${LANGUAGES.length} languages; pass a language from LANGUAGES`)
   return undefined
 }
 
@@ -437,17 +484,22 @@ async function findWatchers($: EngineInterface, cwd: string, override: Override)
     }
   }
   const [first, ...rest] = found
+  assert(new Set(found.map(({ name }) => name)).size === found.length, `watchers ${found.map(({ name }) => name)} repeat a name; find each language once per directory`)
   if (first !== undefined) return [applyOverride(first, override), ...rest]
   const project = overrideWatcher(override)
+  assert(project === undefined || project.marker === OVERRIDE_PATH, `the override watcher ${project?.name} is not marked by ${OVERRIDE_PATH}`)
   return project === undefined ? [] : [project]
 }
 
 /** Whether `name` is an executable in a directory on PATH. */
 async function isOnPath($: EngineInterface, name: string): Promise<boolean> {
+  assert(name !== '' && !name.includes('/'), `isOnPath was given ${name}; pass an executable's name`)
   const path = (await $.env.get('PATH').catch(() => undefined)) ?? ''
-  for (const dir of path.split(':')) {
-    if (dir !== '' && (await $.fs.exists(`${dir}/${name}`).catch(() => false))) return true
+  const dirs = path.split(':').filter(dir => dir !== '')
+  for (const dir of dirs) {
+    if (await $.fs.exists(`${dir}/${name}`).catch(() => false)) return true
   }
+  assert(dirs.every(dir => !dir.includes(':')), `PATH ${path} split into ${dirs}; split it at colons`)
   return false
 }
 
@@ -457,7 +509,10 @@ async function findAll($: EngineInterface, cwd: string): Promise<Watcher[]> {
   if (override.enabled === false) return []
   const checkers: Watcher[] = []
   for (const checker of CHECKERS) if (await isOnPath($, checker.marker)) checkers.push(checker)
-  return [...(await findWatchers($, cwd, override)), ...checkers]
+  const watchers = await findWatchers($, cwd, override)
+  assert(checkers.every(checker => CHECKERS.includes(checker)), `checkers ${checkers.map(({ name }) => name)} are not all from CHECKERS`)
+  assert(checkers.length <= CHECKERS.length, `found ${checkers.length} of ${CHECKERS.length} checkers; add each once`)
+  return [...watchers, ...checkers]
 }
 
 /** The watchers of the git repository holding `cwd`, each with the real path it runs in; none outside a repository. */
@@ -465,9 +520,12 @@ async function findIn($: EngineInterface, cwd: string): Promise<{ watcher: Watch
   const root = await repositoryOf($, cwd)
   if (root === undefined) return []
   const watchers = await findAll($, root)
-  return Promise.all(
+  const placed = await Promise.all(
     watchers.map(async watcher => ({ watcher, dir: await realPath($, watcher.dir === undefined ? root : `${root}/${watcher.dir}`) })),
   )
+  assert(placed.length === watchers.length, `placed ${placed.length} of ${watchers.length} watchers of ${root}`)
+  assert(placed.every(({ dir }) => dir !== ''), `a watcher of ${root} has no directory to run in`)
+  return placed
 }
 
 /**
@@ -513,10 +571,12 @@ async function ensureAll($: EngineInterface, state: State) {
 
 async function start($: EngineInterface, state: State, slot: Slot, watcher: Watcher) {
   const { epoch } = state
+  assert(state.slots.includes(slot), `slot ${slot.key} is not one of the session's; push it to state.slots first`)
   slot.watcher = watcher
   slot.isWatching = true
   slot.retryAt = 0
   const ending = await watch($, { state, slot, watcher, cwd: slot.dir })
+  assert(ending === undefined || ending.endedAt >= ending.startedAt, `${watcher.name} ended at ${ending?.endedAt}, before it started at ${ending?.startedAt}`)
   if (ending === undefined || state.epoch !== epoch) return
   await restart($, { state, slot, watcher, ending })
 }
@@ -533,6 +593,7 @@ async function start($: EngineInterface, state: State, slot: Slot, watcher: Watc
 async function restart($: EngineInterface, { state, slot, watcher, ending }: Restart) {
   const { epoch } = state
   const { isStarted, startedAt, endedAt, output } = ending
+  assert(slot.watcher === watcher, `${slot.key} restarts ${watcher.name} but runs ${slot.watcher?.name}`)
   const isQuick = !isStarted || endedAt - startedAt < RETRY_MS
   slot.quickExits = isQuick ? slot.quickExits + 1 : 0
   slot.isWatching = false
@@ -550,6 +611,7 @@ async function restart($: EngineInterface, { state, slot, watcher, ending }: Res
     return
   }
   const delay = isQuick ? RETRY_MS * 2 ** (slot.quickExits - 1) : 0
+  assert(delay < RETRY_MS * 2 ** GIVE_UP_AFTER, `${watcher.name} waits ${delay}ms to restart after ${slot.quickExits} quick exits; it should have given up`)
   slot.retryAt = endedAt + delay
   setStatus($, state, slot, `overwatch ${watcher.name}: ${what}, restarting ${delay === 0 ? 'now' : `in ${delay / 1000}s`}`)
   if (delay === 0) state.onWatcherEnded?.()
@@ -587,33 +649,45 @@ async function stop($: EngineInterface, state: State) {
     return each.kill?.()
   })
   await Promise.all([...slots, state.finding])
+  assert(state.slots.every(each => !each.isWatching), `slots ${state.slots.filter(each => each.isWatching).map(each => each.key)} still watch after stop`)
+  assert(state.outbox.size === 0, `${state.outbox.size} messages wait after stop; the next session must start afresh`)
   $.ui.status(undefined)
 }
 
-const slot = (key: string, dir: string): Slot => ({
-  watcher: undefined,
-  report: undefined,
-  key,
-  dir,
-  isWatching: false,
-  retryAt: 0,
-  quickExits: 0,
-  kill: undefined,
-  changed: undefined,
-  wasFailing: false,
-  baseline: undefined,
-  isEdited: false,
-  told: undefined,
-  status: undefined,
-})
+/** A new slot for the watcher of one language in dir, watching nothing yet. */
+const slot = (key: string, dir: string): Slot => {
+  assert(key.endsWith(`:${dir}`), `slot key ${key} does not end with its directory ${dir}; key slots by language and dir`)
+  const made: Slot = {
+    watcher: undefined,
+    report: undefined,
+    key,
+    dir,
+    isWatching: false,
+    retryAt: 0,
+    quickExits: 0,
+    kill: undefined,
+    changed: undefined,
+    wasFailing: false,
+    baseline: undefined,
+    isEdited: false,
+    told: undefined,
+    status: undefined,
+  }
+  assert(made.key === key && made.dir === dir, `slot for ${key} was made with key ${made.key} and dir ${made.dir}`)
+  return made
+}
 
 /** Policy is read afresh, but ordinary tool calls never rerun a check. */
 async function projectPolicy($: EngineInterface, state: State): Promise<GatePolicy> {
   if (state.cwd === undefined) return {}
   const root = await repositoryOf($, state.cwd)
-  return root === undefined ? {} : (await readOverride($, root)).gate ?? {}
+  const policy = root === undefined ? {} : (await readOverride($, root)).gate ?? {}
+  assert(policy.inherited === undefined || ['allow', 'block'].includes(policy.inherited), `gate.inherited is ${policy.inherited}; set allow or block in ${OVERRIDE_PATH}`)
+  assert(policy.protected_actions === undefined || Array.isArray(policy.protected_actions), `gate.protected_actions is ${JSON.stringify(policy.protected_actions)}; make it an array in ${OVERRIDE_PATH}`)
+  return policy
 }
 
+/** Why an action is refused: the failing checks among checks that guard it, or undefined when none does. */
 function guardedFailure(state: State, policy: GatePolicy, checks: readonly string[] = []): string | undefined {
   const blocked = state.slots.filter(({ report, baseline, watcher }) => {
     if (report === undefined || baseline === undefined || !report.isFailed || report.environment !== undefined) return false
@@ -621,7 +695,9 @@ function guardedFailure(state: State, policy: GatePolicy, checks: readonly strin
     return policy.inherited === 'block' || hasRegression(report, baseline)
   })
   if (blocked.length === 0) return undefined
+  assert(blocked.every(each => each.report?.isFailed), `slots ${blocked.map(each => each.key)} guard while passing`)
   const summaries = blocked.map(each => `${each.watcher?.name}: ${each.report?.summary}`).join('; ')
+  assert(summaries.split('; ').length >= blocked.length, `reason ${summaries} names fewer than ${blocked.length} guarding checks`)
   return `overwatch: this action is guarded while relevant checks fail. ${summaries}. Inspection, edits, and check commands remain available.`
 }
 
@@ -648,25 +724,33 @@ async function completionGuard($: EngineInterface, state: State): Promise<string
   return reason
 }
 
-const initialState = (): State => ({
-  cwd: undefined,
-  epoch: 0,
-  isTurnRunning: false,
-  isPromptQueued: false,
-  completionCorrection: undefined,
-  isToldThisTurn: false,
-  outbox: new Map(),
-  flushing: undefined,
-  environment: new Set(),
-  isFinding: false,
-  finding: undefined,
-  isFindDue: false,
-  onWatcherEnded: undefined,
-  slots: [],
-})
+/** A session's state before it starts: no directory, slots or messages. */
+const initialState = (): State => {
+  const state: State = {
+    cwd: undefined,
+    epoch: 0,
+    isTurnRunning: false,
+    isPromptQueued: false,
+    completionCorrection: undefined,
+    isToldThisTurn: false,
+    outbox: new Map(),
+    flushing: undefined,
+    environment: new Set(),
+    isFinding: false,
+    finding: undefined,
+    isFindDue: false,
+    onWatcherEnded: undefined,
+    slots: [],
+  }
+  assert(state.slots.length === 0 && state.outbox.size === 0, `a new session starts with ${state.slots.length} slots and ${state.outbox.size} messages`)
+  assert(!state.isTurnRunning && !state.isFinding, 'a new session starts with a turn or search running')
+  return state
+}
 
 export const register: Register = on => {
   const state = initialState()
+  assert(state.cwd === undefined, `overwatch registered with session directory ${state.cwd}; it is set when the session starts`)
+  assert(state.epoch === 0, `overwatch registered at epoch ${state.epoch}; start from initialState()`)
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
