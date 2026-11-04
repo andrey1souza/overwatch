@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Model check the timing spec
-        uses: benomahony/tla-check@466a81c71d85d9e0bafb3536a6e157b6033cdadb # v1.0.0
+        uses: benomahony/tla-check@466a81c71d85d9e0bafb3536a6e157b6033cdadb # v0.1.0
 
   agents:
     runs-on: ubuntu-latest
