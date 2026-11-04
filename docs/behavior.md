@@ -270,7 +270,7 @@ Tags: age, deadlines.
 #### Advisory mode reports failures without guarding
 
 Tags: modes, advisory.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L78)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L143)
 
 - **Given** The project runs overwatch in advisory mode.
 - **And** A change introduces a new failure.
@@ -281,7 +281,7 @@ Tags: modes, advisory.
 #### Strict mode waits for a result of the latest edit
 
 Tags: modes, strict.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L85)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L150)
 
 - **Given** The project runs overwatch in strict mode.
 - **When** The agent edits and tries to finish before the checks have run on that edit.
@@ -290,7 +290,7 @@ Tags: modes, strict.
 #### Edits wait while the agent is too far ahead of its checks
 
 Tags: limits, max-ahead.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L90)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L155)
 
 - **Given** The project allows the agent three edits ahead of its latest result.
 - **And** Checks are still running on an earlier edit.
@@ -301,7 +301,7 @@ Tags: limits, max-ahead.
 #### Strict mode hands a lingering failure to a person
 
 Tags: limits, red-budget.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L97)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L162)
 
 - **Given** The project runs overwatch in strict mode with a budget of edits while red.
 - **And** A new failure has been reported.
@@ -311,7 +311,7 @@ Tags: limits, red-budget.
 #### A check that exceeds its time limit fails
 
 Tags: limits, timeout.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L103)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L168)
 
 - **Given** The project sets a time limit on checks.
 - **When** A run exceeds it.
