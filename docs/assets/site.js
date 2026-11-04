@@ -1,13 +1,46 @@
-/** Copies text to the clipboard, saying so on button for a moment, or how to copy it when that fails. */
+/**
+ * The docs site's page behaviour: a table of contents that marks the heading in view, a search box over the
+ * behavior guide's scenarios, and a copy button on each code block.
+ *
+ * Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
+ */
+
+/** The page's tunable values, kept together. */
+const SITE = {
+  /** How long a copy button says "Copied", in milliseconds. */
+  copiedMs: 1400,
+  /** The part of the viewport a heading must be in to be the current one: below the header, in the top third. */
+  currentHeading: "-90px 0px -68% 0px",
+  /** What a copy button says, before and after a copy, and when the clipboard refused. */
+  labels: { copy: "Copy", copied: "Copied", refused: "Select to copy" },
+}
+
+/**
+ * Copies text to the clipboard, saying so on button for a moment, or telling the reader to select it when the
+ * clipboard refuses. Resolves to whether it copied, so a caller can tell; throws a TypeError when given no button
+ * or no text, since every copy button is made with both.
+ */
 function copyText(button, text) {
-  if (!(button instanceof HTMLElement) || typeof text !== "string" || text.length === 0) return
+  if (!(button instanceof HTMLElement)) throw new TypeError(`copyText was given ${String(button)}; pass the copy button`)
+  if (typeof text !== "string" || text.length === 0) throw new TypeError(`copyText was given no text for "${button.textContent}"; pass the code block's text`)
   console.assert(button.isConnected, `copy button "${button.textContent}" is not on the page; attach it before it is clicked`)
   console.assert(navigator.clipboard !== undefined, `no clipboard to copy ${text.length} characters to; serve the site over HTTPS`)
-  navigator.clipboard.writeText(text).then(() => {
-    const label = button.textContent
-    button.textContent = "Copied"
-    setTimeout(() => { button.textContent = label }, 1400)
-  }).catch(() => { button.textContent = "Select to copy" })
+  return navigator.clipboard.writeText(text).then(() => {
+    button.textContent = SITE.labels.copied
+    setTimeout(() => { button.textContent = SITE.labels.copy }, SITE.copiedMs)
+    return true
+  }, () => {
+    button.textContent = SITE.labels.refused
+    return false
+  })
+}
+
+/** A heading's text as an id: letters and digits of any script, lower-cased, each other run of characters one dash. */
+function slugOf(text) {
+  const slug = text.normalize("NFKC").toLowerCase().trim().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "")
+  console.assert(!/[^\p{L}\p{N}-]/u.test(slug), `slug "${slug}" of "${text}" keeps a character an id should not; replace it with a dash`)
+  console.assert(!slug.startsWith("-") && !slug.endsWith("-"), `slug "${slug}" of "${text}" starts or ends with a dash; trim them`)
+  return slug
 }
 
 /** Lists the page's headings in the table of contents and marks the one in view. */
@@ -21,7 +54,7 @@ function buildToc() {
   const anchors = [...headings].map((heading) => heading.parentElement.id ? heading.parentElement : heading)
   for (const [index, heading] of [...headings].entries()) {
     const anchor = anchors[index]
-    anchor.id ||= heading.textContent.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
+    anchor.id ||= slugOf(heading.textContent)
     const item = document.createElement("li")
     item.className = heading.tagName === "H3" ? "sub" : ""
     const link = document.createElement("a")
@@ -39,8 +72,54 @@ function buildToc() {
       for (const link of links.values()) link.classList.remove("current")
       links.get(entry.target.id)?.classList.add("current")
     }
-  }, { rootMargin: "-90px 0px -68% 0px" })
+  }, { rootMargin: SITE.currentHeading })
   for (const anchor of anchors) observer.observe(anchor)
+}
+
+/** Shows the scenarios whose title, tags and steps hold every word of query, and how many that is, in count. */
+function filterScenarios(query, scenarios, sections, count) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  for (const scenario of scenarios) {
+    const text = [...scenario.querySelectorAll("h4, .tag, li")].map((part) => part.textContent).join(" ").toLowerCase()
+    scenario.hidden = !words.every((word) => text.includes(word))
+  }
+  hideEmptySections(sections, scenarios)
+  const shown = scenarios.filter((scenario) => !scenario.hidden).length
+  console.assert(words.length > 0 || shown === scenarios.length, `an empty search shows ${shown} of ${scenarios.length} scenarios; show them all`)
+  count.textContent = countText(words.length > 0, shown, scenarios.length)
+  console.assert(count.textContent.includes(String(shown)) || shown === 0, `count "${count.textContent}" does not say ${shown} scenarios are shown`)
+}
+
+/**
+ * Hides each feature heading with no scenario shown under it, and each status heading with no feature shown.
+ * sections runs from the end of the guide to its start, so each scenario is seen before its feature heading and
+ * each feature before its status.
+ */
+function hideEmptySections(sections, scenarios) {
+  let feature = false
+  let status = false
+  for (const section of sections) {
+    if (scenarios.includes(section)) {
+      feature ||= !section.hidden
+    } else if (section.querySelector("h3")) {
+      section.hidden = !feature
+      status ||= feature
+      feature = false
+    } else {
+      section.hidden = !status
+      status = false
+    }
+  }
+  console.assert(!feature && !status, "a feature or status was left open at the start of the guide; start the guide with a status heading")
+  console.assert(sections.every((section) => scenarios.includes(section) || typeof section.hidden === "boolean"), "a heading was neither hidden nor shown")
+}
+
+/** What the scenario count says: all of them before any search, else how many of total the search shows. */
+function countText(isSearching, shown, total) {
+  const text = !isSearching ? `${total} scenarios` : shown === 0 ? "No scenarios match" : `${shown} of ${total} scenarios`
+  console.assert(text.length > 0, `count for ${shown} of ${total} scenarios is empty`)
+  console.assert(isSearching || text.startsWith(String(total)), `count "${text}" before a search does not give the total ${total}`)
+  return text
 }
 
 /** Adds a box that filters the behavior guide's scenarios, hiding features and statuses left empty. */
@@ -61,22 +140,9 @@ function buildSearch() {
   prose.prepend(search)
   const sections = [...prose.querySelectorAll(":scope > div[id]")].toReversed()
   const filter = () => {
-    const words = input.value.toLowerCase().split(/\s+/).filter(Boolean)
-    for (const scenario of scenarios) {
-      const text = [...scenario.querySelectorAll("h4, .tag, li")].map((part) => part.textContent).join(" ").toLowerCase()
-      scenario.hidden = !words.every((word) => text.includes(word))
-    }
-    let feature = false, status = false
-    for (const section of sections) {
-      if (scenarios.includes(section)) feature ||= !section.hidden
-      else if (section.querySelector("h3")) { section.hidden = !feature; status ||= feature; feature = false }
-      else { section.hidden = !status; status = false }
-    }
-    const shown = scenarios.filter((scenario) => !scenario.hidden).length
-    console.assert(words.length > 0 || shown === scenarios.length, `an empty search shows ${shown} of ${scenarios.length} scenarios; show them all`)
-    count.textContent = words.length === 0 ? `${scenarios.length} scenarios`
-      : shown === 0 ? "No scenarios match" : `${shown} of ${scenarios.length} scenarios`
-    console.assert(count.textContent.includes(String(shown)) || shown === 0, `count "${count.textContent}" does not say ${shown} scenarios are shown`)
+    console.assert(typeof input.value === "string" && input.isConnected, "the search box is not on the page; prepend it to .prose before filtering")
+    filterScenarios(input.value, scenarios, sections, count)
+    console.assert(count.textContent !== "", `filtering "${input.value}" left the count empty; filterScenarios must set it`)
   }
   input.addEventListener("input", filter)
   input.addEventListener("keydown", (event) => {
@@ -111,8 +177,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const button = document.createElement("button")
     button.type = "button"
     button.className = "copy floating"
-    button.textContent = "Copy"
-    button.addEventListener("click", () => copyText(button, pre.querySelector("code")?.innerText ?? pre.innerText))
+    button.textContent = SITE.labels.copy
+    button.addEventListener("click", () => void copyText(button, pre.querySelector("code")?.innerText ?? pre.innerText))
     pre.appendChild(button)
   }
 })
