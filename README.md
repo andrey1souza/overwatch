@@ -78,7 +78,7 @@ A project with no marker file is watched when its override names `summary`, `fai
 
 ### Legacy-code triage
 
-A legacy project can start with thousands of errors. Overwatch records the first result of each check as inherited backlog and sends one short notice with the inventory path. It saves all named issues and the full original output outside the conversation. Fixing that backlog is deliberate work; by default, it does not prevent ordinary tools or Stop events. New failures keep completion guarded, even if other errors were already present. Updating results never replaces the initial baseline with new failures.
+A legacy project can start with thousands of errors. Overwatch records the first result of each check as inherited backlog and sends one short notice with the inventory path. It saves all named issues and the full original output outside the conversation. Fixing that backlog is deliberate work; by default, it does not prevent ordinary tools or Stop events. New failures keep completion guarded, even if other errors were already present. Updating results never replaces the initial baseline with new failures. In Claude Code, the first full run can still be going when the agent starts editing; edits made during it are rechecked once it ends, and that first result is no baseline, since it may hold those edits, so every failure it reports counts as new.
 
 Inspect a small batch from the inventory path in the notice:
 
@@ -210,4 +210,6 @@ claude plugin test .
 claude --plugin-dir .
 cd docs && zine                # the site, served locally
 java -cp tla2tools.jar tlc2.TLC -metadir /tmp/tlc -config spec/Overwatch.cfg spec/Overwatch.tla  # model check the timing
+python3 scripts/timing.py gaps    # fit the gaps between edits in your Claude Code transcripts
+python3 scripts/timing.py budget --first 300  # longest rerun time for a 10% slowdown at each max-ahead
 ```

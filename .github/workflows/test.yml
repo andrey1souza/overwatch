@@ -28,6 +28,14 @@ jobs:
       - name: Test the integrations against fake hosts
         run: node --test tests/test_integrations.mjs
 
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Model check the timing spec
+        uses: benomahony/tla-check@7dab51c86bc6223aa2f62e7acb98050bb429f71f # v0.1.0
+
   agents:
     runs-on: ubuntu-latest
     steps:
