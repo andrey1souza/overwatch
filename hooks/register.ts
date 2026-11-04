@@ -56,6 +56,8 @@ type Slot = {
   wasFailing: boolean
   /** The first result that was not an environment error: what the project was like when the session found it. */
   baseline: Report | undefined
+  /** Whether the agent edited since the watcher was found, so a first result may already hold its changes. */
+  isEdited: boolean
   /** What the agent was last told of this watcher, so a failure that repeats is told once. */
   told: string | undefined
   /** This watcher's part of the plugin's one status line. */
@@ -177,6 +179,9 @@ async function baselineInventory($: EngineInterface, run: Run, report: Report) {
   schedule($, state)
 }
 
+/** The baseline of a watcher whose first result came after the agent's edits: every failure counts as new. */
+const UNTOUCHED: Report = { summary: 'passed', isFailed: false, text: '', failures: [] }
+
 /** Timings in a summary, which change from run to run of the same failure. */
 const TIMING = /\d+(?:\.\d+)?m?s\b/g
 
@@ -194,8 +199,8 @@ async function deliver($: EngineInterface, run: Run, report: Report) {
     return
   }
   if (slot.baseline === undefined) {
-    slot.baseline = report
-    await baselineInventory($, run, report)
+    slot.baseline = slot.isEdited ? UNTOUCHED : report
+    if (!slot.isEdited) await baselineInventory($, run, report)
     if (!slot.isWatching) return
   }
   const isRegression = hasRegression(report, slot.baseline)
@@ -288,6 +293,7 @@ async function watch($: EngineInterface, run: Run): Promise<Ending | undefined> 
   }
   if (watcher.argv === undefined) {
     if (watcher.baseline !== undefined) rerunOnChange($, run, watcher.baseline)
+    if (slot.isEdited) slot.changed?.()
     return undefined
   }
   const startedAt = await $.clock.now()
@@ -560,6 +566,7 @@ async function stop($: EngineInterface, state: State) {
     each.changed = undefined
     each.wasFailing = false
     each.baseline = undefined
+    each.isEdited = false
     each.report = undefined
     each.told = undefined
     each.status = undefined
@@ -581,6 +588,7 @@ const slot = (key: string, dir: string): Slot => ({
   changed: undefined,
   wasFailing: false,
   baseline: undefined,
+  isEdited: false,
   told: undefined,
   status: undefined,
 })
@@ -651,7 +659,10 @@ export const register: Register = on => {
     }
     const result = await next(e)
     if (!EDITING_TOOLS.has(e.tool)) return result
-    for (const each of state.slots) each.changed?.()
+    for (const each of state.slots) {
+      each.isEdited = true
+      each.changed?.()
+    }
     return result
   })
 
