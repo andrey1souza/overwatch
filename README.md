@@ -203,6 +203,7 @@ python3 scripts/scenarios.py --check  # verify scenarios and reject stale behavi
 python3 docs/sync.py --write  # regenerate site pages from README and the verified behavior guide
 python3 -m unittest discover -s tests -p 'test_*.py'
 node --test tests/test_integrations.mjs
+node --test tests/test_agents.mjs  # pi, opencode and codex against a scripted model; npm install --no-save @copilotkit/aimock first
 nvim --headless -l tests/overwatch_spec.lua
 claude plugin validate .
 claude plugin test .
