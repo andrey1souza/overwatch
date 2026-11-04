@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -13,6 +14,8 @@ const FAILURE = "failed after the latest change: fail"
 const BREAK = "echo fail > result"
 const FIX = "echo pass > result"
 const TIMEOUT_MS = 240_000
+/** The mock model accepts any key; a fresh one each run, since the agents need one but no real key is involved. */
+const MOCK_KEY = randomUUID()
 
 /** The agents overwatch integrates with: each one's tool for shell commands, how to call it, and how to start it on a prompt against the mock model at url. */
 const AGENTS = {
@@ -21,7 +24,7 @@ const AGENTS = {
     call: command => ({ command }),
     setup: ({ home, url, prompt }) => {
       mkdirSync(join(home, ".pi", "agent"), { recursive: true })
-      const provider = { baseUrl: `${url}/v1`, api: "openai-completions", apiKey: "test", compat: { supportsDeveloperRole: false, supportsReasoningEffort: false }, models: [{ id: "mock" }] }
+      const provider = { baseUrl: `${url}/v1`, api: "openai-completions", apiKey: MOCK_KEY, compat: { supportsDeveloperRole: false, supportsReasoningEffort: false }, models: [{ id: "mock" }] }
       writeFileSync(join(home, ".pi", "agent", "models.json"), JSON.stringify({ providers: { mock: provider } }))
       return ["pi", "-p", "--no-session", "--model", "mock/mock", "-e", join(ROOT, "integrations", "pi.js"), prompt]
     },
@@ -30,7 +33,7 @@ const AGENTS = {
     tool: "bash",
     call: command => ({ command, description: "run the command" }),
     setup: ({ project, url, prompt }) => {
-      const provider = { npm: "@ai-sdk/openai-compatible", options: { baseURL: `${url}/v1`, apiKey: "test" }, models: { mock: {} } }
+      const provider = { npm: "@ai-sdk/openai-compatible", options: { baseURL: `${url}/v1`, apiKey: MOCK_KEY }, models: { mock: {} } }
       writeFileSync(join(project, "opencode.json"), JSON.stringify({ plugin: [`file://${join(ROOT, "integrations", "opencode.js")}`], provider: { mock: provider }, model: "mock/mock", permission: { bash: "allow" } }))
       return ["opencode", "run", prompt]
     },
@@ -62,29 +65,52 @@ const AGENTS = {
 
 /** Whether command runs on this machine's PATH. */
 function installed(command) {
-  return spawnSync(command, ["--version"], { stdio: "ignore" }).error === undefined
+  assert(command !== "" && !/[\s/]/.test(command), `installed was given ${JSON.stringify(command)}; pass an agent's command name`)
+  const { error } = spawnSync(command, ["--version"], { stdio: "ignore" })
+  const isInstalled = error === undefined
+  assert(isInstalled || error.code === "ENOENT", `${command} --version could not start for a reason other than being missing: ${error}`)
+  return isInstalled
 }
 
 /** A git project whose check passes until its result file says fail. */
 function project() {
+  assert(existsSync(tmpdir()), `the temporary directory ${tmpdir()} is missing; the project is made inside it`)
   const dir = mkdtempSync(join(tmpdir(), "overwatch-agent-"))
-  spawnSync("git", ["init", "-q"], { cwd: dir })
+  const init = spawnSync("git", ["init", "-q"], { cwd: dir, encoding: "utf8" })
+  assert.equal(init.status, 0, `git init in ${dir} failed: ${init.stderr}`)
   writeFileSync(join(dir, "result"), "pass\n")
   writeFileSync(join(dir, ".overwatch.json"), JSON.stringify({ baseline: ["sh", "-c", "cat result"], summary: "^(?:pass|fail)$", failed: "fail" }))
+  assert(existsSync(join(dir, ".git")), `${dir} has no .git after git init; overwatch only watches inside a repository`)
+  assert.equal(readFileSync(join(dir, "result"), "utf8"), "pass\n", `${dir} must start with a passing check`)
   return dir
 }
 
-/** The mock model's script: break the check, fix it once overwatch reports the failure, then finish. */
+/** The mock model's script: every request is answered by the step it calls for, see `reply`. */
 function script(mock, agent) {
-  const call = command => ({ toolCalls: [{ name: agent.tool, arguments: JSON.stringify(agent.call(command)) }] })
-  const seen = req => JSON.stringify(req)
-  mock.addFixture({ match: { predicate: req => !seen(req).includes(BREAK) }, response: call(BREAK) })
-  mock.addFixture({ match: { predicate: req => seen(req).includes(FAILURE) && !seen(req).includes(FIX) }, response: call(FIX) })
-  mock.addFixture({ match: { predicate: () => true }, response: { content: "done" } })
+  assert(Object.values(AGENTS).includes(agent), `script was given an agent using ${agent.tool} that is not one of AGENTS`)
+  assert.equal(mock.getFixtures().length, 0, "script a fresh mock; an earlier fixture would answer before this one")
+  mock.addFixture({ match: {}, response: req => reply(agent, JSON.stringify(req)) })
+  const [fixture, ...extra] = mock.getFixtures()
+  assert(extra.length === 0 && fixture?.response !== undefined, `the mock holds ${extra.length + 1} fixtures; script adds exactly one, answering every request`)
+}
+
+/**
+ * The model's next step, given the whole request so far as text: break the check, fix it once overwatch has
+ * reported the failure, then finish.
+ */
+function reply(agent, request) {
+  assert(request.startsWith("{"), `the mock model was given ${request.slice(0, 80)}, not a JSON request`)
+  const command = !request.includes(BREAK) ? BREAK : request.includes(FAILURE) && !request.includes(FIX) ? FIX : undefined
+  if (command === undefined) return { content: "done" }
+  const args = JSON.stringify(agent.call(command))
+  assert(args.includes(JSON.stringify(command)), `the ${agent.tool} arguments ${args} do not carry the command ${command}`)
+  return { toolCalls: [{ name: agent.tool, arguments: args }] }
 }
 
 /** Runs argv in cwd with env to its exit, giving its exit code and everything it printed. */
 function run(argv, cwd, env) {
+  assert(argv.length > 0 && typeof argv[0] === "string", `run was given ${JSON.stringify(argv)}; pass the command and its arguments`)
+  assert(env.PATH !== undefined && env.HOME !== undefined, `run's env ${Object.keys(env)} lacks PATH or HOME; the agents need both`)
   return new Promise(resolve => {
     const [command, ...args] = argv
     const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], timeout: TIMEOUT_MS })
@@ -104,7 +130,7 @@ for (const [name, agent] of Object.entries(AGENTS)) {
     try {
       const dir = project()
       const home = mkdtempSync(join(tmpdir(), "overwatch-home-"))
-      const env = { PATH: process.env.PATH, HOME: home, CODEX_HOME: join(home, ".codex"), MOCK_API_KEY: "test" }
+      const env = { PATH: process.env.PATH, HOME: home, CODEX_HOME: join(home, ".codex"), MOCK_API_KEY: MOCK_KEY }
       const argv = agent.setup({ home, project: dir, url: mock.url, prompt: "break the check", env })
       const { code, output } = await run(argv, dir, env)
       const requests = mock.journal.getAll().map(entry => JSON.stringify(entry.body))
