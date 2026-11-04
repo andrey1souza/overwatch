@@ -210,4 +210,6 @@ claude plugin test .
 claude --plugin-dir .
 cd docs && zine                # the site, served locally
 java -cp tla2tools.jar tlc2.TLC -metadir /tmp/tlc -config spec/Overwatch.cfg spec/Overwatch.tla  # model check the timing
+python3 scripts/timing.py gaps    # fit the gaps between edits in your Claude Code transcripts
+python3 scripts/timing.py budget --first 300  # longest rerun time for a 10% slowdown at each max-ahead
 ```
