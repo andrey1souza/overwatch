@@ -88,6 +88,8 @@ type State = {
   isFinding: boolean
   finding: Promise<{ watcher: Watcher; dir: string }[]> | undefined
   isFindDue: boolean
+  /** Asks for a fresh search when a watcher ends: the session's answer to that event, set while it runs. */
+  onWatcherEnded: (() => void) | undefined
   /** One for each watcher found so far, in the order found, which is the status line's order. */
   slots: Slot[]
 }
@@ -473,7 +475,7 @@ async function findIn($: EngineInterface, cwd: string): Promise<{ watcher: Watch
  * its markers and override, so a
  * project scaffolded mid-session gets its watcher, and starts each that is
  * not running or waiting out a retry. One search runs at a time; asked for
- * during one, another follows it. A watcher that exits is restarted, see `restart`.
+ * during one, another follows it. A watcher that exits asks for another, see `restart`.
  */
 async function ensureAll($: EngineInterface, state: State) {
   const { cwd, epoch } = state
@@ -482,27 +484,31 @@ async function ensureAll($: EngineInterface, state: State) {
     state.isFindDue = true
     return
   }
-  state.isFinding = true
-  state.isFindDue = false
-  state.finding = findIn($, cwd)
-  const watchers = await state.finding.finally(() => {
-    state.isFinding = false
-    state.finding = undefined
-  })
-  if (state.epoch !== epoch) return
-  const now = await $.clock.now()
-  for (const { watcher, dir } of watchers) {
-    const key = `${languageOf(watcher)}:${dir}`
-    let found = state.slots.find(each => each.key === key)
-    if (found === undefined) {
-      found = slot(key, dir)
-      state.slots.push(found)
+  // A search asked for during one runs once after it; asks come from hooks and exits, so each round answers all so far.
+  do {
+    state.isFinding = true
+    state.isFindDue = false
+    state.finding = findIn($, cwd)
+    const watchers = await state.finding.finally(() => {
+      state.isFinding = false
+      state.finding = undefined
+    })
+    if (state.epoch !== epoch) return
+    const now = await $.clock.now()
+    for (const { watcher, dir } of watchers) {
+      const key = `${languageOf(watcher)}:${dir}`
+      let found = state.slots.find(each => each.key === key)
+      if (found === undefined) {
+        found = slot(key, dir)
+        state.slots.push(found)
+      }
+      if (found.isWatching || now < found.retryAt) continue
+      found.isWatching = true
+      void start($, state, found, watcher)
     }
-    if (found.isWatching || now < found.retryAt) continue
-    found.isWatching = true
-    void start($, state, found, watcher)
-  }
-  if (state.isFindDue) await ensureAll($, state)
+    assert(watchers.every(({ watcher, dir }) => state.slots.some(each => each.key === `${languageOf(watcher)}:${dir}`)), `a watcher of ${cwd} has no slot`)
+  } while (state.isFindDue && state.epoch === epoch)
+  assert(!state.isFinding, `a search of ${cwd} is still marked running after it ended`)
 }
 
 async function start($: EngineInterface, state: State, slot: Slot, watcher: Watcher) {
@@ -546,10 +552,10 @@ async function restart($: EngineInterface, { state, slot, watcher, ending }: Res
   const delay = isQuick ? RETRY_MS * 2 ** (slot.quickExits - 1) : 0
   slot.retryAt = endedAt + delay
   setStatus($, state, slot, `overwatch ${watcher.name}: ${what}, restarting ${delay === 0 ? 'now' : `in ${delay / 1000}s`}`)
-  if (delay === 0) void ensureAll($, state)
+  if (delay === 0) state.onWatcherEnded?.()
   else
     $.clock.after(delay, () => {
-      if (state.epoch === epoch) void ensureAll($, state)
+      if (state.epoch === epoch) state.onWatcherEnded?.()
     })
   if (environment !== undefined || !state.isTurnRunning) return
   queue($, { state, slot }, `exited:${output}`, { text: exitMessage(watcher, delay), isWaking: false, kind: 'exit' })
@@ -558,6 +564,7 @@ async function restart($: EngineInterface, { state, slot, watcher, ending }: Res
 /** Stops every watcher and forgets what the session found and told, so the next session starts afresh. */
 async function stop($: EngineInterface, state: State) {
   state.cwd = undefined
+  state.onWatcherEnded = undefined
   state.completionCorrection = undefined
   state.isTurnRunning = false
   state.isPromptQueued = false
@@ -654,6 +661,7 @@ const initialState = (): State => ({
   isFinding: false,
   finding: undefined,
   isFindDue: false,
+  onWatcherEnded: undefined,
   slots: [],
 })
 
@@ -664,6 +672,7 @@ export const register: Register = on => {
     const started = await next(e)
     if (!e.isInteractive) return started
     state.cwd = e.cwd
+    state.onWatcherEnded = () => void ensureAll($, state)
     void ensureAll($, state)
     return started
   })
@@ -717,6 +726,7 @@ export const register: Register = on => {
     await stop($, state)
     if (e.reason === 'resume') {
       state.cwd = await $.session.cwd()
+      state.onWatcherEnded = () => void ensureAll($, state)
       $.clock.after(0, () => void ensureAll($, state))
     }
     return next(e)
