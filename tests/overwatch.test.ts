@@ -830,11 +830,11 @@ test('JavaScript runners report what failed', () => {
   expect(readResult(watcherNamed('vitest'), VITEST_BROKEN)[1]).toEqual(['calc.test.js [ calc.test.js ]'])
   expect(readReport(watcherNamed('vitest'), ' Test Files  1 passed (1)\n')?.isFailed).toBe(false)
   expect(readResult(watcherNamed('jest'), JEST_FAILING)).toEqual(['overwatch jest ✗ 1 failed, 1 total: ./calc.test.js +1 more', ['./calc.test.js', 'adds']])
-  expect(readResult(watcherNamed('bun'), BUN_FAILING)).toEqual(['overwatch bun ✗ 1 fail: adds', ['adds']])
-  expect(readReport(watcherNamed('bun'), ' 2 pass\n 0 fail\n')?.isFailed).toBe(false)
-  expect(readResult(watcherNamed('deno'), DENO_FAILING)).toEqual(['overwatch deno ✗ 1 passed | 1 failed (2ms): adds => ./calc_test.ts:1:6', ['adds => ./calc_test.ts:1:6']])
-  expect(readReport(watcherNamed('deno'), DENO_BROKEN)?.isFailed).toBe(true)
-  expect(readReport(watcherNamed('deno'), 'ok | 2 passed | 0 failed (2ms)\nWatcher Test finished. Restarting on file change...\n')?.summary).toBe(
+  expect(readResult(watcherNamed('bun', 'bun.lock'), BUN_FAILING)).toEqual(['overwatch bun ✗ 1 fail: adds', ['adds']])
+  expect(readReport(watcherNamed('bun', 'bun.lock'), ' 2 pass\n 0 fail\n')?.isFailed).toBe(false)
+  expect(readResult(watcherNamed('deno', 'deno.json'), DENO_FAILING)).toEqual(['overwatch deno ✗ 1 passed | 1 failed (2ms): adds => ./calc_test.ts:1:6', ['adds => ./calc_test.ts:1:6']])
+  expect(readReport(watcherNamed('deno', 'deno.json'), DENO_BROKEN)?.isFailed).toBe(true)
+  expect(readReport(watcherNamed('deno', 'deno.json'), 'ok | 2 passed | 0 failed (2ms)\nWatcher Test finished. Restarting on file change...\n')?.summary).toBe(
     'ok | 2 passed | 0 failed (2ms)',
   )
 })
