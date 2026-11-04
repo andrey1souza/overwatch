@@ -28,6 +28,19 @@ jobs:
       - name: Test the integrations against fake hosts
         run: node --test tests/test_integrations.mjs
 
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install TLC
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/tla2tools.jar" https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+          echo "e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check
+
+      - name: Model check the timing spec
+        run: java -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC -workers auto -noGenerateSpecTE -metadir "$RUNNER_TEMP/tlc" -config spec/Overwatch.cfg spec/Overwatch.tla
+
   agents:
     runs-on: ubuntu-latest
     steps:
