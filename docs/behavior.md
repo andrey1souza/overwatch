@@ -137,3 +137,56 @@ Tags: age, deadlines.
 - **Given** An inherited finding has a project-configured deadline.
 - **When** A check runs after that deadline.
 - **Then** The finding escalates according to project policy without resetting its first-seen date.
+
+### Modes and limits
+
+#### Advisory mode reports failures without guarding
+
+Tags: modes, advisory.
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L78)
+
+- **Given** The project runs overwatch in advisory mode.
+- **And** A change introduces a new failure.
+- **When** The agent tries to finish.
+- **Then** Completion is allowed.
+- **And** The agent is told of the new failure.
+
+#### Strict mode waits for a result of the latest edit
+
+Tags: modes, strict.
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L85)
+
+- **Given** The project runs overwatch in strict mode.
+- **When** The agent edits and tries to finish before the checks have run on that edit.
+- **Then** Completion is guarded until a result of the latest edit passes.
+
+#### Edits wait while the agent is too far ahead of its checks
+
+Tags: limits, max-ahead.
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L90)
+
+- **Given** The project allows the agent three edits ahead of its latest result.
+- **And** Checks are still running on an earlier edit.
+- **When** The agent attempts a fourth edit.
+- **Then** The edit waits for a result.
+- **And** Reading and running checks remain available.
+
+#### Strict mode hands a lingering failure to a person
+
+Tags: limits, red-budget.
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L97)
+
+- **Given** The project runs overwatch in strict mode with a budget of edits while red.
+- **And** A new failure has been reported.
+- **When** The agent spends its budget without clearing the failure.
+- **Then** The turn stops and waits for a person instead of continuing.
+
+#### A check that exceeds its time limit fails
+
+Tags: limits, timeout.
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L103)
+
+- **Given** The project sets a time limit on checks.
+- **When** A run exceeds it.
+- **Then** The run is stopped and reported to the agent as a timeout.
+- **And** A timeout is never recorded as inherited backlog.

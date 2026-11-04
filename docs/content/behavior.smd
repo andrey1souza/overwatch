@@ -143,3 +143,56 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 - [Given]($text.attrs('given')) An inherited finding has a project-configured deadline.
 - [When]($text.attrs('when')) A check runs after that deadline.
 - [Then]($text.attrs('then')) The finding escalates according to project policy without resetting its first-seen date.
+
+## [Modes and limits]($section.id('modes-and-limits'))
+
+### [Advisory mode reports failures without guarding]($section.id('advisory-mode-reports-failures-without-guarding').attrs('proposed'))
+
+[modes]($text.attrs('tag')) [advisory]($text.attrs('tag'))
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L78)
+
+- [Given]($text.attrs('given')) The project runs overwatch in advisory mode.
+- [And]($text.attrs('given')) A change introduces a new failure.
+- [When]($text.attrs('when')) The agent tries to finish.
+- [Then]($text.attrs('then')) Completion is allowed.
+- [And]($text.attrs('then')) The agent is told of the new failure.
+
+### [Strict mode waits for a result of the latest edit]($section.id('strict-mode-waits-for-a-result-of-the-latest-edit').attrs('proposed'))
+
+[modes]($text.attrs('tag')) [strict]($text.attrs('tag'))
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L85)
+
+- [Given]($text.attrs('given')) The project runs overwatch in strict mode.
+- [When]($text.attrs('when')) The agent edits and tries to finish before the checks have run on that edit.
+- [Then]($text.attrs('then')) Completion is guarded until a result of the latest edit passes.
+
+### [Edits wait while the agent is too far ahead of its checks]($section.id('edits-wait-while-the-agent-is-too-far-ahead-of-its-checks').attrs('proposed'))
+
+[limits]($text.attrs('tag')) [max-ahead]($text.attrs('tag'))
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L90)
+
+- [Given]($text.attrs('given')) The project allows the agent three edits ahead of its latest result.
+- [And]($text.attrs('given')) Checks are still running on an earlier edit.
+- [When]($text.attrs('when')) The agent attempts a fourth edit.
+- [Then]($text.attrs('then')) The edit waits for a result.
+- [And]($text.attrs('then')) Reading and running checks remain available.
+
+### [Strict mode hands a lingering failure to a person]($section.id('strict-mode-hands-a-lingering-failure-to-a-person').attrs('proposed'))
+
+[limits]($text.attrs('tag')) [red-budget]($text.attrs('tag'))
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L97)
+
+- [Given]($text.attrs('given')) The project runs overwatch in strict mode with a budget of edits while red.
+- [And]($text.attrs('given')) A new failure has been reported.
+- [When]($text.attrs('when')) The agent spends its budget without clearing the failure.
+- [Then]($text.attrs('then')) The turn stops and waits for a person instead of continuing.
+
+### [A check that exceeds its time limit fails]($section.id('a-check-that-exceeds-its-time-limit-fails').attrs('proposed'))
+
+[limits]($text.attrs('tag')) [timeout]($text.attrs('tag'))
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L103)
+
+- [Given]($text.attrs('given')) The project sets a time limit on checks.
+- [When]($text.attrs('when')) A run exceeds it.
+- [Then]($text.attrs('then')) The run is stopped and reported to the agent as a timeout.
+- [And]($text.attrs('then')) A timeout is never recorded as inherited backlog.
