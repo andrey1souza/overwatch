@@ -209,4 +209,5 @@ claude plugin validate .
 claude plugin test .
 claude --plugin-dir .
 cd docs && zine                # the site, served locally
+java -cp tla2tools.jar tlc2.TLC -metadir /tmp/tlc -config spec/Overwatch.cfg spec/Overwatch.tla  # model check the timing
 ```

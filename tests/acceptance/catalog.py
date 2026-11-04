@@ -74,4 +74,35 @@ SCENARIOS = (
     .given("A finding requires cleanup in changed code")
     .when("Its rule is disabled or its source path is excluded")
     .then("The finding is not recorded as fixed"),
+
+    Scenario("Advisory mode reports failures without guarding", "Modes and limits", ("modes", "advisory"), status="proposed")
+    .given("The project runs overwatch in advisory mode")
+    .and_("A change introduces a new failure")
+    .when("The agent tries to finish")
+    .then("Completion is allowed")
+    .and_("The agent is told of the new failure"),
+
+    Scenario("Strict mode waits for a result of the latest edit", "Modes and limits", ("modes", "strict"), status="proposed")
+    .given("The project runs overwatch in strict mode")
+    .when("The agent edits and tries to finish before the checks have run on that edit")
+    .then("Completion is guarded until a result of the latest edit passes"),
+
+    Scenario("Edits wait while the agent is too far ahead of its checks", "Modes and limits", ("limits", "max-ahead"), status="proposed")
+    .given("The project allows the agent three edits ahead of its latest result")
+    .and_("Checks are still running on an earlier edit")
+    .when("The agent attempts a fourth edit")
+    .then("The edit waits for a result")
+    .and_("Reading and running checks remain available"),
+
+    Scenario("Strict mode hands a lingering failure to a person", "Modes and limits", ("limits", "red-budget"), status="proposed")
+    .given("The project runs overwatch in strict mode with a budget of edits while red")
+    .and_("A new failure has been reported")
+    .when("The agent spends its budget without clearing the failure")
+    .then("The turn stops and waits for a person instead of continuing"),
+
+    Scenario("A check that exceeds its time limit fails", "Modes and limits", ("limits", "timeout"), status="proposed")
+    .given("The project sets a time limit on checks")
+    .when("A run exceeds it")
+    .then("The run is stopped and reported to the agent as a timeout")
+    .and_("A timeout is never recorded as inherited backlog"),
 )
