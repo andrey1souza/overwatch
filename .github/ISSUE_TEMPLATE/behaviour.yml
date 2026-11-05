@@ -1,0 +1,84 @@
+name: Behaviour change
+description: Propose new or different behaviour, written as an acceptance scenario.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every behaviour overwatch has is a scenario in `tests/acceptance/catalog.py`, and the behaviour guide is generated from them. A proposal written the same way goes into the catalog as a proposed scenario, and becomes the test the change has to pass.
+
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Feature
+      description: The catalog feature the scenario belongs to.
+      options:
+        - Changed-code cleanup
+        - Claude interruption
+        - Claude multiple watchers
+        - Claude recovery and changed findings
+        - Claude retry limits
+        - Claude session lifecycle
+        - Failure gates
+        - Finding age
+        - Legacy debt
+        - Modes and limits
+        - A new feature
+    validations:
+      required: true
+
+  - type: input
+    id: title
+    attributes:
+      label: Scenario title
+      description: The behaviour in one sentence, as the catalog titles its scenarios.
+      placeholder: Advisory mode reports failures without guarding
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario
+      description: |
+        Given, When and Then steps in that order, with And continuing the step before it. Each Then step must be something a test can check as true or false, not a matter of degree.
+      placeholder: |
+        Given the project runs overwatch in advisory mode
+        And a check fails after an edit
+        When the agent tries to finish its turn
+        Then the failure is reported
+        And the turn finishes
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The problem this solves, and what happens today instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agents
+    attributes:
+      label: Agents and editors
+      description: Where the behaviour applies.
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode 1
+        - OpenCode 2
+        - Pi
+        - Neovim
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you file
+      options:
+        - label: No scenario in the [behaviour guide](https://benomahony.github.io/overwatch/behavior/) already covers this.
+          required: true

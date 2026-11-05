@@ -88,6 +88,12 @@ class ScenarioContractTests(unittest.TestCase):
             scenarios.publish_scenarios((scenario,), check=True, document=self.document)
         self.assertEqual(self.document.read(), scenarios.render_scenarios((scenario,)))
 
+    def test_the_behaviour_form_must_offer_every_catalog_feature(self) -> None:
+        form = "  - type: dropdown\n    id: feature\n    attributes:\n      options:\n        - {}\n        - A new feature\n    validations:\n"
+        scenarios.check_form((sample_scenario(),), form.format("Documentation"))
+        with self.assertRaisesRegex(scenarios.PublishError, "Feature dropdown"):
+            scenarios.check_form((sample_scenario(),), form.format("Docs"))
+
 
 if __name__ == "__main__":
     unittest.main()

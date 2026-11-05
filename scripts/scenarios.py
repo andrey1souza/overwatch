@@ -10,6 +10,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = "https://github.com/benomahony/overwatch/blob/main"
+FORM = ROOT / ".github" / "ISSUE_TEMPLATE" / "behaviour.yml"
+NEW_FEATURE = "A new feature"
 sys.path.insert(0, str(ROOT / "tests"))
 
 catalog = importlib.import_module("acceptance.catalog")
@@ -130,6 +132,25 @@ def publish_scenarios(scenarios: tuple[dsl.Scenario, ...], check: bool = False,
     assert document.read() == rendered, f"{document.target} differs from the rendered guide after a passing run; rerun python3 scripts/scenarios.py"
 
 
+def form_features(form: str) -> list[str]:
+    """The options of the Feature dropdown in the behaviour issue form's text, in the order the form lists them."""
+    assert "id: feature" in form, f"the behaviour form has no dropdown with id: feature; restore it in {FORM}"
+    block = form.split("id: feature", 1)[1].split("validations:", 1)[0]
+    options = [line.strip().removeprefix("- ") for line in block.splitlines() if line.strip().startswith("- ")]
+    assert options, f"the Feature dropdown in {FORM} lists no options; list the catalog's features"
+    return options
+
+
+def check_form(scenarios: tuple[dsl.Scenario, ...], form: str) -> None:
+    """Raises PublishError unless the form's Feature dropdown lists every catalog feature, sorted, then NEW_FEATURE."""
+    assert scenarios, f"no scenarios to check the form against ({len(scenarios)}); pass SCENARIOS from tests/acceptance/catalog.py"
+    expected = [*sorted({scenario.feature for scenario in scenarios}), NEW_FEATURE]
+    offered = form_features(form)
+    if offered != expected:
+        raise PublishError(f"{FORM} offers features {offered}, not the catalog's {expected}; make its Feature dropdown match")
+    assert offered[-1] == NEW_FEATURE, f"the Feature dropdown ends with {offered[-1]!r}; keep {NEW_FEATURE!r} last"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Run the scenarios and reject stale docs without rewriting them")
@@ -137,6 +158,7 @@ def main() -> int:
     assert catalog.SCENARIOS, "tests/acceptance/catalog.py defines no SCENARIOS; add at least one"
     try:
         publish_scenarios(catalog.SCENARIOS, args.check)
+        check_form(catalog.SCENARIOS, FORM.read_text())
     except PublishError as error:
         print(error, file=sys.stderr)
         return 1

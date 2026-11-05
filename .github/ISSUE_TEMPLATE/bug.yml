@@ -1,0 +1,111 @@
+name: Bug report
+description: Overwatch did something it should not, or missed something it should have caught.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A bug we can reproduce gets fixed. Please cut the project down to the fewest files that still show the problem, and paste them here, so anyone can rebuild it from this issue alone.
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Where it happened
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode 1
+        - OpenCode 2
+        - Pi
+        - Neovim
+    validations:
+      required: true
+
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Overwatch, the agent or editor, the operating system, and zanity or the test runner if the bug involves a check.
+      placeholder: |
+        overwatch 0.4.8
+        Claude Code 2.1.311
+        macOS 26.1
+        zanity 0.1.39
+    validations:
+      required: true
+
+  - type: textarea
+    id: project
+    attributes:
+      label: Minimal project
+      description: |
+        Every file the bug needs, each under its path: the marker file (package.json, Cargo.toml, pyproject.toml and the like), any `.overwatch.json`, and the smallest source and test files that still show it. Leave out everything else.
+      placeholder: |
+        `.overwatch.json`
+        ```json
+        { "baseline": ["cargo", "test"] }
+        ```
+
+        `src/lib.rs`
+        ```rust
+        pub fn add(a: i32, b: i32) -> i32 { a - b }
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: What you and the agent did, in order, starting from opening the minimal project.
+      placeholder: |
+        1. Start a Claude Code session in the project.
+        2. Ask the agent to edit src/lib.rs.
+        3. Wait for the first full run to finish.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What overwatch should have done.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: What it did instead, with any notice or status text quoted exactly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The full output overwatch saved, from the path its notice names, usually under `~/.cache/overwatch/logs/`.
+      render: text
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Acceptance scenario
+      description: |
+        Optional. The behaviour as a scenario in the form `tests/acceptance/catalog.py` uses, so the fix can start from a failing test. Each Then step should be something a test can check as true or false.
+      placeholder: |
+        Given an override with no watch command and a long first full run
+        When the agent edits a file during that run
+        Then the suite runs again once the edit goes quiet
+        And the failure it reports counts as new
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you file
+      options:
+        - label: I rebuilt the minimal project above from this issue alone and it still shows the bug.
+          required: true
+        - label: I searched the open and closed issues for this bug.
+          required: true
