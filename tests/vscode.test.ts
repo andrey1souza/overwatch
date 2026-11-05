@@ -8,21 +8,23 @@ const FAILING = "error: 'root.test.add' failed:\nBuild Summary: 3/5 steps succee
 const FEED = '/home/me/.cache/overwatch/feeds/zig-repo'
 const ZIG_WATCH = ['zig', 'build', '-Doptimize=fast', 'test', '--watch']
 
-/** What VS Code's overwatch writes to FEED: its latest report, the next one it reads, and whether its extension host still runs. */
-type Feed = { latest: string; next: string; isLive: () => boolean }
+/** What VS Code's overwatch writes to FEED: its latest report, the ones it reads next, a second apart, and whether its extension host still runs. */
+type Feed = { latest: string; next: readonly string[]; isLive: () => boolean }
 
-/** A zig project whose watcher VS Code's overwatch runs, writing its reports to FEED as `feed` says. */
+/** A zig project whose watcher VS Code's overwatch runs, writing its reports to FEED as `feed` says; `reads` holds any other file a test puts there. */
 const vscodeProject = (on: On, feed: Feed) => {
-  assert(feed.latest !== '' && feed.next !== '', `vscodeProject was given feed reports ${JSON.stringify(feed.latest)} and ${JSON.stringify(feed.next)}; give it both`)
+  assert(feed.latest !== '' && feed.next.length > 0, `vscodeProject was given feed reports ${JSON.stringify(feed.latest)} and ${JSON.stringify(feed.next)}; give it a latest report and at least one more`)
   const clock = mock.clock(on)
   const spawned: string[][] = []
   const written: string[] = []
   const markers: string[] = []
+  const reads = new Map<string, string>()
   mock.env(on, { PATH: '/usr/bin', HOME: '/home/me' })
   on('fs.read', ($, e) => {
     if (e.path === `${FEED}.pid`) return { value: '4242\n' }
     if (e.path === `${FEED}.json`) return { value: JSON.stringify({ text: feed.latest }) }
-    return { deny: 'no such file' }
+    const text = reads.get(e.path)
+    return text === undefined ? { deny: 'no such file' } : { value: text }
   })
   on('fs.write', ($, e) => {
     written.push(e.path)
@@ -38,8 +40,10 @@ const vscodeProject = (on: On, feed: Feed) => {
       return { value: { code: 0, signal: null } }
     }
     if (e.argv[0] === 'tail') {
-      await clock.sleep(1000)
-      yield { stream: 'stdout' as const, text: `${JSON.stringify({ text: feed.next })}\n` }
+      for (const text of feed.next) {
+        await clock.sleep(1000)
+        yield { stream: 'stdout' as const, text: `${JSON.stringify({ text })}\n` }
+      }
       await clock.sleep(3000)
       if (feed.isLive()) await clock.sleep(60_000)
     }
@@ -50,14 +54,14 @@ const vscodeProject = (on: On, feed: Feed) => {
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   assert(spawned.length === 0 && written.length === 0, `vscodeProject recorded ${spawned.length} commands and ${written.length} writes before the session started`)
-  return { clock, spawned, written, markers }
+  return { clock, spawned, written, markers, reads }
 }
 
 test('a watcher VS Code runs is followed from its feed, not run a second time', async ($, on) => {
   mock.session(on)
   const prompts: string[] = []
   const statuses: (string | undefined)[] = []
-  const { clock, spawned, written, markers } = vscodeProject(on, { latest: PASSING, next: FAILING, isLive: () => true })
+  const { clock, spawned, written, markers } = vscodeProject(on, { latest: PASSING, next: [FAILING], isLive: () => true })
   on('prompt.submit', ($, e) => {
     prompts.push(e.text)
     return { text: e.text }
@@ -83,7 +87,7 @@ test('a watcher VS Code runs is followed from its feed, not run a second time', 
 
 test('a feed whose extension host has gone is left at the next turn for overwatch to run the watcher itself', async ($, on) => {
   let isLive = true
-  const { clock, spawned } = vscodeProject(on, { latest: PASSING, next: PASSING, isLive: () => isLive })
+  const { clock, spawned } = vscodeProject(on, { latest: PASSING, next: [PASSING], isLive: () => isLive })
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   await $.session.start(start)
   await clock.advance(2000)
@@ -100,7 +104,7 @@ test('a feed whose extension host has gone is left at the next turn for overwatc
 
 test('a session that started before VS Code follows its feed from the next turn, stopping its own watcher', async ($, on) => {
   let isLive = false
-  const { clock, spawned } = vscodeProject(on, { latest: PASSING, next: PASSING, isLive: () => isLive })
+  const { clock, spawned } = vscodeProject(on, { latest: PASSING, next: [PASSING], isLive: () => isLive })
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   await $.session.start(start)
   await clock.advance(2000)
@@ -113,5 +117,42 @@ test('a session that started before VS Code follows its feed from the next turn,
   expect(spawned).toContainEqual(['tail', '-n', '0', '-F', `${FEED}.jsonl`])
   const ending = $.session.end({ reason: 'prompt_input_exit', sessionId: 's1' })
   await clock.advance(70_000)
+  await ending
+})
+
+test('a pull while following VS Code takes a fresh baseline, so only a failure that comes after it is reported', async ($, on) => {
+  mock.session(on)
+  const prompts: string[] = []
+  const counts = ['', 'Build Summary: 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed)\n', 'Build Summary: 3/5 steps succeeded (1 failed); 1/3 tests passed (2 failed)\n', 'Build Summary: 3/5 steps succeeded (1 failed); 0/3 tests passed (3 failed)\n']
+  const old = "error: 'root.test.old' failed:\n"
+  const pulled = "error: 'root.test.pulled' failed:\n"
+  const broken = "error: 'root.test.broken' failed:\n"
+  let isLive = true
+  const { clock, written, reads } = vscodeProject(on, {
+    latest: old + counts[1],
+    next: [old + pulled + counts[2], old + pulled + broken + counts[3]],
+    isLive: () => isLive,
+  })
+  reads.set('/repo/.git/HEAD', 'ref: refs/heads/main\n')
+  reads.set('/repo/.git/refs/heads/main', `${'a'.repeat(40)}\n`)
+  on('prompt.submit', ($, e) => {
+    prompts.push(e.text)
+    return { text: e.text }
+  })
+  await $.session.start(start)
+  await clock.advance(500)
+  reads.set('/repo/.git/refs/heads/main', `${'b'.repeat(40)}\n`)
+  await $.tool.call({ tool: 'Bash', command: 'git pull' })
+  expect(written).toContain(`${FEED}.changed`)
+  // Each clock advance waits for the session to settle in real time, so both feed reports arrive in one.
+  await clock.advance(3000)
+  expect(prompts.length).toBe(1)
+  expect(prompts[0]).not.toContain('root.test.pulled')
+  expect(prompts[0]).toContain('Failing: `root.test.broken`.')
+  expect(prompts[0]).toContain('2 more were already failing when the session started.')
+  // VS Code closing ends the feed's tail within seconds, so the session ends without waiting out a live extension.
+  isLive = false
+  const ending = $.session.end({ reason: 'prompt_input_exit', sessionId: 's1' })
+  await clock.advance(5000)
   await ending
 })
