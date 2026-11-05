@@ -724,6 +724,29 @@ async function completionGuard($: EngineInterface, state: State): Promise<string
   return reason
 }
 
+/**
+ * Ends the main agent's turn, unless a guarded failure stands: then the turn goes on and this returns the
+ * correction for it. A cancelled or unsuccessful turn cannot carry out a correction pass, so it ends.
+ */
+async function completeTurn($: EngineInterface, state: State, isAnswered: boolean): Promise<string | undefined> {
+  if (!isAnswered) {
+    state.isTurnRunning = false
+    // Hold automatic wakeups until the next turn starts, including queued watcher reports.
+    state.isPromptQueued = true
+    assert(!state.isTurnRunning && state.isPromptQueued, `an unanswered turn left isTurnRunning ${state.isTurnRunning} and isPromptQueued ${state.isPromptQueued}; end it and hold wakeups`)
+    return undefined
+  }
+  const reason = await completionGuard($, state)
+  if (reason !== undefined) {
+    assert(reason.startsWith('overwatch: ') && state.isPromptQueued, `correction ${reason} is not from overwatch or is not queued; queue it through completionGuard`)
+    return reason
+  }
+  state.isTurnRunning = false
+  schedule($, state)
+  assert(!state.isTurnRunning, `the turn still runs after it ended without a correction; set isTurnRunning to false`)
+  return undefined
+}
+
 /** A session's state before it starts: no directory, slots or messages. */
 const initialState = (): State => {
   const state: State = {
@@ -789,17 +812,10 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
-      // A cancelled or unsuccessful turn cannot carry out a correction pass.
-      if (e.isAborted || e.reason !== 'answer') {
-        state.isTurnRunning = false
-        // Hold automatic wakeups until the next turn starts, including queued watcher reports.
-        state.isPromptQueued = true
-        return next(e)
-      }
-      const reason = await completionGuard($, state)
+      const isAnswered = !e.isAborted && e.reason === 'answer'
+      const reason = await completeTurn($, state, isAnswered)
       if (reason !== undefined) return { text: reason }
-      state.isTurnRunning = false
-      schedule($, state)
+      if (!isAnswered) return next(e)
     }
     void ensureAll($, state)
     return next(e)

@@ -142,7 +142,7 @@ def read_gaps(root: Path, project: str, tools: frozenset[str], idle: float) -> G
         seconds.extend(found)
     gaps = Gaps(tuple(seconds), sessions)
     assert len(gaps.seconds) >= gaps.sessions, f"{gaps.sessions} sessions gave only {len(gaps.seconds)} gaps; count a session only when it has some"
-    assert all(gap > 0 for gap in gaps.seconds), "a gap is not positive; session_gaps keeps gaps of at least SHORTEST_GAP"
+    assert all(gap > 0 for gap in gaps.seconds), f"gaps {[gap for gap in gaps.seconds if gap <= 0]} are not positive; session_gaps keeps gaps of at least SHORTEST_GAP"
     return gaps
 
 

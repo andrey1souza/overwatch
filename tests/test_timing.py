@@ -2,13 +2,25 @@
 import json
 import random
 import unittest
+from dataclasses import dataclass
 
 from paths import ROOT
 import timing
 
 
-def entry(kind: str, second: int, *, tools: tuple[str, ...] = (), result: bool = False, sidechain: bool = False) -> str:
+@dataclass(frozen=True)
+class Shape:
+    """What a transcript line holds besides its kind and time: the tools an assistant calls, whether a user entry is
+    a tool's result, and whether a subagent wrote it."""
+    tools: tuple[str, ...] = ()
+    result: bool = False
+    sidechain: bool = False
+
+
+
+def entry(kind: str, second: int, shape: Shape) -> str:
     """One transcript line: an assistant calling tools, or a user entry that is a prompt or a tool's result."""
+    tools, result, sidechain = shape.tools, shape.result, shape.sidechain
     stamp = f"2026-11-04T06:{second // 60:02d}:{second % 60:02d}Z"
     if kind == "assistant":
         content = [{"type": "tool_use", "name": name, "input": {}} for name in tools]
@@ -21,16 +33,16 @@ def entry(kind: str, second: int, *, tools: tuple[str, ...] = (), result: bool =
 
 
 TRANSCRIPT = (
-    entry("user", 0),
-    entry("assistant", 10, tools=("Edit",)),
-    entry("user", 11, result=True),
-    entry("assistant", 15, tools=("Bash",)),
-    entry("assistant", 25, tools=("Read",)),
-    entry("assistant", 40, tools=("Write",), sidechain=True),
-    entry("assistant", 45, tools=("Edit",)),
-    entry("user", 50),
-    entry("assistant", 55, tools=("Edit",)),
-    entry("assistant", 59 * 60, tools=("Edit",)),
+    entry("user", 0, Shape()),
+    entry("assistant", 10, Shape(tools=("Edit",))),
+    entry("user", 11, Shape(result=True)),
+    entry("assistant", 15, Shape(tools=("Bash",))),
+    entry("assistant", 25, Shape(tools=("Read",))),
+    entry("assistant", 40, Shape(tools=("Write",), sidechain=True)),
+    entry("assistant", 45, Shape(tools=("Edit",))),
+    entry("user", 50, Shape()),
+    entry("assistant", 55, Shape(tools=("Edit",))),
+    entry("assistant", 59 * 60, Shape(tools=("Edit",))),
 )
 
 
@@ -57,7 +69,11 @@ class GapTests(unittest.TestCase):
 class SimulationTests(unittest.TestCase):
     def setup(self, rerun: float, ahead: int) -> timing.Setup:
         """A turn of ten edits ten seconds apart, give or take, with reruns of the given median time."""
-        return timing.Setup(10, timing.Fit(10.0, 0.5), rerun, 0.3, None, ahead)
+        assert isinstance(self, SimulationTests), f"setup was called on {type(self).__name__}; call it from a simulation test"
+        assert rerun >= 0 and ahead > 0, f"rerun {rerun}s and ahead {ahead} must be a time of at least zero and a positive count"
+        result = timing.Setup(10, timing.Fit(10.0, 0.5), rerun, 0.3, None, ahead)
+        assert result.rerun == rerun and result.ahead == ahead, f"setup {result} lost rerun {rerun} or ahead {ahead}"
+        return result
 
     def test_fast_reruns_barely_slow_the_agent(self) -> None:
         share, latency = timing.slowdown(self.setup(0.5, 1), 50, 1)
