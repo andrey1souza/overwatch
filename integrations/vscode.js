@@ -430,11 +430,11 @@ function setStatus(view, run, text) {
   assert(run.status === text, `${run.watcher.name}'s status is ${run.status} after setting ${text}`)
 }
 
-/** Shows message as a VS Code notification of the given level, offering the failing builds' report. */
-function notify(view, level, message) {
-  assert(typeof view.window[level] === "function", `vscode.window.${level} is ${typeof view.window[level]}; notify with a show…Message function`)
+/** Shows message as a VS Code error notification, offering the failing builds' report. */
+function notify(view, message) {
+  assert(typeof view.window.showErrorMessage === "function", `vscode.window.showErrorMessage is ${typeof view.window.showErrorMessage}; pass the vscode window`)
   assert(typeof message === "string" && message !== "", `notify was given message ${JSON.stringify(message)}; pass the text to show`)
-  const shown = view.window[level](message, "Show report")
+  const shown = view.window.showErrorMessage(message, "Show report")
   shown?.then?.(choice => { if (choice === "Show report") view.channel.show(true) })
 }
 
@@ -460,7 +460,7 @@ function deliver(view, run, report) {
   run.failingText = report.isFailed ? report.text : undefined
   redraw(view)
   if (report.isFailed || isRecovery) updateChannel(view)
-  if (isNew) notify(view, "showErrorMessage", line)
+  if (isNew) notify(view, line)
   else if (isRecovery) view.window.showInformationMessage(`${line}, green again`)
   assert(run.hasReport && (run.failing === undefined) === !report.isFailed, `${run.watcher.name} is marked failing ${run.failing} after a report that failed ${report.isFailed}`)
 }
@@ -485,7 +485,7 @@ function reportBroken(view, run, { argv, why, output }) {
   const tail = output.trim().split("\n").slice(-10).join("\n")
   setStatus(view, run, `overwatch ${run.watcher.name}: ${command} ${why}`)
   view.channel.appendLine(`overwatch: ${command} ${why}\n${tail}`)
-  notify(view, "showErrorMessage", `overwatch: ${command} ${why}`)
+  notify(view, `overwatch: ${command} ${why}`)
   assert(run.status.endsWith(why), `${run.watcher.name}'s status ${run.status} does not say ${why}`)
 }
 

@@ -5,6 +5,7 @@ const vscode = require("vscode")
 
 /** Waits until condition holds, failing after timeout milliseconds. */
 async function until(condition, timeout = 20_000) {
+  assert(typeof condition === "function" && timeout > 0, `until was given ${typeof condition} and ${timeout}ms; pass a condition and a positive timeout`)
   const deadline = Date.now() + timeout
   while (!condition()) {
     assert(Date.now() < deadline, `condition ${condition} did not hold within ${timeout}ms`)

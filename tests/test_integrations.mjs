@@ -173,24 +173,67 @@ FAILED tests/test_add.py::test_add - assert 10 == 11
 ========================= 1 failed, 2 passed in 0.03s ==========================
 `
 
-/** A temporary project holding files, by path relative to its root. */
+/** How long a test waits for the extension to show a result, polling as `t.waitFor` does. */
+const WAIT = { interval: 20, timeout: 5000 }
+
+/** The path of `name` inside dir, which a fixture's reads and writes may not leave. */
+function within(dir, name) {
+  assert(name !== "" && !name.startsWith("/") && !name.split("/").includes(".."), `${JSON.stringify(name)} is not a path inside ${dir}; name a file relative to it`)
+  const path = join(dir, name)
+  assert(path.startsWith(`${dir}/`), `${name} resolves to ${path}, outside ${dir}`)
+  return path
+}
+
+/** The file at path, a temporary one a fixture placed, to read, write, or check for. */
+function fileAt(path) {
+  assert(path.startsWith(`${tmpdir()}/`) || path.startsWith(`${realpathSync(tmpdir())}/`), `${path} is not under ${tmpdir()}; tests touch only temporary files`)
+  const file = {
+    read: () => readFileSync(path, "utf8"),
+    write: text => {
+      mkdirSync(join(path, ".."), { recursive: true })
+      writeFileSync(path, text)
+    },
+    has: () => existsSync(path),
+  }
+  assert(!path.endsWith("/"), `${path} names a directory, not a file`)
+  return file
+}
+
+/** A temporary project holding files, by path relative to its root, with each file inside it to read or write. */
 function project(files) {
   const dir = mkdtempSync(join(tmpdir(), "overwatch-vscode-"))
-  for (const [path, text] of Object.entries(files)) {
-    mkdirSync(join(dir, path, ".."), { recursive: true })
-    writeFileSync(join(dir, path), text)
+  const fixture = { dir, file: name => fileAt(within(dir, name)) }
+  for (const [name, text] of Object.entries(files)) fixture.file(name).write(text)
+  assert(existsSync(dir), `the temporary project ${dir} was not made`)
+  assert(Object.keys(files).every(name => fixture.file(name).has()), `project ${dir} is missing some of ${Object.keys(files)}`)
+  return fixture
+}
+
+/** One of the files of a feed VS Code's overwatch keeps for the Claude Code plugin, by extension: pid, claude, json, jsonl or changed. */
+function feedFile(feed, extension) {
+  assert(feed.startsWith(join(process.env.HOME, ".cache", "overwatch", "feeds")), `feed ${feed} is outside this test's home ${process.env.HOME}`)
+  assert(["pid", "claude", "json", "jsonl", "changed"].includes(extension), `${extension} is not one of a feed's files`)
+  return fileAt(`${feed}.${extension}`)
+}
+
+/** VS Code's ThemeColor, naming one of the theme's colours by id. */
+class ThemeColor {
+  constructor(id) {
+    assert(typeof id === "string" && id !== "", `ThemeColor was given ${JSON.stringify(id)}; name a theme colour`)
+    this.id = id
+    assert(this.id === id, `ThemeColor kept ${this.id}, not ${id}`)
   }
-  return dir
 }
 
 /** A fake of the vscode API with a workspace at cwd, recording its status bar, output channel and messages. */
 function fakeVSCode(cwd) {
+  assert(existsSync(cwd), `fakeVSCode was given workspace ${cwd}, which does not exist; make it with project()`)
   process.env.HOME = mkdtempSync(join(tmpdir(), "overwatch-home-"))
   const seen = { commands: {}, messages: [], channel: "", onSave: undefined }
   const item = { text: "", show: () => undefined, hide: () => undefined, dispose: () => undefined }
   const vscode = {
     StatusBarAlignment: { Left: 1 },
-    ThemeColor: class { constructor(id) { this.id = id } },
+    ThemeColor,
     window: {
       createStatusBarItem: () => item,
       createOutputChannel: () => ({ replace: text => { seen.channel = text }, appendLine: text => { seen.channel += text }, show: () => undefined, dispose: () => undefined }),
@@ -205,16 +248,8 @@ function fakeVSCode(cwd) {
       onDidChangeWorkspaceFolders: () => ({ dispose: () => undefined }),
     },
   }
+  assert(vscode.workspace.workspaceFolders[0].uri.fsPath === cwd, `the fake workspace is not at ${cwd}`)
   return { vscode, item, seen }
-}
-
-/** Waits until condition holds, failing after timeout milliseconds. */
-async function until(condition, timeout = 5000) {
-  const deadline = Date.now() + timeout
-  while (!condition()) {
-    assert(Date.now() < deadline, `condition ${condition} did not hold within ${timeout}ms`)
-    await new Promise(resolve => setTimeout(resolve, 20))
-  }
 }
 
 test("VS Code reads the pytest summary line and names what failed", () => {
@@ -227,90 +262,97 @@ test("VS Code reads the pytest summary line and names what failed", () => {
 })
 
 test("VS Code watches each language, in its sub-project when the root lacks it, unless the override turns it off", () => {
-  const dir = project({ "Cargo.toml": "", "services/api/go.mod": "" })
-  assert.deepEqual(findWatchers(dir).map(watcher => [watcher.name, watcher.dir]), [["go services/api", "services/api"], ["rust", undefined]])
-  writeFileSync(join(dir, ".overwatch.json"), JSON.stringify({ enabled: false }))
-  assert.deepEqual(findWatchers(dir), [])
+  const workspace = project({ "Cargo.toml": "", "services/api/go.mod": "" })
+  assert.deepEqual(findWatchers(workspace.dir).map(watcher => [watcher.name, watcher.dir]), [["go services/api", "services/api"], ["rust", undefined]])
+  workspace.file(".overwatch.json").write(JSON.stringify({ enabled: false }))
+  assert.deepEqual(findWatchers(workspace.dir), [])
 })
 
-test("VS Code reruns a suite with no watch command after each save and shows it in the status bar", async () => {
-  const dir = project({
-    ".overwatch.json": JSON.stringify({ baseline: ["sh", "-c", "cat result; echo run >> runs"], summary: "^(?:pass|fail)$", failed: "fail" }),
+test("VS Code reruns a suite with no watch command after each save and shows it in the status bar", async t => {
+  const workspace = project({
+    ".overwatch.json": JSON.stringify({ baseline: ["sh", "-c", "cat result"], summary: "^(?:pass|fail)$", failed: "fail" }),
     result: "pass\n",
   })
-  const { vscode, item, seen } = fakeVSCode(dir)
+  const { vscode, item, seen } = fakeVSCode(workspace.dir)
   const subscriptions = []
   const overwatch = registerVSCode(vscode, { subscriptions })
+  const feed = feedOf({ language: "project" }, workspace.dir)
   assert.deepEqual(Object.keys(seen.commands).sort(), ["overwatch.doctor", "overwatch.show", "overwatch.start", "overwatch.stop"])
-  await until(() => item.text === "overwatch project ✓ pass")
-  writeFileSync(join(dir, "result"), "fail\n")
+  await t.waitFor(() => assert.equal(item.text, "overwatch project ✓ pass"), WAIT)
+  workspace.file("result").write("fail\n")
   seen.onSave()
-  await until(() => item.text === "overwatch project ✗ fail")
+  await t.waitFor(() => assert.equal(item.text, "overwatch project ✗ fail"), WAIT)
   assert.match(seen.channel, /overwatch project\nfail/)
   assert.equal(item.backgroundColor.id, "statusBarItem.errorBackground")
   assert.deepEqual(seen.messages, ["overwatch project ✗ fail"])
   seen.onSave()
-  await until(() => readFileSync(join(dir, "runs"), "utf8").split("\n").length === 4)
-  await new Promise(resolve => setTimeout(resolve, 50))
+  // Each report is written to the feed just before it is shown, so the third entry means the rerun's report is in.
+  await t.waitFor(() => assert.equal(feedFile(feed, "jsonl").read().trim().split("\n").length, 3), WAIT)
   assert.deepEqual(seen.messages, ["overwatch project ✗ fail"])
-  writeFileSync(join(dir, "result"), "pass\n")
+  workspace.file("result").write("pass\n")
   seen.onSave()
-  await until(() => item.text === "overwatch project ✓ pass")
+  await t.waitFor(() => assert.equal(item.text, "overwatch project ✓ pass"), WAIT)
   assert.equal(seen.messages.at(-1), "overwatch project ✓ pass, green again")
   overwatch.stop()
 })
 
-test("VS Code keeps the full run's result in the status bar while the watcher it starts is quiet", async () => {
-  const dir = project({
+test("VS Code keeps the full run's result in the status bar while the watcher it starts is quiet", async t => {
+  const workspace = project({
     ".overwatch.json": JSON.stringify({ argv: ["sh", "-c", "echo started > watching; exec sleep 30"], baseline: ["sh", "-c", "cat result"], summary: "^(?:pass|fail)$", failed: "fail" }),
     result: "fail\n",
   })
-  const { vscode, item } = fakeVSCode(dir)
+  const { vscode, item } = fakeVSCode(workspace.dir)
   const overwatch = registerVSCode(vscode, { subscriptions: [] })
   try {
-    await until(() => existsSync(join(dir, "watching")))
+    await t.waitFor(() => assert(workspace.file("watching").has(), "the watcher has not started"), WAIT)
     assert.equal(item.text, "overwatch project ✗ fail")
   } finally {
     overwatch.stop()
   }
 })
 
-test("VS Code writes each watcher's reports where the Claude Code plugin follows them, and reruns when it asks", async () => {
-  const dir = project({
-    ".overwatch.json": JSON.stringify({ baseline: ["sh", "-c", "cat result; echo run >> runs"], summary: "^(?:pass|fail)$", failed: "fail" }),
+test("VS Code writes each watcher's reports where the Claude Code plugin follows them, and reruns when it asks", async t => {
+  const workspace = project({
+    ".overwatch.json": JSON.stringify({ baseline: ["sh", "-c", "cat result"], summary: "^(?:pass|fail)$", failed: "fail" }),
     result: "fail\n",
   })
-  const { vscode, item } = fakeVSCode(dir)
+  const { vscode, item } = fakeVSCode(workspace.dir)
   const overwatch = registerVSCode(vscode, { subscriptions: [] })
-  const feed = feedOf({ language: "project" }, dir)
+  const feed = feedOf({ language: "project" }, workspace.dir)
   try {
-    assert.equal(feed, join(process.env.HOME, ".cache", "overwatch", "feeds", `project:${realpathSync(dir)}`.replace(/[^\w.-]+/g, "-")))
-    assert.equal(readFileSync(`${feed}.pid`, "utf8"), String(process.pid))
-    await until(() => item.text === "overwatch project ✗ fail")
-    assert.deepEqual(JSON.parse(readFileSync(`${feed}.json`, "utf8")), { text: "fail\n", code: 0 })
-    writeFileSync(join(dir, "result"), "pass\n")
-    writeFileSync(`${feed}.changed`, "")
-    await until(() => item.text === "overwatch project ✓ pass")
-    assert.deepEqual(readFileSync(`${feed}.jsonl`, "utf8").trim().split("\n").map(line => JSON.parse(line).text), ["fail\n", "pass\n"])
+    assert.equal(feed, join(process.env.HOME, ".cache", "overwatch", "feeds", `project:${realpathSync(workspace.dir)}`.replace(/[^\w.-]+/g, "-")))
+    assert.equal(feedFile(feed, "pid").read(), String(process.pid))
+    await t.waitFor(() => assert.equal(item.text, "overwatch project ✗ fail"), WAIT)
+    assert.deepEqual(JSON.parse(feedFile(feed, "json").read()), { text: "fail\n", code: 0 })
+    workspace.file("result").write("pass\n")
+    feedFile(feed, "changed").write("")
+    await t.waitFor(() => assert.equal(item.text, "overwatch project ✓ pass"), WAIT)
+    assert.deepEqual(feedFile(feed, "jsonl").read().trim().split("\n").map(line => JSON.parse(line).text), ["fail\n", "pass\n"])
   } finally {
     overwatch.stop()
   }
-  assert.equal(existsSync(`${feed}.pid`), false)
+  assert.equal(feedFile(feed, "pid").has(), false)
 })
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version
 
 /** A doctor's view of a git project with one watcher, its plugin list answered by `plugins`, its feed followed by Claude when `isFollowed`. */
 async function doctor({ plugins, isFollowed = true, isGit = true, tool = "sh" }) {
+  assert(plugins === undefined || Array.isArray(plugins), `doctor was given plugins ${JSON.stringify(plugins)}; pass a plugin list, or none for claude missing`)
   process.env.HOME = mkdtempSync(join(tmpdir(), "overwatch-home-"))
-  const folder = project(isGit ? { ".git/HEAD": "" } : {})
+  const folder = project(isGit ? { ".git/HEAD": "" } : {}).dir
   const watcher = { name: "project", language: "project", baseline: [tool, "-c", "cat result"] }
   const feed = feedOf(watcher, folder)
-  mkdirSync(join(feed, ".."), { recursive: true })
-  writeFileSync(`${feed}.claude`, isFollowed === true ? String(process.pid) : isFollowed || "")
+  feedFile(feed, "claude").write(isFollowed === true ? String(process.pid) : isFollowed || "")
   const runs = [{ watcher, status: "overwatch project ✓ pass", feed }]
-  const run = async () => plugins === undefined ? { code: -1, stdout: "" } : { code: 0, stdout: JSON.stringify(plugins) }
-  return (await diagnose({ folder, repository: repositoryOf(folder), runs, run })).join("\n")
+  const report = await diagnose({
+    folder,
+    repository: repositoryOf(folder),
+    runs,
+    run: async () => plugins === undefined ? { code: -1, stdout: "" } : { code: 0, stdout: JSON.stringify(plugins) },
+  })
+  assert(report[0] === "overwatch doctor", `the doctor's report opens with ${report[0]}, not its title`)
+  return report.join("\n")
 }
 
 test("the VS Code doctor finds a git project's watcher, the matching Claude Code plugin, and Claude following it", async () => {
@@ -333,25 +375,24 @@ test("the VS Code doctor names each thing that stops Claude sharing VS Code's wa
   assert.match(await doctor({ plugins: [{ id: "overwatch@overwatch", version: VERSION, enabled: true }], isFollowed: "2147483646" }), /⚠ Claude is not following project/)
 })
 
-test("VS Code's status bar shows when Claude is following a watcher", async () => {
-  const dir = project({
+test("VS Code's status bar shows when Claude is following a watcher", async t => {
+  const workspace = project({
     ".overwatch.json": JSON.stringify({ baseline: ["sh", "-c", "cat result"], summary: "^(?:pass|fail)$", failed: "fail" }),
     result: "pass\n",
   })
-  const { vscode, item } = fakeVSCode(dir)
-  const feed = feedOf({ language: "project" }, dir)
-  mkdirSync(join(feed, ".."), { recursive: true })
-  writeFileSync(`${feed}.claude`, String(process.pid))
+  const { vscode, item } = fakeVSCode(workspace.dir)
+  const feed = feedOf({ language: "project" }, workspace.dir)
+  feedFile(feed, "claude").write(String(process.pid))
   const overwatch = registerVSCode(vscode, { subscriptions: [] })
   try {
-    await until(() => item.text === "overwatch project ✓ pass → Claude")
-    writeFileSync(`${feed}.claude`, "")
-    await until(() => item.text === "overwatch project ✓ pass")
-    writeFileSync(`${feed}.claude`, String(process.pid))
-    await until(() => item.text === "overwatch project ✓ pass → Claude")
+    await t.waitFor(() => assert.equal(item.text, "overwatch project ✓ pass → Claude"), WAIT)
+    feedFile(feed, "claude").write("")
+    await t.waitFor(() => assert.equal(item.text, "overwatch project ✓ pass"), WAIT)
+    feedFile(feed, "claude").write(String(process.pid))
+    await t.waitFor(() => assert.equal(item.text, "overwatch project ✓ pass → Claude"), WAIT)
   } finally {
-    writeFileSync(`${feed}.pid`, "1")
+    feedFile(feed, "pid").write("1")
     overwatch.stop()
   }
-  assert.equal(readFileSync(`${feed}.pid`, "utf8"), "1")
+  assert.equal(feedFile(feed, "pid").read(), "1")
 })

@@ -1,5 +1,6 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import { assert } from '../hooks/assert'
 
 const start = { cwd: '/repo', surface: 'terminal' as const, isInteractive: true }
 const PASSING = 'Build Summary: 4/4 steps succeeded; 48/48 tests passed\n'
@@ -7,8 +8,13 @@ const FAILING = "error: 'root.test.add' failed:\nBuild Summary: 3/5 steps succee
 const FEED = '/home/me/.cache/overwatch/feeds/zig-repo'
 const ZIG_WATCH = ['zig', 'build', '-Doptimize=fast', 'test', '--watch']
 
-/** A zig project whose watcher VS Code's overwatch runs, writing its reports to FEED; `isLive` says whether its extension host still runs. */
-const vscodeProject = (on: On, clock: ReturnType<typeof mock.clock>, feed: { latest: string; next: string; isLive: () => boolean }) => {
+/** What VS Code's overwatch writes to FEED: its latest report, the next one it reads, and whether its extension host still runs. */
+type Feed = { latest: string; next: string; isLive: () => boolean }
+
+/** A zig project whose watcher VS Code's overwatch runs, writing its reports to FEED as `feed` says. */
+const vscodeProject = (on: On, feed: Feed) => {
+  assert(feed.latest !== '' && feed.next !== '', `vscodeProject was given feed reports ${JSON.stringify(feed.latest)} and ${JSON.stringify(feed.next)}; give it both`)
+  const clock = mock.clock(on)
   const spawned: string[][] = []
   const written: string[] = []
   const markers: string[] = []
@@ -43,15 +49,15 @@ const vscodeProject = (on: On, clock: ReturnType<typeof mock.clock>, feed: { lat
   on('tool.call', () => ({ result: 'ok' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
-  return { spawned, written, markers }
+  assert(spawned.length === 0 && written.length === 0, `vscodeProject recorded ${spawned.length} commands and ${written.length} writes before the session started`)
+  return { clock, spawned, written, markers }
 }
 
 test('a watcher VS Code runs is followed from its feed, not run a second time', async ($, on) => {
-  const clock = mock.clock(on)
   mock.session(on)
   const prompts: string[] = []
   const statuses: (string | undefined)[] = []
-  const { spawned, written, markers } = vscodeProject(on, clock, { latest: PASSING, next: FAILING, isLive: () => true })
+  const { clock, spawned, written, markers } = vscodeProject(on, { latest: PASSING, next: FAILING, isLive: () => true })
   on('prompt.submit', ($, e) => {
     prompts.push(e.text)
     return { text: e.text }
@@ -76,9 +82,8 @@ test('a watcher VS Code runs is followed from its feed, not run a second time', 
 })
 
 test('a feed whose extension host has gone is left at the next turn for overwatch to run the watcher itself', async ($, on) => {
-  const clock = mock.clock(on)
   let isLive = true
-  const { spawned } = vscodeProject(on, clock, { latest: PASSING, next: PASSING, isLive: () => isLive })
+  const { clock, spawned } = vscodeProject(on, { latest: PASSING, next: PASSING, isLive: () => isLive })
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   await $.session.start(start)
   await clock.advance(2000)
@@ -94,9 +99,8 @@ test('a feed whose extension host has gone is left at the next turn for overwatc
 })
 
 test('a session that started before VS Code follows its feed from the next turn, stopping its own watcher', async ($, on) => {
-  const clock = mock.clock(on)
   let isLive = false
-  const { spawned } = vscodeProject(on, clock, { latest: PASSING, next: PASSING, isLive: () => isLive })
+  const { clock, spawned } = vscodeProject(on, { latest: PASSING, next: PASSING, isLive: () => isLive })
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   await $.session.start(start)
   await clock.advance(2000)
