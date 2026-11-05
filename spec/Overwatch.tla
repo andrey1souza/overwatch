@@ -14,7 +14,7 @@ NoMessage == [held |-> FALSE, waking |-> FALSE, failures |-> {}]
 NotTold == [kind |-> "none", fresh |-> {}]
 
 VARIABLES
-    mode, truth, head,
+    mode, truth, head, based,
     busy, from, quiet, installed,
     report, baseline, wasFailing,
     outbox, told, flush,
@@ -22,7 +22,7 @@ VARIABLES
     knows, done,
     elapsed, redEdits, escalated
 
-vars == <<mode, truth, head, busy, from, quiet, installed, report, baseline, wasFailing,
+vars == <<mode, truth, head, based, busy, from, quiet, installed, report, baseline, wasFailing,
           outbox, told, flush, turn, toldThisTurn, promptQueued, knows, done,
           elapsed, redEdits, escalated>>
 
@@ -31,7 +31,7 @@ limits == <<elapsed, redEdits, escalated>>
 TypeOK ==
     /\ mode \in Modes
     /\ truth \in [Versions -> Results]
-    /\ head \in Versions
+    /\ head \in Versions /\ based \in 0..head
     /\ busy \in BOOLEAN /\ from \in Versions /\ quiet \in BOOLEAN /\ installed \in BOOLEAN
     /\ report \in [known : BOOLEAN, at : Versions, failures : Outcomes]
     /\ baseline \in [known : BOOLEAN, failures : Outcomes]
@@ -54,7 +54,7 @@ Guard(m) ==
       [] m = "default"  -> Failing /\ Regressed(report.failures)
       [] m = "strict"   -> Failing \/ ~Fresh
 
-Ahead == IF report.known THEN head - report.at ELSE head
+Ahead == IF report.known /\ report.at >= based THEN head - report.at ELSE head - based
 
 CanEdit(m) ==
     CASE m = "advisory" -> TRUE
@@ -64,7 +64,7 @@ CanEdit(m) ==
 Init ==
     /\ mode \in Modes
     /\ truth \in [Versions -> Results]
-    /\ head = 0
+    /\ head = 0 /\ based = 0
     /\ busy = TRUE /\ from = 0 /\ quiet = FALSE /\ installed = FALSE
     /\ report = [known |-> FALSE, at |-> 0, failures |-> {}]
     /\ baseline = [known |-> FALSE, failures |-> {}]
@@ -83,7 +83,7 @@ Queue(signature, message) ==
          /\ flush' = TRUE
 
 Deliver(v, f) ==
-    LET b == IF baseline.known THEN baseline.failures ELSE IF head = 0 THEN f ELSE {}
+    LET b == IF baseline.known THEN baseline.failures ELSE IF head = based THEN f ELSE {}
         isRegression == ~(f \subseteq b)
     IN /\ report' = [known |-> TRUE, at |-> v, failures |-> f]
        /\ baseline' = [known |-> TRUE, failures |-> b]
@@ -106,9 +106,21 @@ Edit ==
     /\ head' = head + 1
     /\ quiet' = TRUE
     /\ redEdits' = IF wasFailing /\ mode = "strict" THEN redEdits + 1 ELSE redEdits
-    /\ UNCHANGED <<mode, truth, busy, from, installed, report, baseline, wasFailing,
+    /\ UNCHANGED <<mode, truth, based, busy, from, installed, report, baseline, wasFailing,
                    outbox, told, flush, turn, toldThisTurn, promptQueued, knows, done,
                    elapsed, escalated>>
+
+HeadMoves ==
+    /\ head < MaxEdits
+    /\ head' = head + 1
+    /\ based' = head + 1
+    /\ baseline' = [known |-> FALSE, failures |-> {}]
+    /\ quiet' = TRUE
+    /\ from' = IF busy THEN head + 1 ELSE from
+    /\ elapsed' = IF busy THEN 0 ELSE elapsed
+    /\ UNCHANGED <<mode, truth, busy, installed, report, wasFailing,
+                   outbox, told, flush, turn, toldThisTurn, promptQueued, knows, done,
+                   redEdits, escalated>>
 
 QuietElapses ==
     /\ quiet
@@ -117,7 +129,7 @@ QuietElapses ==
     /\ busy' = TRUE
     /\ from' = head
     /\ elapsed' = 0
-    /\ UNCHANGED <<mode, truth, head, installed, report, baseline, wasFailing,
+    /\ UNCHANGED <<mode, truth, head, based, installed, report, baseline, wasFailing,
                    outbox, told, flush, turn, toldThisTurn, promptQueued, knows, done,
                    redEdits, escalated>>
 
@@ -125,7 +137,7 @@ Tick ==
     /\ busy
     /\ elapsed < Timeout
     /\ elapsed' = elapsed + 1
-    /\ UNCHANGED <<mode, truth, head, busy, from, quiet, installed, report, baseline, wasFailing,
+    /\ UNCHANGED <<mode, truth, head, based, busy, from, quiet, installed, report, baseline, wasFailing,
                    outbox, told, flush, turn, toldThisTurn, promptQueued, knows, done,
                    redEdits, escalated>>
 
@@ -134,7 +146,7 @@ RunEnds ==
     /\ \E v \in from..head : Deliver(v, truth[v])
     /\ busy' = FALSE
     /\ installed' = TRUE
-    /\ UNCHANGED <<mode, truth, head, from, quiet, turn, toldThisTurn, promptQueued, knows, done,
+    /\ UNCHANGED <<mode, truth, head, based, from, quiet, turn, toldThisTurn, promptQueued, knows, done,
                    elapsed, escalated>>
 
 TimesOut ==
@@ -145,7 +157,7 @@ TimesOut ==
     /\ Queue([kind |-> "failed", fresh |-> {TimedOut}], [held |-> TRUE, waking |-> TRUE, failures |-> {TimedOut}])
     /\ busy' = FALSE
     /\ installed' = TRUE
-    /\ UNCHANGED <<mode, truth, head, from, quiet, baseline, turn, toldThisTurn, promptQueued, knows, done,
+    /\ UNCHANGED <<mode, truth, head, based, from, quiet, baseline, turn, toldThisTurn, promptQueued, knows, done,
                    elapsed, redEdits, escalated>>
 
 Held ==
@@ -161,7 +173,7 @@ Flush ==
                    THEN toldThisTurn' = TRUE /\ UNCHANGED promptQueued
                    ELSE promptQueued' = TRUE /\ UNCHANGED toldThisTurn
          ELSE UNCHANGED <<outbox, knows, toldThisTurn, promptQueued>>
-    /\ UNCHANGED <<mode, truth, head, busy, from, quiet, installed, report, baseline, wasFailing,
+    /\ UNCHANGED <<mode, truth, head, based, busy, from, quiet, installed, report, baseline, wasFailing,
                    told, turn, done>>
     /\ UNCHANGED limits
 
@@ -173,7 +185,7 @@ TurnStarts ==
     /\ flush' = TRUE
     /\ escalated' = FALSE
     /\ redEdits' = IF escalated THEN 0 ELSE redEdits
-    /\ UNCHANGED <<mode, truth, head, busy, from, quiet, installed, report, baseline, wasFailing,
+    /\ UNCHANGED <<mode, truth, head, based, busy, from, quiet, installed, report, baseline, wasFailing,
                    outbox, told, knows, done, elapsed>>
 
 WokenTurnStarts == promptQueued /\ ~escalated /\ TurnStarts
@@ -188,7 +200,7 @@ TurnCompletes ==
               /\ flush' = TRUE
               /\ done' = [known |-> TRUE, at |-> head, mode |-> mode]
               /\ UNCHANGED <<toldThisTurn, knows>>
-    /\ UNCHANGED <<mode, truth, head, busy, from, quiet, installed, report, baseline, wasFailing,
+    /\ UNCHANGED <<mode, truth, head, based, busy, from, quiet, installed, report, baseline, wasFailing,
                    outbox, told, promptQueued>>
     /\ UNCHANGED limits
 
@@ -200,10 +212,10 @@ Escalates ==
     /\ turn' = "idle"
     /\ escalated' = TRUE
     /\ knows' = report.failures
-    /\ UNCHANGED <<mode, truth, head, busy, from, quiet, installed, report, baseline, wasFailing,
+    /\ UNCHANGED <<mode, truth, head, based, busy, from, quiet, installed, report, baseline, wasFailing,
                    outbox, told, flush, toldThisTurn, promptQueued, done, elapsed, redEdits>>
 
-Next == Edit \/ QuietElapses \/ Tick \/ RunEnds \/ TimesOut \/ Flush \/ TurnStarts \/ TurnCompletes \/ Escalates
+Next == Edit \/ HeadMoves \/ QuietElapses \/ Tick \/ RunEnds \/ TimesOut \/ Flush \/ TurnStarts \/ TurnCompletes \/ Escalates
 
 Spec ==
     /\ Init /\ [][Next]_vars
@@ -232,11 +244,11 @@ StrictCompletesOnlyOnVerifiedGreen ==
     done.known /\ done.mode = "strict" => truth[done.at] = {}
 
 BaselineNeverAbsorbsEdits ==
-    baseline.known => baseline.failures \subseteq truth[0]
+    baseline.known => baseline.failures \subseteq truth[based]
 
 EveryEditIsChecked ==
     <>[](report.known /\ report.at = head)
 
 RegressionsReachAgent ==
-    <>[]((truth[head] \ truth[0]) \subseteq knows \/ TimedOut \in knows \/ escalated)
+    <>[]((truth[head] \ truth[based]) \subseteq knows \/ TimedOut \in knows \/ escalated)
 =============================================================================

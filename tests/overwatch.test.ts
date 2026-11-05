@@ -972,6 +972,37 @@ test('a large inherited backlog is saved for triage while only a new issue wakes
 })
 
 
+test('a pull that moves HEAD takes a fresh baseline, so only the agent\'s own failures wake it', async ($, on) => {
+  const clock = mock.clock(on)
+  const prompts: string[] = []
+  const git = new Map([['/repo/.git/HEAD', 'ref: refs/heads/main\n'], ['/repo/.git/packed-refs', `${'a'.repeat(40)} refs/heads/main\n`]])
+  let output = '--- FAIL: TestOld (0.00s)\nFAIL\n'
+  mock.env(on, { PATH: '/usr/bin' })
+  on('fs.read', ($, e) => (git.has(e.path) ? { value: git.get(e.path)! } : { deny: 'no such file' }))
+  on('fs.exists', ($, e) => ({ value: ['/repo/.git', '/repo/go.mod'].includes(e.path) }))
+  on('process.spawn', async function* () {
+    yield { stream: 'stdout' as const, text: output }
+    return { value: { code: 1, signal: null } }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('tool.call', () => ({ result: 'ok' }))
+  on('prompt.submit', ($, e) => { prompts.push(e.text); return { text: e.text } })
+  await $.session.start(start)
+  await clock.advance(1000)
+  output = '--- FAIL: TestOld (0.00s)\n--- FAIL: TestPulled (0.00s)\nFAIL\n'
+  git.set('/repo/.git/refs/heads/main', `${'b'.repeat(40)}\n`)
+  await $.tool.call({ tool: 'Bash', command: 'git pull' })
+  await clock.advance(1000)
+  expect(prompts).toEqual([])
+  output = '--- FAIL: TestOld (0.00s)\n--- FAIL: TestPulled (0.00s)\n--- FAIL: TestBroken (0.00s)\nFAIL\n'
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/calc.go', old_string: 'a', new_string: 'b' })
+  await clock.advance(1000)
+  expect(prompts.length).toBe(1)
+  expect(prompts[0]).toContain('TestBroken')
+  expect(prompts[0]).not.toContain('TestPulled')
+  expect(prompts[0]).toContain('2 more were already failing when the session started.')
+})
+
 test('a summary-only legacy backlog guards count increases and permits reductions', () => {
   const baseline = { summary: '10000 errors and 20 warnings', isFailed: true, text: '', failures: [] }
   expect(hasRegression({ ...baseline, summary: '9999 errors and 20 warnings' }, baseline)).toBe(false)

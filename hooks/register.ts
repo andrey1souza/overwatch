@@ -75,6 +75,8 @@ type State = {
   epoch: number
   isTurnRunning: boolean
   isPromptQueued: boolean
+  /** The commit the session's baselines belong to; undefined until it is read, and when it cannot be. */
+  head: string | undefined
   /** Last completion correction; only useful work or changed findings may request another pass. */
   completionCorrection: string | undefined
   /** Whether the running turn has had its one message from overwatch. */
@@ -398,6 +400,31 @@ async function repositoryOf($: EngineInterface, dir: string): Promise<string | u
   return root
 }
 
+/** A commit id as git writes it in .git: forty hex digits, or sixty-four in a SHA-256 repository. */
+const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
+/**
+ * The commit checked out in the repository at root, read from its .git directory: HEAD itself when detached, else
+ * the branch it names, loose or packed. Undefined when none can be read, as in a worktree whose .git is a file.
+ */
+async function commitOf($: EngineInterface, root: string): Promise<string | undefined> {
+  assert(root.startsWith('/'), `commitOf was given ${root}; pass the repository's absolute path`)
+  const read = async (name: string) => {
+    assert(name !== '' && !name.startsWith('/'), `commitOf read ${JSON.stringify(name)}; name a file inside .git`)
+    const text = await $.fs.read(`${root}/.git/${name}`).then(found => found.trim(), () => '')
+    assert(text === text.trim(), `${name} read as ${JSON.stringify(text)}, untrimmed; trim what .git holds`)
+    return text
+  }
+  const head = await read('HEAD')
+  const ref = /^ref: (\S+)$/.exec(head)?.[1]
+  if (ref === undefined) return COMMIT.test(head) ? head : undefined
+  const loose = await read(ref)
+  const packed = loose === '' ? await read('packed-refs') : ''
+  const commit = loose || (packed.split('\n').find(line => line.endsWith(` ${ref}`))?.split(' ')[0] ?? '')
+  assert(loose === '' || commit === loose, `${ref} reads ${loose} but resolved to ${commit}; prefer the loose ref`)
+  return COMMIT.test(commit) ? commit : undefined
+}
+
 /** The project's .overwatch.json in cwd, or no override when it has none or it is not JSON. */
 async function readOverride($: EngineInterface, cwd: string): Promise<Override> {
   assert(cwd !== '' && !cwd.endsWith(`/${OVERRIDE_PATH}`), `readOverride was given ${cwd}; pass the project's directory`)
@@ -628,6 +655,7 @@ async function stop($: EngineInterface, state: State) {
   state.cwd = undefined
   state.onWatcherEnded = undefined
   state.completionCorrection = undefined
+  state.head = undefined
   state.isTurnRunning = false
   state.isPromptQueued = false
   state.isToldThisTurn = false
@@ -747,6 +775,42 @@ async function completeTurn($: EngineInterface, state: State, isAnswered: boolea
   return undefined
 }
 
+/**
+ * Notes the commit the session's baselines belong to, and takes fresh ones once it moves under the session, as a
+ * pull or checkout brings in failures the agent did not make. Each check reruns, stopping a run still reading the
+ * old commit, and its next result is its baseline unless the agent edits first.
+ */
+async function rebaselineOnMove($: EngineInterface, state: State) {
+  const { cwd, epoch } = state
+  assert(state.head === undefined || COMMIT.test(state.head), `the session's HEAD ${state.head} is not a commit id; note only what commitOf returns`)
+  if (cwd === undefined) return
+  const root = await repositoryOf($, cwd)
+  const head = root === undefined ? undefined : await commitOf($, root)
+  if (state.epoch !== epoch || head === undefined || head === state.head) return
+  const isMoved = state.head !== undefined
+  state.head = head
+  if (!isMoved) return
+  for (const each of state.slots) {
+    each.baseline = undefined
+    each.isEdited = false
+    each.changed?.()
+  }
+  assert(state.slots.every(each => each.baseline === undefined && !each.isEdited), `a slot kept its baseline after HEAD moved to ${head}; clear each`)
+}
+
+/** After a tool runs another correction pass may be useful; an editing tool also reruns each check and may have moved HEAD. */
+async function afterTool($: EngineInterface, state: State, tool: string) {
+  assert(tool !== '', `a tool call named the tool ${JSON.stringify(tool)}; pass the name of the tool the agent called`)
+  state.completionCorrection = undefined
+  if (!EDITING_TOOLS.has(tool)) return
+  for (const each of state.slots) {
+    each.isEdited = true
+    each.changed?.()
+  }
+  await rebaselineOnMove($, state)
+  assert(state.completionCorrection === undefined, `a correction ${state.completionCorrection} was kept across ${tool}; clear it so another pass may follow`)
+}
+
 /** A session's state before it starts: no directory, slots or messages. */
 const initialState = (): State => {
   const state: State = {
@@ -754,6 +818,7 @@ const initialState = (): State => {
     epoch: 0,
     isTurnRunning: false,
     isPromptQueued: false,
+    head: undefined,
     completionCorrection: undefined,
     isToldThisTurn: false,
     outbox: new Map(),
@@ -781,6 +846,7 @@ export const register: Register = on => {
     state.cwd = e.cwd
     state.onWatcherEnded = () => void ensureAll($, state)
     void ensureAll($, state)
+    void rebaselineOnMove($, state)
     return started
   })
 
@@ -792,12 +858,7 @@ export const register: Register = on => {
       if (reason !== undefined) return { deny: reason }
     }
     const result = await next(e)
-    state.completionCorrection = undefined
-    if (!EDITING_TOOLS.has(e.tool)) return result
-    for (const each of state.slots) {
-      each.isEdited = true
-      each.changed?.()
-    }
+    await afterTool($, state, e.tool)
     return result
   })
 
@@ -807,6 +868,7 @@ export const register: Register = on => {
     state.isPromptQueued = false
     schedule($, state)
     void ensureAll($, state)
+    void rebaselineOnMove($, state)
     return next(e)
   })
 

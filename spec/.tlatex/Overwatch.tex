@@ -955,7 +955,7 @@
  \} ]}%
 \@pvspace{8.0pt}%
 \@x{ {\VARIABLES}}%
-\@x{\@s{16.4} mode ,\, truth ,\, head ,\,}%
+\@x{\@s{16.4} mode ,\, truth ,\, head ,\, based ,\,}%
 \@x{\@s{16.4} busy ,\, from ,\, quiet ,\, installed ,\,}%
 \@x{\@s{16.4} report ,\, baseline ,\, wasFailing ,\,}%
 \@x{\@s{16.4} outbox ,\, told ,\, flush ,\,}%
@@ -963,8 +963,8 @@
 \@x{\@s{16.4} knows ,\, done ,\,}%
 \@x{\@s{16.4} elapsed ,\, redEdits ,\, escalated}%
 \@pvspace{8.0pt}%
- \@x{ vars \.{\defeq} {\langle} mode ,\, truth ,\, head ,\, busy ,\, from ,\,
- quiet ,\, installed ,\, report ,\, baseline ,\, wasFailing ,\,}%
+ \@x{ vars \.{\defeq} {\langle} mode ,\, truth ,\, head ,\, based ,\, busy ,\,
+ from ,\, quiet ,\, installed ,\, report ,\, baseline ,\, wasFailing ,\,}%
  \@x{\@s{41.61} outbox ,\, told ,\, flush ,\, turn ,\, toldThisTurn ,\,
  promptQueued ,\, knows ,\, done ,\,}%
 \@x{\@s{41.61} elapsed ,\, redEdits ,\, escalated {\rangle}}%
@@ -976,7 +976,8 @@
 \@x{\@s{16.4} \.{\land}\@s{9.74} mode \.{\in} Modes}%
  \@x{\@s{16.4} \.{\land}\@s{9.74} truth \.{\in} [ Versions \.{\rightarrow}
  Results ]}%
-\@x{\@s{16.4} \.{\land}\@s{9.74} head \.{\in} Versions}%
+ \@x{\@s{16.4} \.{\land}\@s{9.74} head \.{\in} Versions \.{\land} based
+ \.{\in} 0 \.{\dotdot} head}%
  \@x{\@s{16.4} \.{\land}\@s{9.74} busy\@s{0.65} \.{\in} {\BOOLEAN} \.{\land}
  from \.{\in} Versions \.{\land} quiet \.{\in} {\BOOLEAN} \.{\land} installed
  \.{\in} {\BOOLEAN}}%
@@ -1014,8 +1015,8 @@
  \@x{\@s{24.59} {\Box}\@s{10.30} m \.{=}\@w{strict}\@s{12.25} \.{\rightarrow}
  Failing \.{\lor} {\lnot} Fresh}%
 \@pvspace{8.0pt}%
- \@x{ Ahead \.{\defeq} {\IF} report . known \.{\THEN} head \.{-} report . at
- \.{\ELSE} head}%
+ \@x{ Ahead \.{\defeq} {\IF} report . known \.{\land} report . at \.{\geq}
+ based \.{\THEN} head \.{-} report . at \.{\ELSE} head \.{-} based}%
 \@pvspace{8.0pt}%
 \@x{ CanEdit ( m ) \.{\defeq}}%
 \@x{\@s{16.4} {\CASE} m \.{=}\@w{advisory} \.{\rightarrow} {\TRUE}}%
@@ -1027,7 +1028,7 @@
 \@x{ Init \.{\defeq}}%
 \@x{\@s{16.4} \.{\land} mode \.{\in} Modes}%
 \@x{\@s{16.4} \.{\land} truth \.{\in} [ Versions \.{\rightarrow} Results ]}%
-\@x{\@s{16.4} \.{\land} head \.{=} 0}%
+\@x{\@s{16.4} \.{\land} head \.{=} 0 \.{\land} based \.{=} 0}%
  \@x{\@s{16.4} \.{\land} busy\@s{0.65} \.{=} {\TRUE} \.{\land} from \.{=} 0
  \.{\land} quiet \.{=} {\FALSE} \.{\land} installed \.{=} {\FALSE}}%
  \@x{\@s{16.4} \.{\land} report \.{=} [ known \.{\mapsto} {\FALSE} ,\, at
@@ -1055,7 +1056,7 @@
 \@pvspace{8.0pt}%
 \@x{ Deliver ( v ,\, f ) \.{\defeq}}%
  \@x{\@s{16.4} \.{\LET} b \.{\defeq} {\IF} baseline . known \.{\THEN} baseline
- . failures \.{\ELSE} {\IF} head \.{=} 0 \.{\THEN} f \.{\ELSE} \{ \}}%
+ . failures \.{\ELSE} {\IF} head \.{=} based \.{\THEN} f \.{\ELSE} \{ \}}%
 \@x{\@s{36.79} isRegression \.{\defeq} {\lnot} ( f \.{\subseteq} b )}%
  \@x{\@s{16.4} \.{\IN} \.{\land} report \.{'} \.{=} [ known \.{\mapsto}
  {\TRUE} ,\, at \.{\mapsto} v ,\, failures \.{\mapsto} f ]}%
@@ -1087,11 +1088,28 @@
 \@x{\@s{16.4} \.{\land} quiet \.{'} \.{=} {\TRUE}}%
  \@x{\@s{16.4} \.{\land} redEdits \.{'} \.{=} {\IF} wasFailing \.{\land} mode
  \.{=}\@w{strict} \.{\THEN} redEdits \.{+} 1 \.{\ELSE} redEdits}%
- \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, busy ,\,
- from ,\, installed ,\, report ,\, baseline ,\, wasFailing ,\,}%
+ \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, based ,\,
+ busy ,\, from ,\, installed ,\, report ,\, baseline ,\, wasFailing ,\,}%
  \@x{\@s{89.98} outbox ,\, told ,\, flush ,\, turn ,\, toldThisTurn ,\,
  promptQueued ,\, knows ,\, done ,\,}%
 \@x{\@s{89.98} elapsed ,\, escalated {\rangle}}%
+\@pvspace{8.0pt}%
+\@x{ HeadMoves \.{\defeq}}%
+\@x{\@s{16.4} \.{\land} head \.{<} MaxEdits}%
+\@x{\@s{16.4} \.{\land} head \.{'} \.{=} head \.{+} 1}%
+\@x{\@s{16.4} \.{\land} based \.{'} \.{=} head \.{+} 1}%
+ \@x{\@s{16.4} \.{\land} baseline \.{'} \.{=} [ known \.{\mapsto} {\FALSE} ,\,
+ failures \.{\mapsto} \{ \} ]}%
+\@x{\@s{16.4} \.{\land} quiet \.{'} \.{=} {\TRUE}}%
+ \@x{\@s{16.4} \.{\land} from \.{'} \.{=} {\IF} busy \.{\THEN} head \.{+} 1
+ \.{\ELSE} from}%
+ \@x{\@s{16.4} \.{\land} elapsed \.{'} \.{=} {\IF} busy \.{\THEN} 0 \.{\ELSE}
+ elapsed}%
+ \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, busy ,\,
+ installed ,\, report ,\, wasFailing ,\,}%
+ \@x{\@s{89.98} outbox ,\, told ,\, flush ,\, turn ,\, toldThisTurn ,\,
+ promptQueued ,\, knows ,\, done ,\,}%
+\@x{\@s{89.98} redEdits ,\, escalated {\rangle}}%
 \@pvspace{8.0pt}%
 \@x{ QuietElapses \.{\defeq}}%
 \@x{\@s{16.4} \.{\land} quiet}%
@@ -1101,7 +1119,7 @@
 \@x{\@s{16.4} \.{\land} from \.{'} \.{=} head}%
 \@x{\@s{16.4} \.{\land} elapsed \.{'} \.{=} 0}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- installed ,\, report ,\, baseline ,\, wasFailing ,\,}%
+ based ,\, installed ,\, report ,\, baseline ,\, wasFailing ,\,}%
  \@x{\@s{89.98} outbox ,\, told ,\, flush ,\, turn ,\, toldThisTurn ,\,
  promptQueued ,\, knows ,\, done ,\,}%
 \@x{\@s{89.98} redEdits ,\, escalated {\rangle}}%
@@ -1111,8 +1129,8 @@
 \@x{\@s{16.4} \.{\land} elapsed \.{<} Timeout}%
 \@x{\@s{16.4} \.{\land} elapsed \.{'} \.{=} elapsed \.{+} 1}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\, wasFailing
- ,\,}%
+ based ,\, busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\,
+ wasFailing ,\,}%
  \@x{\@s{89.98} outbox ,\, told ,\, flush ,\, turn ,\, toldThisTurn ,\,
  promptQueued ,\, knows ,\, done ,\,}%
 \@x{\@s{89.98} redEdits ,\, escalated {\rangle}}%
@@ -1124,8 +1142,8 @@
 \@x{\@s{16.4} \.{\land} busy \.{'} \.{=} {\FALSE}}%
 \@x{\@s{16.4} \.{\land} installed \.{'} \.{=} {\TRUE}}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- from ,\, quiet ,\, turn ,\, toldThisTurn ,\, promptQueued ,\, knows ,\, done
- ,\,}%
+ based ,\, from ,\, quiet ,\, turn ,\, toldThisTurn ,\, promptQueued ,\,
+ knows ,\, done ,\,}%
 \@x{\@s{89.98} elapsed ,\, escalated {\rangle}}%
 \@pvspace{8.0pt}%
 \@x{ TimesOut \.{\defeq}}%
@@ -1140,8 +1158,8 @@
 \@x{\@s{16.4} \.{\land} busy \.{'} \.{=} {\FALSE}}%
 \@x{\@s{16.4} \.{\land} installed \.{'} \.{=} {\TRUE}}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- from ,\, quiet ,\, baseline ,\, turn ,\, toldThisTurn ,\, promptQueued ,\,
- knows ,\, done ,\,}%
+ based ,\, from ,\, quiet ,\, baseline ,\, turn ,\, toldThisTurn ,\,
+ promptQueued ,\, knows ,\, done ,\,}%
 \@x{\@s{89.98} elapsed ,\, redEdits ,\, escalated {\rangle}}%
 \@pvspace{8.0pt}%
 \@x{ Held \.{\defeq}}%
@@ -1162,8 +1180,8 @@
  \@x{\@s{35.71} \.{\ELSE} {\UNCHANGED} {\langle} outbox ,\, knows ,\,
  toldThisTurn ,\, promptQueued {\rangle}}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\, wasFailing
- ,\,}%
+ based ,\, busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\,
+ wasFailing ,\,}%
 \@x{\@s{89.98} told ,\, turn ,\, done {\rangle}}%
 \@x{\@s{16.4} \.{\land} {\UNCHANGED} limits}%
 \@pvspace{8.0pt}%
@@ -1177,8 +1195,8 @@
  \@x{\@s{16.4} \.{\land} redEdits \.{'} \.{=} {\IF} escalated \.{\THEN} 0
  \.{\ELSE} redEdits}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\, wasFailing
- ,\,}%
+ based ,\, busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\,
+ wasFailing ,\,}%
 \@x{\@s{89.98} outbox ,\, told ,\, knows ,\, done ,\, elapsed {\rangle}}%
 \@pvspace{8.0pt}%
  \@x{ WokenTurnStarts \.{\defeq} promptQueued \.{\land} {\lnot} escalated
@@ -1199,8 +1217,8 @@
  \@x{\@s{67.02} \.{\land} {\UNCHANGED} {\langle} toldThisTurn ,\, knows
  {\rangle}}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\, wasFailing
- ,\,}%
+ based ,\, busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\,
+ wasFailing ,\,}%
 \@x{\@s{89.98} outbox ,\, told ,\, promptQueued {\rangle}}%
 \@x{\@s{16.4} \.{\land} {\UNCHANGED} limits}%
 \@pvspace{8.0pt}%
@@ -1213,14 +1231,14 @@
 \@x{\@s{16.4} \.{\land} escalated \.{'} \.{=} {\TRUE}}%
 \@x{\@s{16.4} \.{\land} knows \.{'} \.{=} report . failures}%
  \@x{\@s{16.4} \.{\land} {\UNCHANGED} {\langle} mode ,\, truth ,\, head ,\,
- busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\, wasFailing
- ,\,}%
+ based ,\, busy ,\, from ,\, quiet ,\, installed ,\, report ,\, baseline ,\,
+ wasFailing ,\,}%
  \@x{\@s{89.98} outbox ,\, told ,\, flush ,\, toldThisTurn ,\, promptQueued
  ,\, done ,\, elapsed ,\, redEdits {\rangle}}%
 \@pvspace{8.0pt}%
- \@x{ Next \.{\defeq} Edit \.{\lor} QuietElapses \.{\lor} Tick \.{\lor}
- RunEnds \.{\lor} TimesOut \.{\lor} Flush \.{\lor} TurnStarts \.{\lor}
- TurnCompletes \.{\lor} Escalates}%
+ \@x{ Next \.{\defeq} Edit \.{\lor} HeadMoves \.{\lor} QuietElapses \.{\lor}
+ Tick \.{\lor} RunEnds \.{\lor} TimesOut \.{\lor} Flush \.{\lor} TurnStarts
+ \.{\lor} TurnCompletes \.{\lor} Escalates}%
 \@pvspace{8.0pt}%
 \@x{ Spec\@s{1.46} \.{\defeq}}%
 \@x{\@s{16.4} \.{\land} Init \.{\land} {\Box} [ Next ]_{ vars}}%
@@ -1260,7 +1278,7 @@
 \@pvspace{8.0pt}%
 \@x{ BaselineNeverAbsorbsEdits \.{\defeq}}%
  \@x{\@s{16.4} baseline . known \.{\implies} baseline . failures \.{\subseteq}
- truth [ 0 ]}%
+ truth [ based ]}%
 \@pvspace{8.0pt}%
 \@x{ EveryEditIsChecked \.{\defeq}}%
  \@x{\@s{16.4} {\Diamond} {\Box} ( report . known \.{\land} report . at \.{=}
@@ -1268,7 +1286,7 @@
 \@pvspace{8.0pt}%
 \@x{ RegressionsReachAgent \.{\defeq}}%
  \@x{\@s{16.4} {\Diamond} {\Box} ( ( truth [ head ] \.{\,\backslash\,} truth [
- 0 ] ) \.{\subseteq} knows \.{\lor} TimedOut \.{\in} knows \.{\lor} escalated
- )}%
+ based ] ) \.{\subseteq} knows \.{\lor} TimedOut \.{\in} knows \.{\lor}
+ escalated )}%
 \@x{}\bottombar\@xx{}%
 \end{document}
