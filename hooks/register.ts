@@ -17,6 +17,7 @@ import {
   gaveUpMessage,
   hasRegression,
   languageOf,
+  lastBuild,
   overrideWatcher,
   readReport,
   recoveryMessage,
@@ -341,9 +342,12 @@ async function watch($: EngineInterface, run: Run): Promise<Ending | undefined> 
       output += text
       flush?.cancel()
       flush = $.clock.after(QUIET_MS, () => {
-        const report = readReport(watcher, output)
+        // A transport chunk can stop in the middle of a summary line.
+        const end = output.lastIndexOf('\n') + 1
+        const lines = output.slice(0, end)
+        const report = readReport(watcher, lines)
         if (report === undefined) return
-        output = ''
+        output = lastBuild(watcher, lines).remaining + output.slice(end)
         void deliver($, run, report)
       })
     }
@@ -740,7 +744,7 @@ async function completionGuard($: EngineInterface, state: State): Promise<string
     state.completionCorrection = undefined
     return undefined
   }
-  if (state.completionCorrection === reason) return undefined
+  if (state.completionCorrection === reason) return reason
   assert(reason.startsWith('overwatch: '), `completion correction ${reason} does not say it is from overwatch`)
   state.completionCorrection = reason
   state.isTurnRunning = false
@@ -766,7 +770,7 @@ async function completeTurn($: EngineInterface, state: State, isAnswered: boolea
   }
   const reason = await completionGuard($, state)
   if (reason !== undefined) {
-    assert(reason.startsWith('overwatch: ') && state.isPromptQueued, `correction ${reason} is not from overwatch or is not queued; queue it through completionGuard`)
+    assert(reason.startsWith('overwatch: ') && (state.isTurnRunning || state.isPromptQueued), `correction ${reason} neither holds the running turn nor has a queued prompt`)
     return reason
   }
   state.isTurnRunning = false

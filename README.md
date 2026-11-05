@@ -112,7 +112,7 @@ Tool names match without case sensitivity; use the tool name your agent sends, s
 
 `inherited` defaults to `"allow"`, preserving backlog triage. Set it to `"block"` to require inherited findings to clear before completion or protected actions. Ordinary operations remain available under either policy. A successful check clears its gate; it does not clear failures from other checks. Environment errors retain their existing reporting behavior.
 
-Command hooks use `PreToolUse` only for protected-action permission decisions and `Stop` for completion. Ordinary pre-tool hooks return an empty response without rerunning checks. Claude Code's in-process plugin denies protected tools before execution and replaces guarded completion with a correction request. It requests another correction for the same findings only after a tool call completes, and lets aborted or unsuccessful turns settle, preventing repeated prompts when the agent cannot proceed. After interruption, automatic wakeups wait until another turn starts. Protected tools remain guarded. OpenCode and Pi use their before-tool hooks for protected actions. Reload the plugin after updating hook definitions; Codex may require renewed hook trust.
+Command hooks use `PreToolUse` only for protected-action permission decisions and `Stop` for completion. Ordinary pre-tool hooks return an empty response without rerunning checks. Claude Code's in-process plugin denies protected tools before execution and replaces guarded completion with a correction request. It requests another correction for the same findings only after a tool call completes. Repeated completion attempts remain guarded without queuing duplicate corrections. Aborted or unsuccessful turns may settle. After interruption, automatic wakeups wait until another turn starts. Protected tools remain guarded. OpenCode and Pi use their before-tool hooks for protected actions. Reload the plugin after updating hook definitions; Codex may require renewed hook trust.
 
 ## Install
 
@@ -196,6 +196,8 @@ The [behavior guide](https://benomahony.github.io/overwatch/behavior/) is genera
 
 Add a scenario by composing `Scenario(...).given(...).when(...).then(...)` with fixture actions for every implemented step. Titles must be unique. Use `status="proposed"` with no executable actions for a planned behavior. Keep hook payloads, temporary paths, and test setup in the fixture rather than the prose.
 
+`spec/Overwatch.tla` specifies baseline handling, buffered completed builds, notification ordering, and the default completion guard for one watcher. Reads select the newest completed build; partial output cannot become a result. The model has no advisory or strict modes. `scripts/model_traces.py` asks TLC to derive expected observations for event sequences, including every failure-set combination for selected buffering and notification interleavings. `tests/model.test.ts` replays them through the production Claude hooks with a deterministic host, checking status, publication guards, completion decisions, and notifications. CI rejects stale generated expectations. These bounded replays do not establish conformance for every integration, timeout, or lifecycle path; the full model check and runtime acceptance tests run separately.
+
 ```sh
 python3 scripts/table.py      # after editing watchers.json
 python3 scripts/scenarios.py  # verify scenarios and regenerate the behavior guide
@@ -210,6 +212,8 @@ claude plugin test .
 claude --plugin-dir .
 cd docs && zine                # the site, served locally
 java -cp tla2tools.jar tlc2.TLC -metadir /tmp/tlc -config spec/Overwatch.cfg spec/Overwatch.tla  # model check the timing
+python3 scripts/model_traces.py --jar /path/to/tla2tools.jar  # regenerate expectations after a model change
+python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check  # reject stale expectations
 python3 scripts/timing.py gaps    # fit the gaps between edits in your Claude Code transcripts
 python3 scripts/timing.py budget --first 300  # longest rerun time for a 10% slowdown at each max-ahead
 ```

@@ -38,7 +38,7 @@ for (const inherited of ['allow', 'block'] as const) {
   })
 }
 
-test('publication stays protected while an idle correction settles, then passing checks release the gate', async ($, on) => {
+test('publication and repeated completion stay guarded until passing checks release them', async ($, on) => {
   const { clock, calls, repair } = gatingProject(on)
   try {
     await $.session.start(start)
@@ -48,13 +48,13 @@ test('publication stays protected while an idle correction settles, then passing
       try { await $.tool.call({ tool: 'Publish' }) } catch { /* A denial must not reach the tool implementation. */ }
       try { await $.turn.complete(ended) } catch { /* A denial must not reach the completion implementation. */ }
     }
-    // A correction turn with no tool progress must be allowed to settle.
-    expect(calls).toEqual(['complete'])
+    // Deduplicating correction prompts must never release the completion gate.
+    expect(calls).toEqual([])
     repair()
     await clock.advance(1000)
     await $.tool.call({ tool: 'Publish' })
     await $.turn.complete(ended)
-    expect(calls).toEqual(['complete', 'Publish', 'complete'])
+    expect(calls).toEqual(['Publish', 'complete'])
   } finally {
     const ending = $.session.end({ reason: 'prompt_input_exit', sessionId: 's1', resume: { id: 's1' } })
     await clock.advance(1000)

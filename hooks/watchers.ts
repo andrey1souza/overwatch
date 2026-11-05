@@ -238,7 +238,7 @@ function failuresIn(watcher: Watcher, output: string): string[] {
  * watcher has no summary, and as failed when it gave none and exited nonzero.
  */
 export function readReport(watcher: Watcher, output: string, code?: number | null): Report | undefined {
-  const clean = lastBuild(watcher, output.replace(ANSI, ''))
+  const { complete: clean, text } = lastBuild(watcher, output)
   const failures = failuresIn(watcher, clean)
   const line = watcher.summary?.exec(clean)?.[0]?.trim()
   let summary: string
@@ -257,7 +257,7 @@ export function readReport(watcher: Watcher, output: string, code?: number | nul
   const report: Report = {
     summary,
     isFailed,
-    text: clean.trim(),
+    text: text.trim(),
     failures: isFailed ? failures : [],
     ...(environment === undefined ? {} : { environment }),
   }
@@ -267,19 +267,22 @@ export function readReport(watcher: Watcher, output: string, code?: number | nul
 }
 
 /**
- * The last build's part of output, which may hold several when a watcher reruns before overwatch reads it: what
- * follows the summary line before the last one. Reading the whole would take the first summary, an older result.
+ * Split the latest completed build from output still waiting for its summary.
+ * Keep trailing diagnostics in the log text (some checkers print them after
+ * their summary), but never read them as failures of a completed build.
  */
-function lastBuild({ name, summary }: Watcher, output: string): string {
-  if (summary === undefined) return output
+export function lastBuild({ name, summary }: Watcher, output: string): { complete: string; remaining: string; text: string } {
+  const clean = output.replace(ANSI, '')
+  if (summary === undefined) return { complete: clean, remaining: '', text: clean }
   const flags = summary.flags
   const every = new RegExp(summary.source, `${flags.replace('g', '')}g`)
-  const ends = [...output.matchAll(every)].map(match => match.index + match[0].length)
+  const ends = [...clean.matchAll(every)].map(match => match.index + match[0].length)
   const start = ends.length > 1 ? (ends[ends.length - 2] ?? 0) : 0
-  assert(start >= 0 && start <= output.length, `${name}'s last build starts at ${start}, outside its ${output.length} output characters`)
-  const last = output.slice(start)
-  assert(ends.length === 0 || every.test(last), `the last build of ${name}'s output lost its summary line`)
-  return last
+  const end = ends.at(-1) ?? clean.length
+  assert(start >= 0 && start <= end && end <= clean.length, `${name}'s last build spans ${start}..${end}, outside its ${clean.length} output characters`)
+  const complete = clean.slice(start, end)
+  assert(ends.length === 0 || every.test(complete), `the last build of ${name}'s output lost its summary line`)
+  return { complete, remaining: clean.slice(end), text: clean.slice(start) }
 }
 
 /** A watcher's command as one line, its watch command unless argv is given. */

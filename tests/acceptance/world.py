@@ -259,7 +259,7 @@ class AcceptanceWorld(unittest.TestCase):
         self.claude_steps.extend(expectations)
         self.run_claude_scenario()
 
-    claude_empty_corrections = partialmethod(prepare_claude_steps, expected_phase='ready', phase='settled', steps=(
+    claude_empty_corrections = partialmethod(prepare_claude_steps, expected_phase='ready', phase='guarded', steps=(
         'await $.turn.complete(ended)',
         'expect(prompts.length).toBe(1)',
         'for (let i = 0; i < 3; i++) {',
@@ -268,18 +268,18 @@ class AcceptanceWorld(unittest.TestCase):
         '}',
     ))
 
-    claude_loop_stops = partialmethod(verify_claude, phase='settled', expectations=(
+    claude_loop_stops = partialmethod(verify_claude, phase='guarded', expectations=(
         'expect(prompts.length).toBe(1)',
-        "expect(calls).toEqual(['complete', 'complete', 'complete'])",
+        "expect(calls).toEqual([])",
         "try { await $.tool.call({ tool: 'Publish' }) } catch {}",
-        "expect(calls).toEqual(['complete', 'complete', 'complete'])",
+        "expect(calls).toEqual([])",
     ))
 
     def claude_work_resumes(self) -> None:
-        """After an empty correction settles, start a new turn and inspect the project."""
+        """While an empty correction remains guarded, start a new turn and inspect the project."""
         assert self.claude_phase == "ready", "Resume work only after preparing a failing turn"
         self.claude_empty_corrections()
-        assert self.claude_phase == "settled", "Work must resume after the empty correction settles"
+        assert self.claude_phase == "guarded", "Work must resume after the empty correction remains guarded"
         self.claude_phase = "resumed"
         self.claude_steps.extend([
             "await $.turn.start({ text: 'investigate', turnId: 'investigate' })",
@@ -288,7 +288,7 @@ class AcceptanceWorld(unittest.TestCase):
         ])
 
     claude_correction_resumes = partialmethod(verify_claude, phase='resumed', expectations=(
-        "expect(calls).toEqual(['complete', 'complete', 'complete', 'Read'])",
+        "expect(calls).toEqual(['Read'])",
         'expect(prompts.length).toBe(2)',
         "expect(prompts[1]).toContain('29 warnings')",
     ))
@@ -306,7 +306,7 @@ class AcceptanceWorld(unittest.TestCase):
         """A rejected publication attempt does not count as completed work."""
         assert self.claude_phase == "ready", "Prepare the failing turn before testing denied tools"
         self.claude_empty_corrections()
-        assert self.claude_phase == "settled", "First let the empty correction settle"
+        assert self.claude_phase == "guarded", "First exercise the unchanged completion guard"
         self.claude_steps.extend([
             "await $.turn.start({ text: 'publish', turnId: 'publish' })",
             "for (let i = 0; i < 3; i++) {",
@@ -315,16 +315,16 @@ class AcceptanceWorld(unittest.TestCase):
             "}",
         ])
 
-    claude_denials_do_not_restart = partialmethod(verify_claude, phase='settled', expectations=(
+    claude_denials_do_not_restart = partialmethod(verify_claude, phase='guarded', expectations=(
         'expect(prompts.length).toBe(1)',
-        "expect(calls).toEqual(Array(6).fill('complete'))",
+        "expect(calls).toEqual([])",
     ))
 
     def claude_findings_change(self) -> None:
-        """New findings arrive after an unchanged correction has settled."""
+        """New findings arrive while an unchanged correction remains guarded."""
         assert self.claude_phase == "ready", "Prepare the watcher before changing findings"
         self.claude_empty_corrections()
-        assert self.claude_phase == "settled", "Exercise the retry limit before reporting new findings"
+        assert self.claude_phase == "guarded", "Exercise the retry limit before reporting new findings"
         self.claude_phase = "changed"
         self.claude_steps.extend([
             "await $.turn.start({ text: 'review changed findings', turnId: 'changed' })",
@@ -338,7 +338,7 @@ class AcceptanceWorld(unittest.TestCase):
     claude_changed_findings_get_one_correction = partialmethod(verify_claude, phase='changed', expectations=(
         'expect(prompts.length).toBe(2)',
         "expect(prompts[1]).toContain('30 warnings')",
-        "expect(calls).toEqual(Array(4).fill('complete'))",
+        "expect(calls).toEqual([])",
     ))
 
     claude_checks_recover = partialmethod(prepare_claude_steps, expected_phase='ready', phase='recovered', steps=(
@@ -410,7 +410,7 @@ class AcceptanceWorld(unittest.TestCase):
     claude_repeat_failure_is_fresh = partialmethod(verify_claude, phase='failed-again', expectations=(
         'expect(prompts.length).toBe(2)',
         "expect(prompts[1]).toContain('29 warnings')",
-        "expect(calls).toEqual(['complete', 'complete'])",
+        "expect(calls).toEqual(['complete'])",
     ))
 
     def claude_two_watchers(self) -> None:

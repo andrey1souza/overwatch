@@ -20,7 +20,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [The correction turns repeatedly finish without using tools](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- [Then]($text.attrs('then')) [Only one correction is requested and the turns settle while publication stays guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- [Then]($text.attrs('then')) [Only one correction is requested while completion and publication stay guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
 
 ### [Denied publication does not restart Claude corrections]($section.id('denied-publication-does-not-restart-claude-corrections').attrs('verified'))
 
@@ -28,7 +28,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L12)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- [When]($text.attrs('when')) [An empty correction settles and publication is repeatedly denied](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L305).
+- [When]($text.attrs('when')) [An empty correction remains guarded and publication is repeatedly denied](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L305).
 - [Then]($text.attrs('then')) [Publication never executes and no further correction is submitted](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
 
 ## [Claude recovery and changed findings]($section.id('claude-recovery-and-changed-findings'))
@@ -39,7 +39,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L17)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- [When]($text.attrs('when')) [An empty correction settles and the agent resumes inspection in a new turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L278).
+- [When]($text.attrs('when')) [An empty correction remains guarded and the agent resumes inspection in a new turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L278).
 - [Then]($text.attrs('then')) [Inspection succeeds and the remaining warnings request another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
 
 ### [Changed findings give Claude one fresh correction]($section.id('changed-findings-give-claude-one-fresh-correction').attrs('verified'))
@@ -48,8 +48,8 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L22)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- [When]($text.attrs('when')) [An empty correction settles and the watcher reports additional warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L323).
-- [Then]($text.attrs('then')) [The new warnings request one fresh correction and empty retries settle](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- [When]($text.attrs('when')) [An empty correction remains guarded and the watcher reports additional warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L323).
+- [Then]($text.attrs('then')) [The new warnings request one fresh correction and empty retries remain guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
 
 ### [Passing checks release a queued Claude correction]($section.id('passing-checks-release-a-queued-claude-correction').attrs('verified'))
 
@@ -67,7 +67,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [The failure is corrected and the same warnings return after another change](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- [Then]($text.attrs('then')) [The returning failure gets one fresh correction and empty retries settle](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- [Then]($text.attrs('then')) [The returning failure gets one fresh correction and empty retries remain guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
 
 ## [Claude interruption]($section.id('claude-interruption'))
 
