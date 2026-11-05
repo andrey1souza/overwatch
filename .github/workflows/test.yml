@@ -29,7 +29,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py'
 
       - name: Test the integrations against fake hosts
-        run: node --test tests/test_integrations.mjs
+        run: node --test tests/test_integrations.mjs tests/test_model_integrations.mjs
 
   model:
     runs-on: ubuntu-latest
@@ -79,4 +79,6 @@ jobs:
           echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
 
       - name: Test the Neovim plugin
-        run: nvim --headless -l tests/overwatch_spec.lua
+        run: |
+          nvim --headless -l tests/overwatch_spec.lua
+          nvim --headless -l tests/model_spec.lua

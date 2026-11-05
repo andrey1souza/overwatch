@@ -73,6 +73,8 @@ class State:
     signatures: tuple[str, ...] = ()
     inherited: str = "allow"
     fingerprint: str | None = None
+    # The commit whose results established the current baselines; None in an unborn repository or older state.
+    head: str | None = None
     environment: tuple[str, ...] = ()
 
 
@@ -132,11 +134,11 @@ def state_from(value: object) -> State:
     if not isinstance(value, dict):
         raise StateError(f"the saved state is a JSON {type(value).__name__}, not an object{REBUILT}")
     reports, baseline, gate = value.get("reports", []), value.get("baseline", {}), value.get("gate", {})
-    told, fingerprint = value.get("told"), value.get("fingerprint")
+    told, fingerprint, head = value.get("told"), value.get("fingerprint"), value.get("head")
     if not isinstance(reports, list) or not isinstance(baseline, dict) or not isinstance(gate, dict):
         raise StateError(f"the saved state's reports, baseline or gate is not a list, object and object{REBUILT}")
-    if not isinstance(value.get("failed", False), bool) or not all(item is None or isinstance(item, str) for item in (told, fingerprint)):
-        raise StateError(f"the saved state's failed, told or fingerprint has the wrong type{REBUILT}")
+    if not isinstance(value.get("failed", False), bool) or not all(item is None or isinstance(item, str) for item in (told, fingerprint, head)):
+        raise StateError(f"the saved state's failed, told, fingerprint or head has the wrong type{REBUILT}")
     if gate.get("inherited", "allow") not in ("allow", "block"):
         raise StateError(f"the saved state's gate.inherited is {gate.get('inherited')}, not allow or block{REBUILT}")
     state = State(
@@ -147,6 +149,7 @@ def state_from(value: object) -> State:
         signatures=string_tuple(value.get("signatures", []), "the saved state's signatures"),
         inherited=gate.get("inherited", "allow"),
         fingerprint=fingerprint,
+        head=head,
         environment=string_tuple(value.get("environment", []), "the saved state's environment"),
     )
     assert len(state.reports) == len(reports) and set(state.baseline) == set(baseline), f"state kept {len(state.reports)} of {len(reports)} reports or lost baseline entries; read every saved entry"
@@ -173,6 +176,7 @@ def state_json(state: State) -> dict[str, object]:
         "signatures": list(state.signatures),
         "gate": {"inherited": state.inherited},
         "fingerprint": state.fingerprint,
+        "head": state.head,
         "environment": list(state.environment),
     }
     assert len(value["reports"]) == len(state.reports), f"state JSON holds {len(value['reports'])} of {len(state.reports)} reports; write every report"

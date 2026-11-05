@@ -135,7 +135,8 @@ class CodexHookTests(unittest.TestCase):
         watch is set. Returns result.txt and count.txt; both are in the test's temporary directory, removed with it,
         and a second call fails, since each file is written new."""
         result = self.cwd / "result.txt"
-        count = self.cwd / "count.txt"
+        # Runner bookkeeping is not a source edit and must not change the workspace fingerprint.
+        count = Path(self.temporary.name) / "count.txt"
         runner = self.cwd / "check.py"
         write(runner,
             textwrap.dedent(

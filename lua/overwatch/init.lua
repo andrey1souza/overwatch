@@ -192,10 +192,24 @@ local function failures_in(watcher, output)
   return names
 end
 
---- Reads one build's output: nil until its summary line has arrived. A run that has exited, given its `code`,
---- is read by its exit code when the watcher has no summary, and as failed when it gave none and exited nonzero.
-function M.read_report(watcher, output, code)
+--- The latest completed build, unread suffix, and log text with trailing checker diagnostics.
+function M.last_build(watcher, output)
   local clean = output:gsub('\27%[[%d;?]*%a', '')
+  if watcher.summary == nil then return clean, '', clean end
+  local pattern = vim.regex(M.vim_regex(watcher.summary))
+  local previous, latest, offset = nil, nil, 0
+  for line in vim.gsplit(clean, '\n', { plain = true }) do
+    local _, finish = pattern:match_str(line)
+    if finish then previous, latest = latest, offset + finish end
+    offset = offset + #line + 1
+  end
+  local start, finish = previous or 0, latest or #clean
+  return clean:sub(start + 1, finish), clean:sub(finish + 1), clean:sub(start + 1)
+end
+
+--- Reads one build: nil until its summary arrives, or an exit-code result when the command ends without one.
+function M.read_report(watcher, output, code)
+  local clean, _, text = M.last_build(watcher, output)
   local failures = failures_in(watcher, clean)
   local line = watcher.summary and first_line(watcher.summary, clean)
   local summary, is_failed
@@ -208,7 +222,7 @@ function M.read_report(watcher, output, code)
     is_failed = code ~= 0
     summary = not is_failed and 'passed' or (#failures > 0 and ('%d failed'):format(#failures) or ('exited with code %d'):format(code))
   end
-  return { summary = summary, is_failed = is_failed, text = vim.trim(clean), failures = is_failed and failures or {} }
+  return { summary = summary, is_failed = is_failed, text = vim.trim(text), failures = is_failed and failures or {} }
 end
 
 local DECORATION = { '^Build Summary:%s*', '^zanity:%s*', '^=+%s*', '%s*=+$', '^Test Files%s+', '^Test Suites:%s*', '^DONE%s+', '^ok | ', '^FAILED | ' }
@@ -374,9 +388,11 @@ local function watch(run)
   local process = spawn(run, watcher.argv, function(data)
     output, recent = output .. data, (recent .. data):sub(-4000)
     flush:start(QUIET_MS, 0, vim.schedule_wrap(function()
-      local report = M.read_report(watcher, output)
+      local lines = output:match('^(.*\n)') or ''
+      local report = M.read_report(watcher, lines)
       if report == nil then return end
-      output = ''
+      local _, remaining = M.last_build(watcher, lines)
+      output = remaining .. output:sub(#lines + 1)
       deliver(run, report)
     end))
   end, function(result)

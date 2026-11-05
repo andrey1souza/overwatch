@@ -10,7 +10,9 @@ The [behavior guide](https://benomahony.github.io/overwatch/behavior/) is genera
 
 Add a scenario by composing `Scenario(...).given(...).when(...).then(...)` with fixture actions for every implemented step. Titles must be unique. Use `status="proposed"` with no executable actions for a planned behavior. Keep hook payloads, temporary paths, and test setup in the fixture rather than the prose.
 
-`spec/Overwatch.tla` specifies baseline handling, buffered completed builds, notification ordering, and the default completion guard for one watcher. Reads select the newest completed build; partial output cannot become a result. The model has no advisory or strict modes. `scripts/model_traces.py` asks TLC to derive expected observations for event sequences, including every failure-set combination for selected buffering and notification interleavings. `tests/model.test.ts` replays them through the production Claude hooks with a deterministic host, checking status, publication guards, completion decisions, and notifications. CI rejects stale generated expectations. These bounded replays do not establish conformance for every integration, timeout, or lifecycle path; the full model check and runtime acceptance tests run separately.
+`spec/Overwatch.tla` specifies baseline handling, buffered completed builds, notification ordering, and the default completion guard for one watcher. Reads select the newest completed build; partial output cannot become a result. The model has no advisory or strict modes. `scripts/model_traces.py` asks TLC to derive expected observations for event sequences, including every failure-set combination for selected buffering and notification interleavings. It generates TypeScript and JSON fixtures; CI rejects stale expectations.
+
+The replays exercise production code with controlled host I/O. Claude's hook chain checks status, publication, completion, and notifications. Codex runs real commands and saves real hook state, checking baselines and repeated guards; its output reader also receives the chunk sequences. Pi and both OpenCode APIs run the same check sequences through their native callbacks and the real shared checker. OpenCode 1 verifies idle warnings because its API cannot refuse settlement. Neovim receives the raw chunks through its watcher callbacks and checks the resulting status; it has no agent gates. These are bounded observations of one watcher, not proofs of every timeout, cancellation, multi-watcher, or lifecycle path. The full model check and runtime acceptance tests run separately.
 
 ```sh
 python3 scripts/table.py      # after editing watchers.json
@@ -19,8 +21,10 @@ python3 scripts/scenarios.py --check  # verify scenarios and reject stale behavi
 python3 docs/sync.py --write  # regenerate site pages from README and the verified behavior guide
 python3 -m unittest discover -s tests -p 'test_*.py'
 node --test tests/test_integrations.mjs
+node --test tests/test_model_integrations.mjs  # native integration callbacks with the real checker
 node --test tests/test_agents.mjs  # pi, opencode and codex against a scripted model; npm install --no-save @copilotkit/aimock first
 nvim --headless -l tests/overwatch_spec.lua
+nvim --headless -l tests/model_spec.lua  # model-derived stream replays
 claude plugin validate .
 claude plugin test .
 claude --plugin-dir .

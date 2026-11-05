@@ -384,7 +384,7 @@ def _run_command(
             if chunk:
                 chunks.append(chunk)
                 text = ANSI.sub("", b"".join(chunks).decode(errors="replace"))
-                if summary.search(text):
+                if summary.search(text[:text.rfind('\n') + 1]):
                     chunks.append(terminate(process))
                     return b"".join(chunks).decode(errors="replace"), None
             if process.poll() is not None:
@@ -420,10 +420,22 @@ def environment_in(output: str) -> str | None:
     return line
 
 
+def last_build(watcher: Watcher, output: str) -> tuple[str, str, str]:
+    """The latest complete result, unread suffix, and log text including trailing checker diagnostics."""
+    clean = ANSI.sub("", output)
+    matches = list(re.finditer(watcher["summary"], clean, re.MULTILINE)) if "summary" in watcher else []
+    start = matches[-2].end() if len(matches) > 1 else 0
+    end = matches[-1].end() if matches else len(clean)
+    assert 0 <= start <= end <= len(clean), f"{watcher['name']} result spans {start}..{end} outside {len(clean)} characters"
+    complete = clean[start:end]
+    assert not matches or re.search(watcher["summary"], complete, re.MULTILINE), f"{watcher['name']} lost its completed summary in {complete!r}"
+    return complete, clean[end:], clean[start:]
+
+
 def read_report(watcher: Watcher, output: str, code: int | None = None) -> Report | None:
     """Reads one build's output; a run with no summary line is read by its exit code. The watcher's patterns are
     strings that apply_override or scripts/table.py checked compile, and its name a non-empty string."""
-    clean = ANSI.sub("", output)
+    clean, _, text = last_build(watcher, output)
     failures = failures_in(watcher, clean)
     match = re.search(watcher["summary"], clean, re.MULTILINE) if "summary" in watcher else None
     if match is not None:
@@ -447,7 +459,7 @@ def read_report(watcher: Watcher, output: str, code: int | None = None) -> Repor
         failed=failed,
         failures=tuple(failures) if failed else (),
         environment=environment_in(clean) if failed else None,
-        text=clean.strip(),
+        text=text.strip(),
     )
     assert report.failed or not report.failures, f"{watcher['name']} passed with failures {failures}; list failures only when it failed"
     return report
@@ -502,6 +514,21 @@ def workspace_files(cwd: Path) -> list[Path]:
     assert all(path.is_relative_to(cwd) for path in paths), f"listed {[path for path in paths if not path.is_relative_to(cwd)]} outside {cwd}; list only the workspace"
     assert len(set(paths)) == len(paths), f"listed {len(paths) - len(set(paths))} files of {cwd} twice; list each once"
     return paths
+
+
+def commit_of(cwd: Path) -> str | None:
+    """The checked-out commit, including linked worktrees; None before the first commit."""
+    try:
+        result = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD'], cwd=cwd,
+                                capture_output=True, text=True, timeout=GIT_TIMEOUT, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    head = result.stdout.strip()
+    if re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', head) is None:
+        return None
+    assert head == head.strip(), f'Commit {head!r} keeps whitespace'
+    assert len(head) in (40, 64), f'Commit {head!r} is neither a SHA-1 nor SHA-256 object ID'
+    return head
 
 
 def fingerprint(cwd: Path) -> str:
@@ -787,12 +814,12 @@ def context_output(event_name: str, text: str) -> dict[str, Any]:
     return output
 
 
-def report_state(reports: list[Report] | tuple[Report, ...], old: State) -> State:
-    """The state after reports: the baseline with each new check's first result, and the regressions against it."""
+def report_state(reports: list[Report] | tuple[Report, ...], old: State, *, edited: bool = False) -> State:
+    """Keep each check's first result as its baseline, unless edits overlapped that first run: then failures are new."""
     baseline = dict(old.baseline)
     for report in reports:
         if not report.environment:
-            baseline.setdefault(report_key(report), First(report.failed, report.failures, report.summary))
+            baseline.setdefault(report_key(report), First(False, (), 'passed') if edited else First(report.failed, report.failures, report.summary))
     regressions = [report for report in reports if is_regression(report, baseline)]
     signatures = regression_signatures(regressions, baseline)
     assert set(old.baseline) <= set(baseline), f"baseline lost {set(old.baseline) - set(baseline)}; keep each check's first result"
@@ -888,7 +915,8 @@ def inventory_checks(session: Session) -> dict[str, dict[str, object]] | None:
 def inherited_failures(old: State, current: State) -> list[Report]:
     """The reports of checks that failed on their first run in this session, for reasons in the code."""
     added = [report for report in current.reports if report_key(report) not in old.baseline]
-    failing = [report for report in added if report.failed and not report.environment]
+    failing = [report for report in added if report.failed and not report.environment
+               and (first := current.baseline.get(report_key(report))) is not None and first.failed]
     assert all(report in current.reports for report in failing), f"inherited failures {[report.name for report in failing]} are not this run's; select them from current.reports"
     assert not any(report_key(report) in old.baseline for report in failing), f"{[report.name for report in failing]} already had a baseline; leave out checks old.baseline holds"
     return failing
@@ -958,18 +986,24 @@ def process_event(event: Event, root: Path) -> dict[str, Any]:
 
 
 def checked_state(session: Session, cwd: Path) -> tuple[State, State]:
-    """The state saved in session and the state after rerunning the checks when the workspace changed since it was saved."""
+    """Recheck changed workspaces and rebaseline moved commits. Keep the starting fingerprint so edits during a
+    run demand another check instead of marking their newer workspace as already verified."""
     old = load_state(session)
+    head = commit_of(cwd)
+    if old.head is not None and head is not None and old.head != head:
+        old = replace(old, baseline={}, fingerprint=None, told=None, failed=False, signatures=())
     gate = read_gate(read_override(cwd))
     before = fingerprint(cwd)
     should_run = old.fingerprint != before
     reports = run_checks(cwd, find_watchers(cwd)) if should_run else old.reports
+    after = fingerprint(cwd) if should_run else before
     told = old.environment
     environment = new_environment(reports, told)
     current = replace(
-        report_state(reports, old),
+        report_state(reports, old, edited=before != after),
         inherited=gate.inherited,
-        fingerprint=fingerprint(cwd) if should_run else before,
+        fingerprint=before,
+        head=head,
         environment=(*told, *(report.environment for report in environment if report.environment)),
     )
     assert current.environment[:len(told)] == told, f"environment {current.environment} forgot what the agent was told; keep {told} first"
