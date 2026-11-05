@@ -664,7 +664,19 @@ test('a pyproject.toml project runs pytest under a watcher', async ($, on) => {
   const clock = mock.clock(on)
   const spawned: string[][] = []
   const prompts: string[] = []
-  project(on, { files: ['pyproject.toml', 'usr/bin/uv'], output: PYTEST_PASSING, spawned, then: { clock, output: PYTEST_FAILING } })
+  mock.env(on, { PATH: '/usr/bin' })
+  on('fs.read', () => ({ deny: 'no such file' }))
+  on('fs.exists', ($, e) => ({ value: ['/repo/.git', '/repo/pyproject.toml', '/usr/bin/uv'].includes(e.path) }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('process.spawn', async function* ($, e) {
+    spawned.push([...e.argv])
+    yield { stream: 'stderr' as const, text: PYTEST_PASSING }
+    if (e.argv.includes('ptw')) {
+      await clock.sleep(1000)
+      yield { stream: 'stderr' as const, text: PYTEST_FAILING }
+    }
+    return { value: { code: 0, signal: null } }
+  })
   on('prompt.submit', ($, e) => {
     prompts.push(e.text)
     return { text: e.text }

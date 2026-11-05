@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { WATCHERS, readReport } from '../hooks/watchers'
+import { CHECKERS, WATCHERS, readReport } from '../hooks/watchers'
 import { CARGO_FAILING, GO_FAILING, readResult, watcherNamed } from './fixtures/watchers'
 
 const VITEST_FAILING = `
@@ -111,4 +111,24 @@ test('Rust reports compile and test failures', () => {
     'overwatch rust ✗ 1 failed: error[E0308]: mismatched types',
     ['error[E0308]: mismatched types'],
   ])
+})
+
+test('output holding two builds is read as the later one', () => {
+  const zanity = CHECKERS.find(checker => checker.name === 'zanity')!
+  const twoRuns = 'zanity: 0 errors, 17 warnings in 1/41 files.\ndead-symbol [warning] 17 in 1 file\nzanity: checked 41 files, no issues found.\n'
+  expect(readResult(zanity, twoRuns)).toEqual(['overwatch zanity ✓ checked 41 files, no issues found.', []])
+  const zig = watcherNamed('zig')
+  const old = "error: 'root.test.old' failed:\nBuild Summary: 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed)\n"
+  const fixed = "error: 'root.test.new' failed:\nBuild Summary: 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed)\n"
+  expect(readResult(zig, old + fixed)[1]).toEqual(['root.test.new'])
+  const passing = '\x1b[32mBuild Summary: 4/4 steps succeeded; 3/3 tests passed\x1b[0m\n'
+  expect(readResult(zig, old + fixed + passing)).toEqual(['overwatch zig ✓ 4/4 steps succeeded; 3/3 tests passed', []])
+  expect(readResult(zig, passing + fixed)[1]).toEqual(['root.test.new'])
+})
+
+test('the latest Deno build supplies both its result and failures', () => {
+  const deno = watcherNamed('deno', 'deno.json')
+  const passing = 'ok | 2 passed | 0 failed (1ms)\nWatcher Test finished. Restarting on file change...\n'
+  expect(readResult(deno, DENO_FAILING + passing)).toEqual(['overwatch deno ✓ 2 passed | 0 failed (1ms)', []])
+  expect(readResult(deno, passing + DENO_FAILING)).toEqual(readResult(deno, DENO_FAILING))
 })

@@ -238,7 +238,7 @@ function failuresIn(watcher: Watcher, output: string): string[] {
  * watcher has no summary, and as failed when it gave none and exited nonzero.
  */
 export function readReport(watcher: Watcher, output: string, code?: number | null): Report | undefined {
-  const clean = output.replace(ANSI, '')
+  const clean = lastBuild(watcher, output.replace(ANSI, ''))
   const failures = failuresIn(watcher, clean)
   const line = watcher.summary?.exec(clean)?.[0]?.trim()
   let summary: string
@@ -264,6 +264,22 @@ export function readReport(watcher: Watcher, output: string, code?: number | nul
   assert(report.isFailed || report.failures.length === 0, `${watcher.name} passed with failures ${failures}; list failures only when it failed`)
   assert(report.environment === undefined || report.isFailed, `${watcher.name} passed but cannot run: ${environment}; read the environment only of a failure`)
   return report
+}
+
+/**
+ * The last build's part of output, which may hold several when a watcher reruns before overwatch reads it: what
+ * follows the summary line before the last one. Reading the whole would take the first summary, an older result.
+ */
+function lastBuild({ name, summary }: Watcher, output: string): string {
+  if (summary === undefined) return output
+  const flags = summary.flags
+  const every = new RegExp(summary.source, `${flags.replace('g', '')}g`)
+  const ends = [...output.matchAll(every)].map(match => match.index + match[0].length)
+  const start = ends.length > 1 ? (ends[ends.length - 2] ?? 0) : 0
+  assert(start >= 0 && start <= output.length, `${name}'s last build starts at ${start}, outside its ${output.length} output characters`)
+  const last = output.slice(start)
+  assert(ends.length === 0 || every.test(last), `the last build of ${name}'s output lost its summary line`)
+  return last
 }
 
 /** A watcher's command as one line, its watch command unless argv is given. */
