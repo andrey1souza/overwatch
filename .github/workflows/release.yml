@@ -1,7 +1,10 @@
 name: Release
 
+# Releases only a commit whose tests passed on main.
 on:
-  push:
+  workflow_run:
+    workflows: [Test]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -13,11 +16,13 @@ concurrency:
 
 jobs:
   bump:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     steps:
+      # The commit the tests ran on; if main has moved since, the release fails and the newer commit's own run releases it.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: main
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       # Claude Code installs a plugin update only when its version changes, so every change to main is released.
       - name: Bump the patch version in every manifest
@@ -46,4 +51,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "Release ${{ steps.version.outputs.next }}"
           git tag "v${{ steps.version.outputs.next }}"
-          git push origin main "v${{ steps.version.outputs.next }}"
+          git push origin HEAD:main "v${{ steps.version.outputs.next }}"
