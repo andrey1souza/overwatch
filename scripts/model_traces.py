@@ -32,6 +32,9 @@ CASES = [
     ('partial summary is not a complete result', [[], ['a']], 'Build Read Start Edit Quiet PartialSummary Poll Build Read Flush'),
     ('partial initial summary cannot establish baseline', [[], ['a']], 'Start Edit PartialSummary Poll Build Read Flush'),
     ('completion stays guarded without tool progress', [[], ['a']], 'Build Read Start Edit Quiet Build Read Complete Complete Flush'),
+    ('outside change does not wake', [[], ['a']], 'Build Read Outside Quiet Build Read Flush'),
+    ('outside change waits for the next turn', [[], ['a']], 'Build Read Outside Quiet Build Read Flush Start Flush'),
+    ('outside change after a read edit does not wake', [[], [], ['a']], 'Build Read Start Edit Quiet Complete Build Read Flush Outside Quiet Build Read Flush'),
 ]
 
 
@@ -78,6 +81,7 @@ TraceInit == Init /\ scenario \in 1..Len(Events) /\ truth = Truths[scenario]
 Event == Events[scenario][step + 1]
 Action == CASE Event = "Start" -> TurnStarts
             [] Event = "Edit" -> Edit
+            [] Event = "Outside" -> OutsideEdit
             [] Event = "Move" -> HeadMoves
             [] Event = "Quiet" -> QuietElapses
             [] Event = "Build" -> RunEnds /\ pending'[Len(pending')].at = head

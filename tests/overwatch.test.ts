@@ -97,8 +97,11 @@ test('a failing build wakes an idle session with the failure', async ($, on) => 
     prompts.push(e.text)
     return { text: e.text }
   })
+  on('tool.call', () => ({ result: 'ok' }))
   await $.session.start(start)
-  await clock.advance(2000)
+  await clock.advance(500)
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/main.zig', old_string: 'a', new_string: 'b' })
+  await clock.advance(1500)
   expect(spawned).toEqual([['zig', 'build', '-Doptimize=fast', 'test', '--watch']])
   expect(prompts.length).toBe(1)
   expect(prompts[0]).toContain('Failing: `root.test.basic add functionality`.')
@@ -175,9 +178,12 @@ test('a failing build during a turn joins that turn', async ($, on) => {
     return { text: e.text }
   })
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('tool.call', () => ({ result: 'ok' }))
   await $.turn.start({ text: 'refactor', turnId: 't1' })
   await $.session.start(start)
-  await clock.advance(2000)
+  await clock.advance(500)
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/main.zig', old_string: 'a', new_string: 'b' })
+  await clock.advance(1500)
   expect(prompts).toEqual([])
   const texts = session.appended().map(row => JSON.stringify(row.message.content))
   expect(texts.some(text => text.includes('failed after the latest change'))).toBe(true)
@@ -618,8 +624,11 @@ test('zanity on PATH runs beside the project watcher', async ($, on) => {
     return next(e)
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('tool.call', () => ({ result: 'ok' }))
   await $.session.start(start)
-  await clock.advance(2000)
+  await clock.advance(500)
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/main.zig', old_string: 'a', new_string: 'b' })
+  await clock.advance(1500)
   expect(sorted(spawned)).toEqual([['zanity', 'check', '.', '--watch', '--no-color'], ZIG_WATCH])
   expect(prompts.length).toBe(1)
   expect(prompts[0]).toContain('`zanity check . --watch --no-color` failed after the latest change: zanity: 0 errors, 1 warning in 1/1 file.')
@@ -696,8 +705,11 @@ test('a pyproject.toml project runs pytest under a watcher', async ($, on) => {
     return { text: e.text }
   })
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
+  on('tool.call', () => ({ result: 'ok' }))
   await $.session.start(start)
-  await clock.advance(3000)
+  await clock.advance(500)
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/calc.py', old_string: 'a', new_string: 'b' })
+  await clock.advance(2500)
   expect(spawned).toEqual([
     ['uv', 'run', '--with', 'pytest', '--with', 'pytest-testmon', 'pytest', '--testmon-noselect'],
     ['uv', 'run', '--with', 'pytest', '--with', 'pytest-watcher', '--with', 'pytest-testmon', 'ptw', '.', '--testmon'],
@@ -758,7 +770,7 @@ test('the status line drops the summary decoration and names the first failing t
 test('a failure names only what is new since the session started, and where its full output is', () => {
   const go = { ...WATCHERS.find(watcher => watcher.name === 'go' && watcher.requires === undefined)!, dir: 'services/api' }
   const report = readReport(go, `--- FAIL: TestOld (0.00s)\n${GO_FAILING}`, 1)!
-  expect(failureMessage(go, report, ['TestOld'], '/home/me/.cache/overwatch/logs/go.log').split('\n')).toEqual([
+  expect(failureMessage(go, report, { known: ['TestOld'], log: '/home/me/.cache/overwatch/logs/go.log' }).split('\n')).toEqual([
     'overwatch: `go test ./...` in `services/api` failed after the latest change: 2 failed',
     'Failing: `TestAdd`.',
     '1 more were already failing when the session started.',

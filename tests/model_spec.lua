@@ -25,7 +25,8 @@ local function replay(trace)
   overwatch.start(directory)
   local ok, err = pcall(function()
     for index, event in ipairs(trace.events) do
-      if event == 'Edit' or event == 'Move' then version = version + 1 end
+      -- Another process's save is a new version too; the editor sees it like any other.
+      if event == 'Edit' or event == 'Move' or event == 'Outside' then version = version + 1 end
       if event == 'Build' or event == 'Partial' or event == 'PartialSummary' then
         local names = trace.truth[version]
         local body = ''

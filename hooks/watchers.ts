@@ -374,16 +374,23 @@ function logLine(log: string | undefined): string[] {
  * Tells the agent what its changes broke: the failures that are new since the
  * session started, how many it already had, and where the full output is.
  */
-export function failureMessage(watcher: Watcher, report: Report, known: readonly string[], log: string | undefined): string {
+/** What a failure message says about a report beyond the report itself: what failed before, its log, whose change it followed. */
+export type FailureContext = { known: readonly string[]; log: string | undefined; origin?: 'session' | 'outside' }
+
+export function failureMessage(watcher: Watcher, report: Report, { known, log, origin = 'session' }: FailureContext): string {
   const knownNames = new Set(known)
   const fresh = report.failures.filter(name => !knownNames.has(name))
   const old = report.failures.length - fresh.length
   assert(report.isFailed, `failure message for ${watcher.name}, which passed with ${report.summary}; send it only for a failure`)
   const message = [
-    `overwatch: ${command(watcher)} failed after the latest change: ${report.summary}`,
+    origin === 'session'
+      ? `overwatch: ${command(watcher)} failed after the latest change: ${report.summary}`
+      : `overwatch: ${command(watcher)} failed after a change made outside this session: ${report.summary}`,
     ...failingLine(fresh),
     ...(old === 0 ? [] : [`${old} more were already failing when the session started.`]),
-    'Fix these new failures before finishing. Tools remain available while you investigate.',
+    origin === 'session'
+      ? 'Fix these new failures before finishing. Tools remain available while you investigate.'
+      : 'This session made no edit since the previous result, so another process may be changing these files; check before overwriting its work.',
     ...logLine(log),
   ].join('\n')
   assert(fresh.length + old === report.failures.length, `${watcher.name} split ${report.failures.length} failures into ${fresh.length} new and ${old} old`)

@@ -13,8 +13,8 @@ Tags: claude, completion, retry-loop.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L7)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [The correction turns repeatedly finish without using tools](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [Only one correction is requested while completion and publication stay guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [The correction turns repeatedly finish without using tools](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [Only one correction is requested while completion and publication stay guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### Inspecting in a correction turn does not repeat the correction
 
@@ -22,8 +22,8 @@ Tags: claude, completion, retry-loop, inspection.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L12)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [Each correction turn reads files and runs the check, and the warnings do not change](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [Only one correction is requested](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [Each correction turn reads files and runs the check, and the warnings do not change](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [Only one correction is requested](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### Denied publication does not restart Claude corrections
 
@@ -31,8 +31,8 @@ Tags: claude, completion, protected-actions.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L17)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [An empty correction remains guarded and publication is repeatedly denied](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L321).
-- **Then** [Publication never executes and no further correction is submitted](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [An empty correction remains guarded and publication is repeatedly denied](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L324).
+- **Then** [Publication never executes and no further correction is submitted](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ### Claude recovery and changed findings
 
@@ -42,8 +42,8 @@ Tags: claude, completion, repair.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L22)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [An empty correction remains guarded and the agent resumes inspection in a new turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L294).
-- **Then** [Inspection succeeds and the remaining warnings request another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [An empty correction remains guarded and the agent resumes inspection in a new turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L297).
+- **Then** [Inspection succeeds and the remaining warnings request another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### Changed findings give Claude one fresh correction
 
@@ -51,8 +51,8 @@ Tags: claude, completion, new-findings.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L27)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [An empty correction remains guarded and the watcher reports additional warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L339).
-- **Then** [The new warnings request one fresh correction and empty retries remain guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [An empty correction remains guarded and the agent's next edit adds warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L342).
+- **Then** [The new warnings request one fresh correction and empty retries remain guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### Passing checks release a queued Claude correction
 
@@ -60,8 +60,8 @@ Tags: claude, completion, recovery.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L32)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [The checks recover during the correction turn and the agent attempts publication](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [Publication and completion succeed without another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [The checks recover during the correction turn and the agent attempts publication](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [Publication and completion succeed without another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### A recovered Claude failure can request correction again
 
@@ -69,8 +69,8 @@ Tags: claude, completion, failure-cycle.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L37)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [The failure is corrected and the same warnings return after another change](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [The returning failure gets one fresh correction and empty retries remain guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [The failure is corrected and the same warnings return after another change](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [The returning failure gets one fresh correction and empty retries remain guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ### Claude interruption
 
@@ -80,8 +80,8 @@ Tags: claude, completion, interruption.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L42)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [The agent turn is interrupted](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [The turn settles without submitting a correction prompt](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [The agent turn is interrupted](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [The turn settles without submitting a correction prompt](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### An interrupted Claude correction stays stopped
 
@@ -89,8 +89,8 @@ Tags: claude, completion, interruption, retry-loop.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L47)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [The correction turn is interrupted and the watcher repeats the same failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [The interrupted turn settles without submitting another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [The correction turn is interrupted and the watcher repeats the same failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [The interrupted turn settles without submitting another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### Claude API-error completion does not queue a correction
 
@@ -98,8 +98,8 @@ Tags: claude, completion, api-error, rate-limit.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L52)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [Claude completes with the runtime's API-error event and the watcher repeats its failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [The unsuccessful turn settles without requesting another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [Claude completes with the runtime's API-error event and the watcher repeats its failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [The unsuccessful turn settles without requesting another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### A user turn restores Claude reporting after interruption
 
@@ -107,8 +107,8 @@ Tags: claude, completion, user-resume.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L57)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [The turn is interrupted and the user starts a new investigation turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [Inspection succeeds and the remaining failure requests a fresh correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [The turn is interrupted and the user starts a new investigation turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [Inspection succeeds and the remaining failure requests a fresh correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ### Claude multiple watchers
 
@@ -117,9 +117,9 @@ Tags: claude, completion, user-resume.
 Tags: claude, completion, check-scope, recovery.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L62)
 
-- **Given** [Claude has failing Zig and Zanity watchers and publication requires only Zanity](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L432).
-- **When** [Zanity recovers before Zig and the agent attempts publication and completion](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [Publication follows Zanity while completion waits for both watchers to recover](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **Given** [Claude has failing Zig and Zanity watchers and publication requires only Zanity](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L436).
+- **When** [Zanity recovers before Zig and the agent attempts publication and completion](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [Publication follows Zanity while completion waits for both watchers to recover](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ### Claude session lifecycle
 
@@ -129,8 +129,8 @@ Tags: claude, session, restart.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L67)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [A correction is interrupted and the session is ended and started again](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [The new session reports its new failure and requests a fresh correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [A correction is interrupted and the session is ended and started again](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [The new session reports its new failure and requests a fresh correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 #### A resumed Claude session resets correction suppression
 
@@ -138,8 +138,8 @@ Tags: claude, session, resume.
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L72)
 
 - **Given** [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- **When** [A correction is interrupted and Claude resumes the session](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L248).
-- **Then** [The resumed session reports its new failure and requests a fresh correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L255).
+- **When** [A correction is interrupted and Claude resumes the session](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- **Then** [The resumed session reports its new failure and requests a fresh correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ### Failure gates
 

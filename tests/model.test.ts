@@ -18,6 +18,8 @@ for (const trace of MODEL_TRACES) {
           version++
           await host.fire('tool.call', { tool: 'Edit', file_path: '/repo/main.zig', old_string: 'a', new_string: 'b' })
         }
+        // Another process changes the workspace: a new version with no tool call of the session's.
+        if (event === 'Outside') version++
         if (event === 'Move') {
           version++
           host.move()

@@ -26,7 +26,7 @@ SCENARIOS = (
 
     Scenario("Changed findings give Claude one fresh correction", "Claude recovery and changed findings", ("claude", "completion", "new-findings"))
     .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
-    .when("An empty correction remains guarded and the watcher reports additional warnings", World.claude_findings_change)
+    .when("An empty correction remains guarded and the agent's next edit adds warnings", World.claude_findings_change)
     .then("The new warnings request one fresh correction and empty retries remain guarded", World.claude_changed_findings_get_one_correction),
 
     Scenario("Passing checks release a queued Claude correction", "Claude recovery and changed findings", ("claude", "completion", "recovery"))

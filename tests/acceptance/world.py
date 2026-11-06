@@ -240,9 +240,12 @@ class AcceptanceWorld(unittest.TestCase):
         self.claude_phase = "ready"
         self.claude_steps = [
             "await $.session.start(start)",
-            "await clock.advance(1500)",
+            "await clock.advance(500)",
+            "await $.tool.call({ tool: 'Edit', file_path: '/repo/example.py', old_string: 'a', new_string: 'b' })",
+            "await clock.advance(1000)",
             "await $.turn.start({ text: 'finish', turnId: 't1' })",
             "prompts.length = 0",
+            "calls.length = 0",
         ]
 
     def prepare_claude_steps(self, *, expected_phase: str, phase: str, steps: tuple[str, ...]) -> None:
@@ -344,6 +347,7 @@ class AcceptanceWorld(unittest.TestCase):
         self.claude_phase = "changed"
         self.claude_steps.extend([
             "await $.turn.start({ text: 'review changed findings', turnId: 'changed' })",
+            "await $.tool.call({ tool: 'Edit', file_path: '/repo/example.py', old_string: 'a', new_string: 'b' })",
             "setReport('zanity: 0 errors and 30 warnings in 1 of 1 files\\n')",
             "await clock.advance(1000)",
             "await $.turn.complete({ ...ended, turnId: 'changed' })",
@@ -354,7 +358,7 @@ class AcceptanceWorld(unittest.TestCase):
     claude_changed_findings_get_one_correction = partialmethod(verify_claude, phase='changed', expectations=(
         'expect(prompts.length).toBe(2)',
         "expect(prompts[1]).toContain('30 warnings')",
-        "expect(calls).toEqual([])",
+        "expect(calls).toEqual(['Edit'])",
     ))
 
     claude_checks_recover = partialmethod(prepare_claude_steps, expected_phase='ready', phase='recovered', steps=(
@@ -467,7 +471,10 @@ class AcceptanceWorld(unittest.TestCase):
         'expect(prompts.length).toBe(1)',
         '// fresh hook instance after restart',
         'await $.session.start(start)',
-        'await clock.advance(1500)',
+        'await clock.advance(500)',
+        "await $.tool.call({ tool: 'Edit', file_path: '/repo/example.py', old_string: 'a', new_string: 'b' })",
+        'calls.length = 0',
+        'await clock.advance(1000)',
         'await clock.advance(1000)',
         'expect(prompts.length).toBe(1)',
         "await $.turn.start({ text: prompts[0]!, turnId: 'new-session' })",
@@ -489,7 +496,10 @@ class AcceptanceWorld(unittest.TestCase):
         'await resuming',
         'prompts.length = 0',
         'calls.length = 0',
-        'await clock.advance(1500)',
+        'await clock.advance(500)',
+        "await $.tool.call({ tool: 'Edit', file_path: '/repo/example.py', old_string: 'a', new_string: 'b' })",
+        'calls.length = 0',
+        'await clock.advance(1000)',
         'expect(prompts.length).toBe(1)',
         "await $.turn.start({ text: prompts[0]!, turnId: 'resumed-session' })",
         "await $.turn.complete({ ...ended, turnId: 'resumed-session' })",

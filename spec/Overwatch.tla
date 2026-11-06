@@ -28,11 +28,11 @@ separate. TypeOK constrains their domains without advancing an execution.
 VARIABLES
     truth, head, based, busy, from, quiet, installed,
     produced, consumed, pending, report, baseline, wasFailing,
-    outbox, told, flush, turn, toldThisTurn, promptQueued, knows, elapsed
+    outbox, told, flush, turn, toldThisTurn, promptQueued, knows, elapsed, edited
 
 vars == <<truth, head, based, busy, from, quiet, installed,
           produced, consumed, pending, report, baseline, wasFailing,
-          outbox, told, flush, turn, toldThisTurn, promptQueued, knows, elapsed>>
+          outbox, told, flush, turn, toldThisTurn, promptQueued, knows, elapsed, edited>>
 
 TypeOK ==
     /\ truth \in [Versions -> Results]
@@ -50,6 +50,7 @@ TypeOK ==
     /\ turn \in {"idle", "running"}
     /\ toldThisTurn \in BOOLEAN /\ promptQueued \in BOOLEAN
     /\ knows \in Outcomes /\ elapsed \in 0..Timeout
+    /\ edited \in BOOLEAN
 
 (* Section: Failure gating
 
@@ -75,7 +76,7 @@ Init ==
     /\ wasFailing = FALSE
     /\ outbox = NoMessage /\ told = NotTold /\ flush = FALSE
     /\ turn = "idle" /\ toldThisTurn = FALSE /\ promptQueued = FALSE
-    /\ knows = {} /\ elapsed = 0
+    /\ knows = {} /\ elapsed = 0 /\ edited = FALSE
 
 (* Section: Result delivery and baseline isolation
 
@@ -95,7 +96,8 @@ Deliver(v, id, f) ==
        /\ baseline' = IF TimedOut \in f THEN baseline ELSE [known |-> TRUE, failures |-> b]
        /\ wasFailing' = isRegression
        /\ IF isRegression
-            THEN Queue([kind |-> "failed", fresh |-> f \ b], [held |-> TRUE, waking |-> TRUE, failures |-> f])
+            THEN Queue([kind |-> "failed", fresh |-> f \ b],
+                       [held |-> TRUE, waking |-> edited \/ TimedOut \in f, failures |-> f])
           ELSE IF ~wasFailing
             THEN UNCHANGED <<outbox, told, flush>>
           ELSE IF outbox.held
@@ -104,16 +106,25 @@ Deliver(v, id, f) ==
 
 (* Section: Workspace changes and scheduling
 
-An agent edit advances head without moving based. An external head change
-moves both and invalidates the baseline and unread results. QuietElapses
-starts the next check; Tick advances its timeout clock.
+An agent edit advances head without moving based, and marks the next read as
+following the agent's own change. Another process can change the workspace at
+any time without committing; OutsideEdit advances head the same way but marks
+nothing. An external head change moves both and invalidates the baseline and
+unread results. QuietElapses starts the next check; Tick advances its timeout clock.
 *)
 Edit ==
     /\ turn = "running" /\ head < MaxEdits
-    /\ head' = head + 1 /\ quiet' = TRUE
+    /\ head' = head + 1 /\ quiet' = TRUE /\ edited' = TRUE
     /\ UNCHANGED <<truth, based, busy, from, installed, produced, consumed, pending,
                    report, baseline, wasFailing, outbox, told, flush, turn,
                    toldThisTurn, promptQueued, knows, elapsed>>
+
+OutsideEdit ==
+    /\ head < MaxEdits
+    /\ head' = head + 1 /\ quiet' = TRUE
+    /\ UNCHANGED <<truth, based, busy, from, installed, produced, consumed, pending,
+                   report, baseline, wasFailing, outbox, told, flush, turn,
+                   toldThisTurn, promptQueued, knows, elapsed, edited>>
 
 HeadMoves ==
     /\ head < MaxEdits
@@ -123,20 +134,20 @@ HeadMoves ==
     /\ from' = IF busy THEN head + 1 ELSE from
     /\ elapsed' = IF busy THEN 0 ELSE elapsed
     /\ UNCHANGED <<truth, busy, installed, produced, consumed, report, wasFailing, outbox,
-                   told, flush, turn, toldThisTurn, promptQueued, knows>>
+                   told, flush, turn, toldThisTurn, promptQueued, knows, edited>>
 
 QuietElapses ==
     /\ quiet /\ installed
     /\ quiet' = FALSE /\ busy' = TRUE /\ from' = head /\ elapsed' = 0
     /\ UNCHANGED <<truth, head, based, installed, produced, consumed, pending,
                    report, baseline, wasFailing, outbox, told, flush, turn,
-                   toldThisTurn, promptQueued, knows>>
+                   toldThisTurn, promptQueued, knows, edited>>
 
 Tick ==
     /\ busy /\ elapsed < Timeout /\ elapsed' = elapsed + 1
     /\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced,
                    consumed, pending, report, baseline, wasFailing, outbox,
-                   told, flush, turn, toldThisTurn, promptQueued, knows>>
+                   told, flush, turn, toldThisTurn, promptQueued, knows, edited>>
 
 (* Completion appends a result; it does not deliver it. Partial output is a
    stuttering step at this abstraction: only a complete build enters pending. *)
@@ -151,7 +162,7 @@ Buffer(v, f) ==
     /\ pending' = Append(pending, [id |-> produced + 1, at |-> v, failures |-> f])
     /\ busy' = FALSE /\ installed' = TRUE
     /\ UNCHANGED <<truth, head, based, from, quiet, consumed, report, baseline,
-                   wasFailing, outbox, told, flush, turn, toldThisTurn, promptQueued, knows, elapsed>>
+                   wasFailing, outbox, told, flush, turn, toldThisTurn, promptQueued, knows, elapsed, edited>>
 
 RunEnds == busy /\ \E v \in from..head : Buffer(v, truth[v])
 TimesOut == busy /\ elapsed = Timeout /\ Buffer(from, {TimedOut})
@@ -160,7 +171,7 @@ ReadResults ==
     /\ pending # <<>>
     /\ LET latest == pending[Len(pending)]
        IN Deliver(latest.at, latest.id, latest.failures)
-    /\ consumed' = produced /\ pending' = <<>>
+    /\ consumed' = produced /\ pending' = <<>> /\ edited' = FALSE
     /\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced,
                    turn, toldThisTurn, promptQueued, knows, elapsed>>
 
@@ -181,13 +192,13 @@ Flush ==
                    ELSE promptQueued' = TRUE /\ UNCHANGED toldThisTurn
          ELSE UNCHANGED <<outbox, knows, toldThisTurn, promptQueued>>
     /\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,
-                   pending, report, baseline, wasFailing, told, turn, elapsed>>
+                   pending, report, baseline, wasFailing, told, turn, elapsed, edited>>
 
 TurnStarts ==
     /\ turn = "idle" /\ turn' = "running"
     /\ toldThisTurn' = promptQueued /\ promptQueued' = FALSE /\ flush' = TRUE
     /\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,
-                   pending, report, baseline, wasFailing, outbox, told, knows, elapsed>>
+                   pending, report, baseline, wasFailing, outbox, told, knows, elapsed, edited>>
 
 WokenTurnStarts == promptQueued /\ TurnStarts
 
@@ -197,14 +208,14 @@ TurnCompletes ==
          THEN /\ toldThisTurn' = TRUE /\ knows' = report.failures /\ UNCHANGED <<turn, flush>>
          ELSE /\ turn' = "idle" /\ flush' = TRUE /\ UNCHANGED <<toldThisTurn, knows>>
     /\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,
-                   pending, report, baseline, wasFailing, outbox, told, promptQueued, elapsed>>
+                   pending, report, baseline, wasFailing, outbox, told, promptQueued, elapsed, edited>>
 
 (* Section: Allowed executions and fairness
 
 Next chooses an enabled transition. Spec permits stuttering and requires
 weak fairness for the listed progress actions; this does not impose deadlines.
 *)
-Next == Edit \/ HeadMoves \/ QuietElapses \/ Tick \/ RunEnds \/ TimesOut
+Next == Edit \/ OutsideEdit \/ HeadMoves \/ QuietElapses \/ Tick \/ RunEnds \/ TimesOut
         \/ ReadResults \/ Flush \/ TurnStarts \/ TurnCompletes
 
 Spec ==
@@ -216,7 +227,10 @@ Spec ==
 (* Section: Safety and progress properties
 
 Results retain their ordering and checked version. The baseline cannot
-absorb later edits. Under Spec fairness, checks end and regressions reach the agent.
+absorb later edits. A failure wakes the agent only when its read follows the
+agent's own edit, or when the check timed out, so another process's changes
+never wake it. Under Spec fairness, checks end, and each regression reaches
+the agent or waits, without waking it, for its next turn.
 These properties are model-checked within the committed configuration bounds.
 *)
 BufferedResultsAreOrdered ==
@@ -228,5 +242,10 @@ ResultsMatchBuilds == report.known => report.failures = truth[report.at] \/ repo
 BaselineNeverAbsorbsEdits == baseline.known => baseline.failures \subseteq truth[based]
 RunsEnd == busy ~> ~busy
 EveryEditIsChecked == <>[](report.known /\ report.at = head)
-RegressionsReachAgent == <>[]((truth[head] \ truth[based]) \subseteq knows \/ TimedOut \in knows)
+Regressions == truth[head] \ truth[based]
+WaitsForTurn == turn = "idle" /\ outbox.held /\ ~outbox.waking /\ Regressions \subseteq outbox.failures
+RegressionsReachAgent == <>[](Regressions \subseteq knows \/ TimedOut \in knows \/ WaitsForTurn)
+OutsideChangesNeverWake ==
+    [][told' # told /\ told'.kind = "failed" /\ outbox'.waking
+        => edited \/ TimedOut \in outbox'.failures]_vars
 =============================================================================

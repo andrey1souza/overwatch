@@ -62,6 +62,10 @@ type Slot = {
   baseline: Report | undefined
   /** Whether the agent edited since the watcher was found, so a first result may already hold its changes. */
   isEdited: boolean
+  /** Whether the agent edited since this watcher's previous result; a result without one follows another process's change. */
+  isEditedSinceResult: boolean
+  /** Whose change the latest result followed; an unchanged result repeated with no edit keeps it. */
+  origin: 'session' | 'outside'
   /** What the agent was last told of this watcher, so a failure that repeats is told once. */
   told: string | undefined
   /** This watcher's part of the plugin's one status line. */
@@ -213,6 +217,15 @@ const UNTOUCHED: Report = { summary: 'passed', isFailed: false, text: '', failur
 /** Timings in a summary, which change from run to run of the same failure. */
 const TIMING = /\d+(?:\.\d+)?m?s\b/g
 
+/** Whether two results say the same, timings aside: a watcher printing an unchanged result again is no one's change. */
+function sameResult(before: Report, after: Report): boolean {
+  assert(!before.summary.includes('\n') && !after.summary.includes('\n'), `results ${before.summary} and ${after.summary} have multi-line summaries; compare ones readReport made`)
+  const same = before.isFailed === after.isFailed && before.summary.replace(TIMING, '') === after.summary.replace(TIMING, '')
+    && before.failures.join('\n') === after.failures.join('\n')
+  assert(!same || before.failures.length === after.failures.length, `${before.summary} and ${after.summary} matched with different failures`)
+  return same
+}
+
 /**
  * Tells the agent of a failure its session caused: one the watcher's first
  * result, its baseline, did not already have. An environment error is told
@@ -221,6 +234,7 @@ const TIMING = /\d+(?:\.\d+)?m?s\b/g
 async function deliver($: EngineInterface, run: Run, report: Report) {
   const { state, slot, watcher } = run
   assert(slot.watcher === undefined || slot.watcher.marker === watcher.marker, `${watcher.name} reported into slot ${slot.key}, which runs ${slot.watcher?.name}`)
+  const previous = slot.report
   slot.report = report
   setStatus($, state, slot, statusLine(watcher, report))
   assert(slot.status === statusLine(watcher, report), `${slot.key}'s status was not set to ${watcher.name}'s report`)
@@ -228,6 +242,10 @@ async function deliver($: EngineInterface, run: Run, report: Report) {
     queueEnvironment($, run, report.environment)
     return
   }
+  const isRepeat = previous !== undefined && sameResult(previous, report)
+  const origin = slot.isEditedSinceResult ? 'session' : isRepeat ? slot.origin : 'outside'
+  slot.origin = origin
+  slot.isEditedSinceResult = false
   if (slot.baseline === undefined) {
     slot.baseline = slot.isEdited ? UNTOUCHED : report
     if (!slot.isEdited) await baselineInventory($, run, report)
@@ -237,13 +255,7 @@ async function deliver($: EngineInterface, run: Run, report: Report) {
   const wasFailing = slot.wasFailing
   slot.wasFailing = isRegression
   if (isRegression) {
-    const known = slot.baseline.isFailed ? slot.baseline.failures : []
-    const knownNames = new Set(known)
-    const fresh = report.failures.filter(name => !knownNames.has(name))
-    const signature = `failed:${fresh.length > 0 ? [...fresh].sort().join('\n') : report.summary.replace(TIMING, '')}`
-    if (slot.told === signature && !state.outbox.has(`${slot.key}:report`)) return
-    const text = failureMessage(watcher, report, known, await writeLog($, slot, report.text))
-    queue($, run, signature, { text, isWaking: true, kind: 'report' })
+    await tellRegression($, run, report)
     return
   }
   if (!wasFailing) return
@@ -252,6 +264,24 @@ async function deliver($: EngineInterface, run: Run, report: Report) {
     return
   }
   queue($, run, 'recovered', { text: recoveryMessage(watcher, report), isWaking: false, kind: 'report' })
+}
+
+/**
+ * Queues a regression against `baseline` for the agent, unless it was told already. Another process's change is told
+ * at the agent's next turn; it never wakes the agent.
+ */
+async function tellRegression($: EngineInterface, run: Run, report: Report) {
+  const { state, slot, watcher } = run
+  const { baseline, origin } = slot
+  assert(baseline !== undefined && slot.report === report, `${slot.key} tells ${report.summary} without a baseline or as a result it does not hold; deliver it first`)
+  assert(report.isFailed && hasRegression(report, baseline), `${watcher.name}'s ${report.summary} is no regression on ${baseline.summary}; tell only regressions`)
+  const known = baseline.isFailed ? baseline.failures : []
+  const knownNames = new Set(known)
+  const fresh = report.failures.filter(name => !knownNames.has(name))
+  const signature = `failed:${fresh.length > 0 ? [...fresh].sort().join('\n') : report.summary.replace(TIMING, '')}`
+  if (slot.told === signature && !state.outbox.has(`${slot.key}:report`)) return
+  const text = failureMessage(watcher, report, { known, log: await writeLog($, slot, report.text), origin })
+  queue($, run, signature, { text, isWaking: origin === 'session', kind: 'report' })
 }
 
 /** The spawn option that sets a watcher's env over overwatch's own; none when it sets none. */
@@ -698,6 +728,7 @@ async function stop($: EngineInterface, state: State) {
     each.wasFailing = false
     each.baseline = undefined
     each.isEdited = false
+    each.isEditedSinceResult = false
     each.report = undefined
     each.told = undefined
     each.status = undefined
@@ -725,6 +756,8 @@ const slot = (key: string, dir: string): Slot => {
     wasFailing: false,
     baseline: undefined,
     isEdited: false,
+    isEditedSinceResult: false,
+    origin: 'session',
     told: undefined,
     status: undefined,
   }
@@ -821,6 +854,7 @@ async function rebaselineOnMove($: EngineInterface, state: State) {
   for (const each of state.slots) {
     each.baseline = undefined
     each.isEdited = false
+    each.isEditedSinceResult = false
     each.changed?.()
   }
   assert(state.slots.every(each => each.baseline === undefined && !each.isEdited), `a slot kept its baseline after HEAD moved to ${head}; clear each`)
@@ -837,6 +871,7 @@ async function afterTool($: EngineInterface, state: State, tool: string) {
   if (!EDITING_TOOLS.has(tool)) return
   for (const each of state.slots) {
     each.isEdited = true
+    each.isEditedSinceResult = true
     each.changed?.()
   }
   await rebaselineOnMove($, state)

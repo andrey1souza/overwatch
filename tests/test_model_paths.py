@@ -48,7 +48,7 @@ class CommandReplay:
             return codex.process_event(event, self.data)
 
     def step(self, action: str) -> dict | None:
-        if action in ('Edit', 'Move'):
+        if action in ('Edit', 'Move', 'Outside'):
             self.version += 1
             self.overlap = self.first and 'during initial check' in self.trace['name']
             if not self.overlap:
@@ -117,7 +117,7 @@ def reader_steps(trace: dict):
     """Feed the model's external byte events into the production reader."""
     version, pending, partial = 0, '', ''
     for index, action in enumerate(trace['events'], 1):
-        if action in ('Edit', 'Move'):
+        if action in ('Edit', 'Move', 'Outside'):
             version += 1
         if action in ('Build', 'Partial', 'PartialSummary'):
             text = build_output(trace['truth'][version])
