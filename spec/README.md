@@ -70,7 +70,9 @@ python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
 ```
 
-For typesetting, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX, bundled in the same jar, generates standalone `.tex` files with its style definitions included. No separate TLA LaTeX package is required. The generator typesets in a temporary directory to resolve alignment and rejects overflowing lines. It retains the `.tex` sources, leaving the committed PDFs unchanged:
+The Formal model page displays every module as inline vector pages, generated from its TLA+ source through TLATeX and LaTeX. Select any page to enlarge it. These are the actual typeset specifications, including definitions, actions, invariants, and temporal properties.
+
+For typesetting, install `pdflatex`, `latex`, and `dvisvgm` (for example, TeX Live's `texlive-latex-base` and the `dvisvgm` package). TLATeX, bundled in the same jar, generates standalone `.tex` files with its style definitions included. No separate TLA LaTeX package is required. The generator typesets in a temporary directory to resolve alignment and rejects overflowing lines. It retains the `.tex` sources and renders all pages as self-contained SVGs in `docs/assets/models/`, leaving the committed PDFs unchanged. Even `--check` renders these build assets after verifying the LaTeX. The site build requires them and discovers the page count rather than maintaining it by hand:
 
 ```sh
 python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar

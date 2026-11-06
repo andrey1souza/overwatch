@@ -17,6 +17,44 @@ Failure atoms represent what a runner exposes: named identities or count slots f
 
 The interface model receives completed snapshots from the result layer. This is a composition boundary: it abstracts process bytes and workspace discovery, while the result model abstracts host callbacks. Runtime replays test both sides of that boundary. It is not an automatic refinement proof of the implementation.
 
+# [Typeset specification]($heading.id('typeset-specification'))
+
+These pages are generated from the TLA+ modules through TLATeX and LaTeX. Select a page to open the full-size vector rendering. The source and download links follow below.
+
+## [Failure Policy]($heading.id('failure-policy'))
+
+[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/FailurePolicy.tla)
+
+[FailurePolicy, page 1 of 1]($image.siteAsset('models/FailurePolicy-1.svg').alt('FailurePolicy-page-1').linked(true))
+
+## [Integration Contract]($heading.id('integration-contract'))
+
+[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+[IntegrationContract, page 1 of 4]($image.siteAsset('models/IntegrationContract-1.svg').alt('IntegrationContract-page-1').linked(true))
+
+[IntegrationContract, page 2 of 4]($image.siteAsset('models/IntegrationContract-2.svg').alt('IntegrationContract-page-2').linked(true))
+
+[IntegrationContract, page 3 of 4]($image.siteAsset('models/IntegrationContract-3.svg').alt('IntegrationContract-page-3').linked(true))
+
+[IntegrationContract, page 4 of 4]($image.siteAsset('models/IntegrationContract-4.svg').alt('IntegrationContract-page-4').linked(true))
+
+## [Integration Lifecycle]($heading.id('integration-lifecycle'))
+
+[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationLifecycle.tla)
+
+[IntegrationLifecycle, page 1 of 1]($image.siteAsset('models/IntegrationLifecycle-1.svg').alt('IntegrationLifecycle-page-1').linked(true))
+
+## [Overwatch]($heading.id('overwatch'))
+
+[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
+
+[Overwatch, page 1 of 3]($image.siteAsset('models/Overwatch-1.svg').alt('Overwatch-page-1').linked(true))
+
+[Overwatch, page 2 of 3]($image.siteAsset('models/Overwatch-2.svg').alt('Overwatch-page-2').linked(true))
+
+[Overwatch, page 3 of 3]($image.siteAsset('models/Overwatch-3.svg').alt('Overwatch-page-3').linked(true))
+
 # [Host contracts]($heading.id('host-contracts'))
 
 `Capabilities` in `IntegrationContract.tla` defines each host's permission, completion, delivery, status, and wakeup behavior. The documentation table is generated from TLC's exported capability values alongside the event traces.
@@ -83,7 +121,9 @@ python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
 ```
 
-For typesetting, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX, bundled in the same jar, generates standalone `.tex` files with its style definitions included. No separate TLA LaTeX package is required. The generator typesets in a temporary directory to resolve alignment and rejects overflowing lines. It retains the `.tex` sources, leaving the committed PDFs unchanged:
+The Formal model page displays every module as inline vector pages, generated from its TLA+ source through TLATeX and LaTeX. Select any page to enlarge it. These are the actual typeset specifications, including definitions, actions, invariants, and temporal properties.
+
+For typesetting, install `pdflatex`, `latex`, and `dvisvgm` (for example, TeX Live's `texlive-latex-base` and the `dvisvgm` package). TLATeX, bundled in the same jar, generates standalone `.tex` files with its style definitions included. No separate TLA LaTeX package is required. The generator typesets in a temporary directory to resolve alignment and rejects overflowing lines. It retains the `.tex` sources and renders all pages as self-contained SVGs in `docs/assets/models/`, leaving the committed PDFs unchanged. Even `--check` renders these build assets after verifying the LaTeX. The site build requires them and discovers the page count rather than maintaining it by hand:
 
 ```sh
 python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar
