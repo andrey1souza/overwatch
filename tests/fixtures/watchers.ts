@@ -27,7 +27,7 @@ export const readResult = (watcher: (typeof WATCHERS)[number], output: string, c
   const report = readReport(watcher, output, code)
   assert(report !== undefined, `${watcher.name} read no report from ${output.length} characters of output; check its summary pattern`)
   const status = statusLine(watcher, report)
-  assert(status.startsWith(`overwatch ${watcher.name} `), `status ${status} does not name ${watcher.name}`)
+  assert(status.startsWith(`${watcher.name} `), `status ${status} does not name ${watcher.name}`)
   return [status, report.failures]
 }
 

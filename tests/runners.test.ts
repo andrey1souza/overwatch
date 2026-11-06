@@ -82,13 +82,13 @@ error: could not compile \`calc\` (lib test) due to 1 previous error
 `
 
 test('JavaScript runners report what failed', () => {
-  expect(readResult(watcherNamed('vitest'), VITEST_FAILING)).toEqual(['overwatch vitest ✗ 1 failed (1): calc.test.js > adds', ['calc.test.js > adds']])
+  expect(readResult(watcherNamed('vitest'), VITEST_FAILING)).toEqual(['vitest ✗ 1 failed (1): calc.test.js > adds', ['calc.test.js > adds']])
   expect(readResult(watcherNamed('vitest'), VITEST_BROKEN)[1]).toEqual(['calc.test.js [ calc.test.js ]'])
   expect(readReport(watcherNamed('vitest'), ' Test Files  1 passed (1)\n')?.isFailed).toBe(false)
-  expect(readResult(watcherNamed('jest'), JEST_FAILING)).toEqual(['overwatch jest ✗ 1 failed, 1 total: ./calc.test.js +1 more', ['./calc.test.js', 'adds']])
-  expect(readResult(watcherNamed('bun', 'bun.lock'), BUN_FAILING)).toEqual(['overwatch bun ✗ 1 fail: adds', ['adds']])
+  expect(readResult(watcherNamed('jest'), JEST_FAILING)).toEqual(['jest ✗ 1 failed, 1 total: ./calc.test.js +1 more', ['./calc.test.js', 'adds']])
+  expect(readResult(watcherNamed('bun', 'bun.lock'), BUN_FAILING)).toEqual(['bun ✗ 1 fail: adds', ['adds']])
   expect(readReport(watcherNamed('bun', 'bun.lock'), ' 2 pass\n 0 fail\n')?.isFailed).toBe(false)
-  expect(readResult(watcherNamed('deno', 'deno.json'), DENO_FAILING)).toEqual(['overwatch deno ✗ 1 passed | 1 failed (2ms): adds => ./calc_test.ts:1:6', ['adds => ./calc_test.ts:1:6']])
+  expect(readResult(watcherNamed('deno', 'deno.json'), DENO_FAILING)).toEqual(['deno ✗ 1 passed | 1 failed (2ms): adds => ./calc_test.ts:1:6', ['adds => ./calc_test.ts:1:6']])
   expect(readReport(watcherNamed('deno', 'deno.json'), DENO_BROKEN)?.isFailed).toBe(true)
   expect(readReport(watcherNamed('deno', 'deno.json'), 'ok | 2 passed | 0 failed (2ms)\nWatcher Test finished. Restarting on file change...\n')?.summary).toBe(
     'ok | 2 passed | 0 failed (2ms)',
@@ -97,18 +97,18 @@ test('JavaScript runners report what failed', () => {
 
 test('Go runners report what failed', () => {
   const gotestsum = WATCHERS.find(watcher => watcher.requires === 'gotestsum')!
-  expect(readResult(gotestsum, GOTESTSUM_FAILING)).toEqual(['overwatch go ✗ 2 tests, 1 failure in 0.184s: . TestAdd', ['. TestAdd']])
+  expect(readResult(gotestsum, GOTESTSUM_FAILING)).toEqual(['go ✗ 2 tests, 1 failure in 0.184s: . TestAdd', ['. TestAdd']])
   const go = WATCHERS.find(watcher => watcher.name === 'go' && watcher.requires === undefined)!
   expect(readReport(go, GO_FAILING)).toBeUndefined()
-  expect(readResult(go, GO_FAILING, 1)).toEqual(['overwatch go ✗ 1 failed: TestAdd', ['TestAdd']])
+  expect(readResult(go, GO_FAILING, 1)).toEqual(['go ✗ 1 failed: TestAdd', ['TestAdd']])
   expect(readResult(go, GO_BROKEN, 1)[1]).toEqual(['./calc_test.go:5:1: expected declaration, found syntax'])
-  expect(readResult(go, 'ok  \texample.com/calc\t0.2s\n', 0)).toEqual(['overwatch go ✓ passed', []])
+  expect(readResult(go, 'ok  \texample.com/calc\t0.2s\n', 0)).toEqual(['go ✓ passed', []])
 })
 
 test('Rust reports compile and test failures', () => {
-  expect(readResult(watcherNamed('rust'), CARGO_FAILING, 101)).toEqual(['overwatch rust ✗ 1 failed: tests::adds', ['tests::adds']])
+  expect(readResult(watcherNamed('rust'), CARGO_FAILING, 101)).toEqual(['rust ✗ 1 failed: tests::adds', ['tests::adds']])
   expect(readResult(watcherNamed('rust'), CARGO_BROKEN, 101)).toEqual([
-    'overwatch rust ✗ 1 failed: error[E0308]: mismatched types',
+    'rust ✗ 1 failed: error[E0308]: mismatched types',
     ['error[E0308]: mismatched types'],
   ])
 })
@@ -116,19 +116,19 @@ test('Rust reports compile and test failures', () => {
 test('output holding two builds is read as the later one', () => {
   const zanity = CHECKERS.find(checker => checker.name === 'zanity')!
   const twoRuns = 'zanity: 0 errors, 17 warnings in 1/41 files.\ndead-symbol [warning] 17 in 1 file\nzanity: checked 41 files, no issues found.\n'
-  expect(readResult(zanity, twoRuns)).toEqual(['overwatch zanity ✓ checked 41 files, no issues found.', []])
+  expect(readResult(zanity, twoRuns)).toEqual(['zanity ✓ checked 41 files, no issues found.', []])
   const zig = watcherNamed('zig')
   const old = "error: 'root.test.old' failed:\nBuild Summary: 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed)\n"
   const fixed = "error: 'root.test.new' failed:\nBuild Summary: 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed)\n"
   expect(readResult(zig, old + fixed)[1]).toEqual(['root.test.new'])
   const passing = '\x1b[32mBuild Summary: 4/4 steps succeeded; 3/3 tests passed\x1b[0m\n'
-  expect(readResult(zig, old + fixed + passing)).toEqual(['overwatch zig ✓ 4/4 steps succeeded; 3/3 tests passed', []])
+  expect(readResult(zig, old + fixed + passing)).toEqual(['zig ✓ 4/4 steps succeeded; 3/3 tests passed', []])
   expect(readResult(zig, passing + fixed)[1]).toEqual(['root.test.new'])
 })
 
 test('the latest Deno build supplies both its result and failures', () => {
   const deno = watcherNamed('deno', 'deno.json')
   const passing = 'ok | 2 passed | 0 failed (1ms)\nWatcher Test finished. Restarting on file change...\n'
-  expect(readResult(deno, DENO_FAILING + passing)).toEqual(['overwatch deno ✓ 2 passed | 0 failed (1ms)', []])
+  expect(readResult(deno, DENO_FAILING + passing)).toEqual(['deno ✓ 2 passed | 0 failed (1ms)', []])
   expect(readResult(deno, passing + DENO_FAILING)).toEqual(readResult(deno, DENO_FAILING))
 })

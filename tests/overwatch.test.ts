@@ -125,7 +125,7 @@ test('a failure the project had when the session started is not reported', async
   await clock.advance(1000)
   expect(prompts).toEqual([])
   expect(session.appended().filter(row => JSON.stringify(row.message.content).includes('failed'))).toEqual([])
-  expect(statuses).toContain('overwatch zig ✗ 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed): root.test.basic add functionality')
+  expect(statuses).toContain('zig ✗ 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed): root.test.basic add functionality')
 })
 
 test('a session outside a git repository watches nothing', async ($, on) => {
@@ -394,7 +394,7 @@ test('a watcher that exits is restarted at once, and the agent told', async ($, 
   expect(spawned.length).toBe(1)
   await clock.advance(59_500)
   expect(spawned).toEqual([ZIG_WATCH, ZIG_WATCH])
-  expect(statuses).toContain(`overwatch zig: ${ZIG_WATCH.join(' ')} exited, restarting now`)
+  expect(statuses).toContain(`zig: ${ZIG_WATCH.join(' ')} exited, restarting now`)
   const texts = session.appended().map(row => JSON.stringify(row.message.content))
   expect(texts.some(text => text.includes('exited, so build failures are not reported until it restarts now'))).toBe(true)
   const ending = $.session.end({ reason: 'prompt_input_exit', sessionId: 's1', resume: { id: 's1' } })
@@ -435,7 +435,7 @@ test('a watcher that keeps exiting backs off, then gives up and wakes the agent'
   await $.session.start(start)
   await clock.advance(1000)
   expect(attempts()).toBe(1)
-  expect(statuses.at(-1)).toBe(`overwatch zig: could not start ${ZIG_WATCH.join(' ')}, restarting in 30s`)
+  expect(statuses.at(-1)).toBe(`zig: could not start ${ZIG_WATCH.join(' ')}, restarting in 30s`)
   await clock.advance(28_000)
   expect(attempts()).toBe(1)
   await clock.advance(2000)
@@ -624,7 +624,7 @@ test('zanity on PATH runs beside the project watcher', async ($, on) => {
   expect(prompts.length).toBe(1)
   expect(prompts[0]).toContain('`zanity check . --watch --no-color` failed after the latest change: zanity: 0 errors, 1 warning in 1/1 file.')
   expect(statuses.at(-1)).toBe(
-    'overwatch zig ✓ 4/4 steps succeeded; 48/48 tests passed · overwatch zanity ✗ 0 errors, 1 warning in 1/1 file.',
+    'zig ✓ 4/4 steps succeeded; 48/48 tests passed · zanity ✗ 0 errors, 1 warning in 1/1 file.',
   )
 })
 
@@ -658,7 +658,7 @@ test('new upstream commits fail the git checker and name each commit', () => {
   const git = CHECKERS.find(checker => checker.name === 'git')!
   const behind = 'new upstream commit 1084b40 three\nnew upstream commit 6001fbe two things\norigin/main has 2 new commits; pull and rebase\n'
   expect(readReport(git, behind)).toMatchObject({ isFailed: true, failures: ['1084b40 three', '6001fbe two things'] })
-  expect(statusLine(git, readReport(git, behind)!)).toBe('overwatch git ✗ origin/main has 2 new commits; pull and rebase: 1084b40 three +1 more')
+  expect(statusLine(git, readReport(git, behind)!)).toBe('git ✗ origin/main has 2 new commits; pull and rebase: 1084b40 three +1 more')
   expect(readReport(git, 'new upstream commit 1084b40 three\norigin/main has 1 new commit; pull and rebase\n')?.isFailed).toBe(true)
   expect(readReport(git, 'up to date with origin/main\n')).toMatchObject({ isFailed: false, failures: [] })
   expect(readReport(git, 'no upstream to track\n')?.isFailed).toBe(false)
@@ -730,8 +730,8 @@ test('the full suite runs green before the watcher starts', async ($, on) => {
   await $.session.start(start)
   await clock.advance(1000)
   expect(spawned.map(argv => argv.includes('ptw'))).toEqual([false, true])
-  const green = statuses.indexOf('overwatch python ✓ 3 passed in 0.01s')
-  const watching = statuses.findIndex(text => text?.includes(': starting uv run'))
+  const green = statuses.indexOf('python ✓ 3 passed in 0.01s')
+  const watching = statuses.findIndex(text => text?.includes(': starting'))
   expect(green).toBeGreaterThan(-1)
   expect(watching).toBeGreaterThan(green)
   await $.session.end({ reason: 'prompt_input_exit', sessionId: 's1', resume: { id: 's1' } })
@@ -747,11 +747,11 @@ test('the pytest summary line decides pass or fail', () => {
 
 test('the status line drops the summary decoration and names the first failing test', () => {
   expect(statusLine(python, readReport(python, PYTEST_FAILING)!)).toBe(
-    'overwatch python ✗ 1 failed, 2 passed in 0.03s: tests/test_add.py::test_add',
+    'python ✗ 1 failed, 2 passed in 0.03s: tests/test_add.py::test_add',
   )
-  expect(statusLine(zig, readReport(zig, PASSING)!)).toBe('overwatch zig ✓ 4/4 steps succeeded; 48/48 tests passed')
+  expect(statusLine(zig, readReport(zig, PASSING)!)).toBe('zig ✓ 4/4 steps succeeded; 48/48 tests passed')
   expect(statusLine(zig, readReport(zig, FAILING)!)).toBe(
-    'overwatch zig ✗ 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed): root.test.basic add functionality',
+    'zig ✗ 3/5 steps succeeded (1 failed); 2/3 tests passed (1 failed): root.test.basic add functionality',
   )
 })
 
@@ -898,8 +898,8 @@ test('a language the root lacks is watched in each sub-project that has it', asy
     ['/repo/services/web', 'bun', 'test', '--watch'],
     ['/repo/tools', 'cargo', 'test'],
   ])
-  expect(statuses.at(-1)).toContain('overwatch go services/api ✗ 1 failed: TestAdd')
-  expect(statuses.at(-1)).toContain('overwatch rust tools ✓ passed')
+  expect(statuses.at(-1)).toContain('go services/api ✗ 1 failed: TestAdd')
+  expect(statuses.at(-1)).toContain('rust tools ✓ passed')
   expect(prompts).toEqual([])
 })
 
@@ -918,7 +918,7 @@ test('every language in a polyglot project gets its own watcher', async ($, on) 
   await clock.advance(1000)
   expect(sorted(spawned)).toEqual([['cargo', 'test'], ['go', 'test', './...'], ZIG_WATCH])
   expect(statuses).toContain(
-    'overwatch zig ✓ 4/4 steps succeeded; 48/48 tests passed · overwatch go ✗ 1 failed: TestAdd · overwatch rust ✗ 1 failed: tests::adds',
+    'zig ✓ 4/4 steps succeeded; 48/48 tests passed · go ✗ 1 failed: TestAdd · rust ✗ 1 failed: tests::adds',
   )
 })
 

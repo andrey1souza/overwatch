@@ -276,7 +276,7 @@ async function runOnce($: EngineInterface, run: Run, argv: readonly string[], is
     ;({ code } = await child.result)
   } catch (error) {
     if (isStale()) return
-    setStatus($, state, slot, `overwatch ${watcher.name}: could not start ${commandLine(watcher, argv)}`)
+    setStatus($, state, slot, `${watcher.name}: could not start ${commandLine(watcher, argv)}`)
     $.ui.log(`overwatch: ${String(error)}`, { to: 'debug' })
     return
   } finally {
@@ -331,7 +331,7 @@ async function watch($: EngineInterface, run: Run): Promise<Ending | undefined> 
   const { state, slot, watcher, cwd } = run
   assert(slot.isWatching, `${slot.key} is asked to watch ${watcher.name} while not watching; set isWatching first`)
   if (watcher.baseline !== undefined && watcher.baseline.length > 0) {
-    const text = `overwatch ${watcher.name}: running the full suite with ${commandLine(watcher, watcher.baseline)}`
+    const text = `${watcher.name}: running the full suite`
     setStatus($, state, slot, text)
     await runOnce($, run, watcher.baseline)
     if (!slot.isWatching) return undefined
@@ -345,7 +345,7 @@ async function watch($: EngineInterface, run: Run): Promise<Ending | undefined> 
   if (!slot.isWatching) return undefined
   const child = $.process.spawn({ argv: watcher.argv, cwd, ...envOf(watcher) })
   slot.kill = () => child.return({ code: null, signal: null })
-  setStatus($, state, slot, `overwatch ${watcher.name}: starting ${commandLine(watcher)}`)
+  setStatus($, state, slot, `${watcher.name}: starting`)
   let output = ''
   let flush: Timer | undefined
   let isStarted = true
@@ -656,7 +656,7 @@ async function restart($: EngineInterface, { state, slot, watcher, ending }: Res
   if (slot.quickExits >= GIVE_UP_AFTER) {
     slot.retryAt = endedAt + RETRY_MS
     const status = `${what} ${slot.quickExits} times in a row; retrying at the first turn after ${RETRY_MS / 1000}s`
-    setStatus($, state, slot, `overwatch ${watcher.name}: ${status}`)
+    setStatus($, state, slot, `${watcher.name}: ${status}`)
     if (slot.quickExits === GIVE_UP_AFTER && environment === undefined) {
       const text = gaveUpMessage(watcher, slot.quickExits, RETRY_MS, await writeLog($, slot, output))
       queue($, { state, slot }, `exited:${output}`, { text, isWaking: true, kind: 'exit' })
@@ -666,7 +666,7 @@ async function restart($: EngineInterface, { state, slot, watcher, ending }: Res
   const delay = isQuick ? RETRY_MS * 2 ** (slot.quickExits - 1) : 0
   assert(delay < RETRY_MS * 2 ** GIVE_UP_AFTER, `${watcher.name} waits ${delay}ms to restart after ${slot.quickExits} quick exits; it should have given up`)
   slot.retryAt = endedAt + delay
-  setStatus($, state, slot, `overwatch ${watcher.name}: ${what}, restarting ${delay === 0 ? 'now' : `in ${delay / 1000}s`}`)
+  setStatus($, state, slot, `${watcher.name}: ${what}, restarting ${delay === 0 ? 'now' : `in ${delay / 1000}s`}`)
   if (delay === 0) state.onWatcherEnded?.()
   else
     $.clock.after(delay, () => {

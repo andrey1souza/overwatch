@@ -460,8 +460,8 @@ export function statusLine(watcher: Watcher, report: Report): string {
   const mark = report.isFailed ? '✗' : '✓'
   const [first, ...rest] = report.failures
   const failing = first === undefined ? '' : `: ${first}${rest.length > 0 ? ` +${rest.length} more` : ''}`
-  const line = `overwatch ${watcher.name} ${mark} ${bareSummary(report)}${failing}`
-  assert(line.startsWith(`overwatch ${watcher.name} ${mark} `), `status ${line} does not open with ${watcher.name} and its mark; build it from the name, mark and summary`)
+  const line = `${watcher.name} ${mark} ${bareSummary(report)}${failing}`
+  assert(line.startsWith(`${watcher.name} ${mark} `), `status ${line} does not open with ${watcher.name} and its mark; build it from the name, mark and summary`)
   assert(first === undefined || line.includes(`: ${first}`), `status ${line} does not name ${watcher.name}'s first failure ${first}; append it after a colon`)
   return line
 }
