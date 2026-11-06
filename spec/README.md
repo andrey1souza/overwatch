@@ -70,9 +70,9 @@ python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
 ```
 
-The Formal model page displays every module as inline vector pages, generated from its TLA+ source through TLATeX and LaTeX. Select any page to enlarge it. These are the actual typeset specifications, including definitions, actions, invariants, and temporal properties.
+The Formal model page presents selected definitions as mathematical equations alongside their explanations. `scripts/model_math.py` extracts the definitions from the TLA+ source and translates their notation into LaTeX; it does not maintain separate copies of the formula bodies. Unsupported notation fails generation. Zine emits the TeX expressions, and the pinned KaTeX build step renders them as native MathML with the original TeX attached as an annotation. Readers need no JavaScript, image viewer, or PDF plugin. CI compares those annotations against the current source definitions.
 
-For typesetting, install `pdflatex`, `latex`, and `dvisvgm` (for example, TeX Live's `texlive-latex-base` and the `dvisvgm` package). TLATeX, bundled in the same jar, generates standalone `.tex` files with its style definitions included. No separate TLA LaTeX package is required. The generator typesets in a temporary directory to resolve alignment and rejects overflowing lines. It retains the `.tex` sources and renders all pages as self-contained SVGs in `docs/assets/models/`, leaving the committed PDFs unchanged. Even `--check` renders these build assets after verifying the LaTeX. The site build requires them and discovers the page count rather than maintaining it by hand:
+For the complete typeset-module downloads, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX generates the standalone `.tex` files from the same TLA+ modules. The generator checks alignment and rejects overflowing lines while leaving the committed PDFs unchanged:
 
 ```sh
 python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar
@@ -82,6 +82,15 @@ pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatc
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/IntegrationContract.tex
 python3 docs/sync.py --write
 python3 docs/sync.py
+```
+
+To build the equations into the site, install the pinned renderer in a temporary directory and run the HTML rendering and verification steps after Zine:
+
+```sh
+npm install --no-save --prefix /tmp/overwatch-doc-math katex@0.16.22
+(cd docs && zine release --force)
+KATEX_MODULE=/tmp/overwatch-doc-math/node_modules/katex node scripts/render_model_math.mjs
+python3 scripts/check_model_html.py
 ```
 
 The site generator reads this guide and discovers the source, configuration, LaTeX, and PDF downloads from `spec/`. CI verifies the generated LaTeX and fixture expectations, runs the contract replays, and rejects stale site pages. After an intentional model change, regenerate the fixtures and LaTeX, review the resulting PDFs, and run the implementation replays before publishing the docs.

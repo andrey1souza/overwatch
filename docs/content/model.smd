@@ -17,43 +17,180 @@ Failure atoms represent what a runner exposes: named identities or count slots f
 
 The interface model receives completed snapshots from the result layer. This is a composition boundary: it abstracts process bytes and workspace discovery, while the result model abstracts host callbacks. Runtime replays test both sides of that boundary. It is not an automatic refinement proof of the implementation.
 
-# [Typeset specification]($heading.id('typeset-specification'))
+# [Model equations]($heading.id('model-equations'))
 
-These pages are generated from the TLA+ modules through TLATeX and LaTeX. Select a page to open the full-size vector rendering. The source and download links follow below.
+These equations are generated from the named TLA+ definitions. The notation is rendered as mathematics in this page; the complete modules remain available below.
 
-## [Failure Policy]($heading.id('failure-policy'))
+## [NewFailure]($heading.id('newfailure'))
 
-[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/FailurePolicy.tla)
+A timeout or a finding outside the baseline counts as a new failure.
 
-[FailurePolicy, page 1 of 1]($image.siteAsset('models/FailurePolicy-1.svg').alt('FailurePolicy-page-1').linked(true))
+```=mathtex
+\begin{aligned}
+\mathit{NewFailure} ( \mathit{failures} , \mathit{baseline} ) &\triangleq \\
+&\quad \texttt{"timeout"} \in \mathit{failures} \lor \neg ( \mathit{failures} \subseteq \mathit{baseline} )
+\end{aligned}
+```
 
-## [Integration Contract]($heading.id('integration-contract'))
+[Definition in FailurePolicy.tla](https://github.com/benomahony/overwatch/blob/main/spec/FailurePolicy.tla)
 
-[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+## [FailureGuards]($heading.id('failureguards'))
 
-[IntegrationContract, page 1 of 4]($image.siteAsset('models/IntegrationContract-1.svg').alt('IntegrationContract-page-1').linked(true))
+A nonempty finding set guards an action when inherited findings are blocked or the findings include a new failure.
 
-[IntegrationContract, page 2 of 4]($image.siteAsset('models/IntegrationContract-2.svg').alt('IntegrationContract-page-2').linked(true))
+```=mathtex
+\begin{aligned}
+\mathit{FailureGuards} ( \mathit{failures} , \mathit{baseline} , \mathit{inherited} ) &\triangleq \\
+&\quad \mathit{failures} \neq \{ \} \land ( \mathit{inherited} = \texttt{"block"} \lor \mathit{NewFailure} ( \mathit{failures} , \mathit{baseline} ) )
+\end{aligned}
+```
 
-[IntegrationContract, page 3 of 4]($image.siteAsset('models/IntegrationContract-3.svg').alt('IntegrationContract-page-3').linked(true))
+[Definition in FailurePolicy.tla](https://github.com/benomahony/overwatch/blob/main/spec/FailurePolicy.tla)
 
-[IntegrationContract, page 4 of 4]($image.siteAsset('models/IntegrationContract-4.svg').alt('IntegrationContract-page-4').linked(true))
+## [ReadsSelectLatestComplete]($heading.id('readsselectlatestcomplete'))
 
-## [Integration Lifecycle]($heading.id('integration-lifecycle'))
+Reading buffered results selects the newest completed result.
 
-[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationLifecycle.tla)
+```=mathtex
+\begin{aligned}
+\mathit{ReadsSelectLatestComplete} &\triangleq \\
+&\quad \mathit{report} . \mathit{known} \Rightarrow \mathit{report} . \mathit{id} = \mathit{consumed}
+\end{aligned}
+```
 
-[IntegrationLifecycle, page 1 of 1]($image.siteAsset('models/IntegrationLifecycle-1.svg').alt('IntegrationLifecycle-page-1').linked(true))
+[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
 
-## [Overwatch]($heading.id('overwatch'))
+## [BaselineNeverAbsorbsEdits]($heading.id('baselineneverabsorbsedits'))
 
-[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
+The inherited baseline cannot absorb findings introduced by later edits.
 
-[Overwatch, page 1 of 3]($image.siteAsset('models/Overwatch-1.svg').alt('Overwatch-page-1').linked(true))
+```=mathtex
+\begin{aligned}
+\mathit{BaselineNeverAbsorbsEdits} &\triangleq \\
+&\quad \mathit{baseline} . \mathit{known} \Rightarrow \mathit{baseline} . \mathit{failures} \subseteq \mathit{truth} [ \mathit{based} ]
+\end{aligned}
+```
 
-[Overwatch, page 2 of 3]($image.siteAsset('models/Overwatch-2.svg').alt('Overwatch-page-2').linked(true))
+[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
 
-[Overwatch, page 3 of 3]($image.siteAsset('models/Overwatch-3.svg').alt('Overwatch-page-3').linked(true))
+## [RunsEnd]($heading.id('runsend'))
+
+A running check eventually ends. This is the progress assumption used by the host layer.
+
+```=mathtex
+\begin{aligned}
+\mathit{RunsEnd} &\triangleq \\
+&\quad \mathit{busy} \leadsto \neg \mathit{busy}
+\end{aligned}
+```
+
+[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
+
+## [RegressionsReachAgent]($heading.id('regressionsreachagent'))
+
+A regression eventually reaches the agent, or the check times out.
+
+```=mathtex
+\begin{aligned}
+\mathit{RegressionsReachAgent} &\triangleq \\
+&\quad \Diamond \Box ( ( \mathit{truth} [ \mathit{head} ] \setminus \mathit{truth} [ \mathit{based} ] ) \subseteq \mathit{knows} \lor \mathit{TimedOut} \in \mathit{knows} )
+\end{aligned}
+```
+
+[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
+
+## [SelectedChecks]($heading.id('selectedchecks'))
+
+An empty check selection means all checks; otherwise the configured selection applies.
+
+```=mathtex
+\begin{aligned}
+\mathit{SelectedChecks} &\triangleq \\
+&\quad \mathit{IF} \mathit{selected} = \{ \} \mathit{THEN} \mathit{Checks} \mathit{ELSE} \mathit{selected}
+\end{aligned}
+```
+
+[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+## [Guarded]($heading.id('guarded'))
+
+Only selected checks whose findings satisfy the shared failure policy guard an action.
+
+```=mathtex
+\begin{aligned}
+\mathit{Guarded} ( \mathit{scope} ) &\triangleq \\
+&\quad \{ \mathit{c} \in \mathit{scope} : \mathit{FailureGuards} ( \mathit{reports} [ \mathit{c} ] , \mathit{baseline} [ \mathit{c} ] , \mathit{inherited} ) \}
+\end{aligned}
+```
+
+[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+## [CanRespond]($heading.id('canrespond'))
+
+Inspection and repair can receive a response during a check. Protected requests follow the host capability.
+
+```=mathtex
+\begin{aligned}
+\mathit{CanRespond} &\triangleq \\
+&\quad \mathit{active} \land \mathit{request} \neq \texttt{"none"} \land \neg \mathit{reply} . \mathit{ready} \land \\
+&\quad ( \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \lor \neg \mathit{Capabilities} ( \mathit{host} ) . \mathit{agent} \lor \\
+&\quad \neg \mathit{Capabilities} ( \mathit{host} ) . \mathit{waitsForCheck} \lor \neg \mathit{busy} )
+\end{aligned}
+```
+
+[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+## [InspectionAlwaysAllowed]($heading.id('inspectionalwaysallowed'))
+
+An answered inspection or repair request is always allowed.
+
+```=mathtex
+\begin{aligned}
+\mathit{InspectionAlwaysAllowed} &\triangleq \\
+&\quad \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \land \mathit{reply} . \mathit{ready} \Rightarrow \mathit{reply} . \mathit{decision} = \texttt{"allow"}
+\end{aligned}
+```
+
+[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+## [PendingContextIsCurrent]($heading.id('pendingcontextiscurrent'))
+
+Pending failure context must still describe a report that warrants notification.
+
+```=mathtex
+\begin{aligned}
+\mathit{PendingContextIsCurrent} &\triangleq \\
+&\quad \mathit{contextPending} \Rightarrow \mathit{Notify}
+\end{aligned}
+```
+
+[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+## [CorrectionRequestsAreDeduplicated]($heading.id('correctionrequestsarededuplicated'))
+
+Report changes, new sessions, and completed work bound the number of fresh correction requests.
+
+```=mathtex
+\begin{aligned}
+\mathit{CorrectionRequestsAreDeduplicated} &\triangleq \\
+&\quad \mathit{corrections} \leq \mathit{changes} + \mathit{session} + \mathit{work} + 1
+\end{aligned}
+```
+
+[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+## [FinishedReportsBecomeVisible]($heading.id('finishedreportsbecomevisible'))
+
+Once a check has finished, its report eventually becomes visible unless the session closes.
+
+```=mathtex
+\begin{aligned}
+\mathit{FinishedReportsBecomeVisible} &\triangleq \\
+&\quad ( \mathit{active} \land \neg \mathit{busy} ) \leadsto ( \mathit{visible} . \mathit{known} \lor \neg \mathit{active} )
+\end{aligned}
+```
+
+[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
 
 # [Host contracts]($heading.id('host-contracts'))
 
@@ -121,9 +258,9 @@ python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
 ```
 
-The Formal model page displays every module as inline vector pages, generated from its TLA+ source through TLATeX and LaTeX. Select any page to enlarge it. These are the actual typeset specifications, including definitions, actions, invariants, and temporal properties.
+The Formal model page presents selected definitions as mathematical equations alongside their explanations. `scripts/model_math.py` extracts the definitions from the TLA+ source and translates their notation into LaTeX; it does not maintain separate copies of the formula bodies. Unsupported notation fails generation. Zine emits the TeX expressions, and the pinned KaTeX build step renders them as native MathML with the original TeX attached as an annotation. Readers need no JavaScript, image viewer, or PDF plugin. CI compares those annotations against the current source definitions.
 
-For typesetting, install `pdflatex`, `latex`, and `dvisvgm` (for example, TeX Live's `texlive-latex-base` and the `dvisvgm` package). TLATeX, bundled in the same jar, generates standalone `.tex` files with its style definitions included. No separate TLA LaTeX package is required. The generator typesets in a temporary directory to resolve alignment and rejects overflowing lines. It retains the `.tex` sources and renders all pages as self-contained SVGs in `docs/assets/models/`, leaving the committed PDFs unchanged. Even `--check` renders these build assets after verifying the LaTeX. The site build requires them and discovers the page count rather than maintaining it by hand:
+For the complete typeset-module downloads, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX generates the standalone `.tex` files from the same TLA+ modules. The generator checks alignment and rejects overflowing lines while leaving the committed PDFs unchanged:
 
 ```sh
 python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar
@@ -133,6 +270,15 @@ pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatc
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/IntegrationContract.tex
 python3 docs/sync.py --write
 python3 docs/sync.py
+```
+
+To build the equations into the site, install the pinned renderer in a temporary directory and run the HTML rendering and verification steps after Zine:
+
+```sh
+npm install --no-save --prefix /tmp/overwatch-doc-math katex@0.16.22
+(cd docs && zine release --force)
+KATEX_MODULE=/tmp/overwatch-doc-math/node_modules/katex node scripts/render_model_math.mjs
+python3 scripts/check_model_html.py
 ```
 
 The site generator reads this guide and discovers the source, configuration, LaTeX, and PDF downloads from `spec/`. CI verifies the generated LaTeX and fixture expectations, runs the contract replays, and rejects stale site pages. After an intentional model change, regenerate the fixtures and LaTeX, review the resulting PDFs, and run the implementation replays before publishing the docs.

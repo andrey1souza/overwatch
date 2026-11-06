@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from contract_docs import render_capabilities, render_contracts
+from model_math import model_equations
 
 DOCS = Path(__file__).parent.resolve()
 REPO = DOCS.parent
@@ -179,28 +180,6 @@ def render_pages(pages: dict[str, tuple[str, str, str, str, str | None]], readme
     return rendered
 
 
-def model_previews(repo: Path) -> list[str]:
-    """Embed every generated model page, failing instead of silently omitting the mathematics."""
-    lines = ['## Typeset specification', '',
-             'These pages are generated from the TLA+ modules through TLATeX and LaTeX. '
-             'Select a page to open the full-size vector rendering. The source and download links follow below.', '']
-    sources = sorted((repo / 'spec').glob('*.tla'))
-    assert sources, f'No specification modules in {repo / "spec"}'
-    for source in sources:
-        pages = sorted((repo / 'docs/assets/models').glob(f'{source.stem}-*.svg'),
-                       key=lambda path: int(path.stem.rsplit('-', 1)[-1]))
-        if not pages:
-            raise SyncError(f'No rendered pages for {source.name}; run python3 scripts/spec_latex.py')
-        assert [int(path.stem.rsplit('-', 1)[-1]) for path in pages] == list(range(1, len(pages) + 1)), f'Missing pages for {source.name}'
-        title = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', source.stem)
-        lines.extend([f'### {title}', '',
-                      f'[TLA+ source](https://github.com/benomahony/overwatch/blob/main/spec/{source.name})', ''])
-        for index, path in enumerate(pages, 1):
-            caption = f'{source.stem}, page {index} of {len(pages)}'
-            lines.extend([f"[{caption}]($image.siteAsset('models/{path.name}').alt('{source.stem}-page-{index}').linked(true))", ''])
-    return lines
-
-
 def model_downloads(directory: Path) -> list[str]:
     """List available specification artifacts from disk, without a second download catalog."""
     files = sorted(path for path in directory.iterdir() if path.suffix in {".tla", ".cfg", ".tex", ".pdf"})
@@ -298,7 +277,7 @@ def main(pages: dict[str, tuple[str, str, str, str, str | None]], repo: Path, wr
     slot = model.index(marker)
     model[slot:slot + 1] = render_capabilities(rows)
     preview_slot = model.index('## Host contracts')
-    model[preview_slot:preview_slot] = model_previews(repo)
+    model[preview_slot:preview_slot] = model_equations(repo)
     boundary = guide.index("## Proposed behavior (not implemented)")
     sources = {"behavior.smd": guide[:boundary] + render_contracts(rows) + guide[boundary:],
                "model.smd": model + model_downloads(repo / "spec")}

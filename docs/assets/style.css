@@ -384,7 +384,6 @@ pre:hover button.copy.floating, button.copy.floating:focus { opacity: 1; }
   *, *::before, *::after { transition-duration: .01ms !important; }
 }
 
-/* TLATeX pages retain their paper background in either color scheme. */
-.prose figure:has(img[src*="/models/"]) { margin: 24px 0 36px; }
-.prose img[src*="/models/"] { display: block; width: 100%; height: auto; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-.prose figure:has(img[src*="/models/"]) figcaption { margin-top: 10px; color: var(--muted); font: 12px/1.5 var(--mono); text-align: center; }
+/* Mathematical expressions remain part of the article and scroll on narrow screens. */
+.prose .katex-display { display: block; overflow-x: auto; margin: 18px 0 24px; padding: 12px 2px; }
+.prose .katex-display math { margin: 0; text-align: left; }
