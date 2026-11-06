@@ -14,6 +14,7 @@
 			<p class="sidebar-group">Integrations</p>
 			<a href="$site.page('neovim').link()" class="$site.page('neovim').isCurrent().then('active', '')">Neovim</a>
 			<p class="sidebar-group">Project</p>
+			<a href="$site.page('model').link()" class="$site.page('model').isCurrent().then('active', '')">Formal model</a>
 			<a href="$site.page('develop').link()" class="$site.page('develop').isCurrent().then('active', '')">Develop</a>
 		</nav>
 		<main class="doc">

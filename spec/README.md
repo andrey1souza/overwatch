@@ -13,16 +13,9 @@ The interface model receives completed snapshots from the result layer. This is 
 
 ## Host contracts
 
-`Capabilities` in `IntegrationContract.tla` is authoritative for this table.
+`Capabilities` in `IntegrationContract.tla` defines each host's permission, completion, delivery, status, and wakeup behavior. The documentation table is generated from TLC's exported capability values alongside the event traces.
 
-| Host | Protected calls during a check | Completion with guarded failures | Failure delivery | Persistent result status | Idle wakeup |
-| --- | --- | --- | --- | --- | --- |
-| Claude Code | Consult the latest available report | Block; deduplicate queued corrections | Batch into the turn, or submit a prompt when idle | Yes | Yes |
-| Codex | Wait for the running check, then consult its result | Block on every Stop attempt | Hook context | No | No |
-| OpenCode 1 | Wait for the running check, then consult its result | Warn; the API cannot refuse settlement | Tool output and idle warnings | No | No |
-| OpenCode 2 | Wait for the running check, then consult its result | Queue a correction once per unchanged finding without work | Retain the report until the context hook consumes it | No | Yes |
-| Pi | Wait for the running check, then consult its result | Continue with correction entries | Startup and tool-result context | Yes | No unsolicited wakeup |
-| Neovim | No agent permission gate | No agent completion gate | Quickfix | Yes | No |
+[View the generated host capability table](https://benomahony.github.io/overwatch/model/#host-contracts)
 
 Every host must permit unprotected inspection and repair independently of check progress. Protected calls consult only their selected checks; an empty selection means all checks. Inherited findings guard only under the configured `block` policy. Deduplicating a message or correction never releases a failure gate. Completed tool work can permit one fresh correction request for unchanged findings.
 
@@ -50,3 +43,43 @@ The committed model-checking configurations use finite bounds: two checks, a sma
 - Neovim runs the real watcher callbacks with controlled process I/O, checking status, editor actions, and late callbacks after shutdown.
 
 CI model-checks both layers and the lifecycle instance, verifies generated expectations, and runs all six adapters. Changes should fix code against the contracts. A spec change requires an intentional behavior or capability change, not a workaround for a failing implementation.
+
+## Reading the models
+
+TLA+ describes states and the actions allowed to change them. TLC explores all reachable states within a configuration's finite bounds, including different orders of concurrent events. A failing invariant or temporal property produces a counterexample sequence to investigate before changing the implementation.
+
+In `Overwatch.tla`, `truth` maps workspace versions to findings, `head` is the current version, and `based` identifies the inherited baseline. `pending` holds completed, unread results. `ReadResults` consumes the latest complete result; unfinished process output is outside that action. `outbox` and the turn state constrain when a report becomes visible and whether it can wake an idle agent.
+
+In `IntegrationContract.tla`, `reports` and `baseline` contain per-check finding sets. `busy` represents an unfinished check. `request` and `reply` separate asking for an action from receiving its decision, so TLC can explore a request arriving during a check. `visible`, `contextPending`, and the delivery counters represent the host's observable channels. `active` and `session` distinguish shutdown from restart. `Capabilities` declares the host differences; it does not offer user-selectable enforcement modes.
+
+An action such as `Respond` describes one transition. A primed variable such as `reply'` is its value after the transition; `UNCHANGED` lists values that the action preserves. `Init` defines possible starting states, and `Next` chooses a permitted action. Invariants hold in every reachable state. Temporal properties describe progress across a sequence of states. Weak fairness (`WF_vars`) rules out indefinitely ignoring an action that remains enabled; it does not impose a response time limit.
+
+The fixture event names correspond to model actions: `RequestInspect`, `RequestRepair`, `RequestPublish`, and `RequestComplete` call `Request` with the corresponding kind; `Respond` answers an enabled request; `Poll` answers only if enabled. `Ack` consumes the reply. `Begin` and `Finish` start and finish a check; the fixture supplies the next snapshot. `Report` updates the visible report and `Deliver` consumes deferred context when pending. `Stop` closes the session and `Restart` starts a fresh one. `Turn` starts a turn only when idle, `StartTurn` requires an idle turn, and `Work` records completed tool work. `LateFinish` represents a late check callback and has no effect on a closed session. Conditional no-ops are trace-wrapper behavior, not additional model transitions.
+
+The [Behavior page](https://benomahony.github.io/overwatch/behavior/#model-derived-integration-contracts) renders every fixture's input state, events, and TLC observations. These are the same expected observations used by the integration tests, including pending replies and channel-specific counters. The page is generated from the fixture rather than a separately maintained list of expected behaviors.
+
+## Reproducing verification and typesetting
+
+Install Java and obtain `tla2tools.jar` from the TLA+ project. The CI workflow pins the jar version and checksum. Run each configuration separately so that its state directory is isolated:
+
+```sh
+java -cp /path/to/tla2tools.jar tlc2.TLC -metadir /tmp/overwatch-results -config spec/Overwatch.cfg spec/Overwatch.tla
+java -cp /path/to/tla2tools.jar tlc2.TLC -metadir /tmp/overwatch-hosts -config spec/IntegrationContract.cfg spec/IntegrationContract.tla
+java -cp /path/to/tla2tools.jar tlc2.TLC -metadir /tmp/overwatch-lifecycle -config spec/IntegrationLifecycle.cfg spec/IntegrationLifecycle.tla
+python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check
+python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
+```
+
+For typesetting, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX, bundled in the same jar, generates standalone `.tex` files with its style definitions included. No separate TLA LaTeX package is required. The generator typesets in a temporary directory to resolve alignment and rejects overflowing lines. It retains the `.tex` sources, leaving the committed PDFs unchanged:
+
+```sh
+python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar
+python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar --check
+mkdir -p /tmp/overwatch-typeset
+pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/Overwatch.tex
+pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/IntegrationContract.tex
+python3 docs/sync.py --write
+python3 docs/sync.py
+```
+
+The site generator reads this guide and discovers the source, configuration, LaTeX, and PDF downloads from `spec/`. CI verifies the generated LaTeX and fixture expectations, runs the contract replays, and rejects stale site pages. After an intentional model change, regenerate the fixtures and LaTeX, review the resulting PDFs, and run the implementation replays before publishing the docs.

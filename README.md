@@ -196,6 +196,8 @@ The [behavior guide](https://benomahony.github.io/overwatch/behavior/) is genera
 
 Add a scenario by composing `Scenario(...).given(...).when(...).then(...)` with fixture actions for every implemented step. Titles must be unique. Use `status="proposed"` with no executable actions for a planned behavior. Keep hook payloads, temporary paths, and test setup in the fixture rather than the prose.
 
+The [formal model guide](https://benomahony.github.io/overwatch/model/) explains the TLA+ layers, verification bounds, and generated LaTeX and PDF downloads. The [Behavior page](https://benomahony.github.io/overwatch/behavior/#model-derived-integration-contracts) also renders every model-derived host contract directly from the TLC fixtures.
+
 The [behavioral specification](https://github.com/benomahony/overwatch/blob/main/spec/README.md) covers every integration. `Overwatch.tla` models baselines, workspace versions, buffered builds, and notification ordering. `IntegrationContract.tla` specifies the six hosts' request/response behavior, independent inspection during checks, scoped guards, completion feedback, delivery, and lifecycle. Both layers share `FailurePolicy.tla`. Host differences are explicit: OpenCode 1 warns at idle, Pi continues, OpenCode 2 queues a correction, Codex and Claude guard completion, and Neovim has no agent gates.
 
 TLC computes the expected observations for the result and host-contract replays; CI rejects stale generated fixtures. The replays exercise production hooks, native callbacks, real shared-checker processes, held session locks, and Neovim watcher callbacks. The spec documents the model bounds, composition assumptions, and each host's observable channels.
@@ -222,6 +224,7 @@ python3 scripts/model_traces.py --jar /path/to/tla2tools.jar  # regenerate expec
 python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check  # reject stale expectations
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar  # regenerate all host contracts
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
+python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar --check  # verify generated LaTeX; needs pdflatex
 python3 scripts/timing.py gaps    # fit the gaps between edits in your Claude Code transcripts
 python3 scripts/timing.py budget --first 300  # longest rerun time for a 10% slowdown at each max-ahead
 ```

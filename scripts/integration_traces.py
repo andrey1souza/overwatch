@@ -100,7 +100,10 @@ Export == PrintT("CONTRACT_TRACE " \o
  ",\"wakes\":" \o ToString(wakes) \o
  ",\"delivery\":" \o Quote(Capabilities(host).delivery) \o
  ",\"completion\":" \o Quote(Capabilities(host).completion) \o
- ",\"persistentStatus\":" \o Bool(Capabilities(host).status) \o "}")
+ ",\"persistentStatus\":" \o Bool(Capabilities(host).status) \o
+ ",\"waitsForCheck\":" \o Bool(Capabilities(host).waitsForCheck) \o
+ ",\"idleWake\":" \o Bool(Capabilities(host).idleWake) \o
+ ",\"agent\":" \o Bool(Capabilities(host).agent) \o "}")
 =============================================================================
 '''
 
