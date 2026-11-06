@@ -654,6 +654,20 @@ test('a zanity warning fails, a clean check passes', () => {
   expect(readReport(zanity, 'zanity: watching for changes; save a file to check again, Ctrl-C to stop.')).toBeUndefined()
 })
 
+test('new upstream commits fail the git checker and name each commit', () => {
+  const git = CHECKERS.find(checker => checker.name === 'git')!
+  const behind = 'new upstream commit 1084b40 three\nnew upstream commit 6001fbe two things\norigin/main has 2 new commits; pull and rebase\n'
+  expect(readReport(git, behind)).toMatchObject({ isFailed: true, failures: ['1084b40 three', '6001fbe two things'] })
+  expect(statusLine(git, readReport(git, behind)!)).toBe('overwatch git ✗ origin/main has 2 new commits; pull and rebase: 1084b40 three +1 more')
+  expect(readReport(git, 'new upstream commit 1084b40 three\norigin/main has 1 new commit; pull and rebase\n')?.isFailed).toBe(true)
+  expect(readReport(git, 'up to date with origin/main\n')).toMatchObject({ isFailed: false, failures: [] })
+  expect(readReport(git, 'no upstream to track\n')?.isFailed).toBe(false)
+  expect(readReport(git, 'new upstream commit 1084b40 has 2 new commits; pull and rebase\n')).toBeUndefined()
+  const before = readReport(git, 'new upstream commit 6001fbe two things\norigin/main has 1 new commit; pull and rebase\n')!
+  expect(hasRegression(readReport(git, behind)!, before)).toBe(true)
+  expect(hasRegression(before, before)).toBe(false)
+})
+
 test('the zig summary line decides pass or fail', () => {
   expect(readReport(zig, FAILING)?.isFailed).toBe(true)
   expect(readReport(zig, PASSING)?.isFailed).toBe(false)
