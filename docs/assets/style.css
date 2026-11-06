@@ -385,5 +385,6 @@ pre:hover button.copy.floating, button.copy.floating:focus { opacity: 1; }
 }
 
 /* Mathematical expressions remain part of the article and scroll on narrow screens. */
+.prose .katex { display: inline-block; max-width: 100%; overflow-x: auto; vertical-align: middle; }
 .prose .katex-display { display: block; overflow-x: auto; margin: 18px 0 24px; padding: 12px 2px; }
 .prose .katex-display math { margin: 0; text-align: left; }

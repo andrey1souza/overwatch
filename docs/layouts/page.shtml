@@ -1,5 +1,9 @@
 <extend template="base.shtml">
 <head id="head">
+    <ctx :if="$site.page('model').isCurrent()">
+        <script defer src="$site.asset('vendor/katex.min.js').link()"></script>
+        <script defer src="$site.asset('math.js').link()"></script>
+    </ctx>
 </head>
 <body id="body">
 	<div class="docs">

@@ -60,12 +60,13 @@ jobs:
           curl -sSfL "https://github.com/kristoff-it/zine/releases/download/v$version/x86_64-linux-musl.tar.xz" | tar -xJ -C /usr/local/bin zine
 
       - name: Install the pinned math renderer
-        run: npm install --no-save --prefix "$RUNNER_TEMP/model-math" katex@0.16.22
+        run: npm install --no-save --prefix "$RUNNER_TEMP/model-math" katex@0.16.22 jsdom@26.1.0
 
       - name: Build the site
         working-directory: docs
         run: |
           zine release
+          MODEL_DOM_MODULE="$RUNNER_TEMP/model-math/node_modules/jsdom" node ../scripts/check_live_model_math.mjs
           KATEX_MODULE="$RUNNER_TEMP/model-math/node_modules/katex" node ../scripts/render_model_math.mjs
           python3 ../scripts/check_model_html.py
 
