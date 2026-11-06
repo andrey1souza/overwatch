@@ -24,9 +24,10 @@ The host determines whether protected requests wait for a running check,
 how guarded completion is handled, and which delivery channels exist.
 A host notices another process's change when it can tell it from the
 session's own: Claude Code reads each watcher result against the session's
-edits, Codex sees a change first at a hook that follows no edit of the
-session's, and an editor treats every save alike. Other hosts read every
-result as the session's.
+edits, Codex and OpenCode 2 see a change first at a hook that follows no
+edit of the session's, and an editor treats every save alike. Pi and
+OpenCode 1 check only after the session's own edits and at settlement, so
+they read every result as the session's.
 These are integration capabilities, not user-selectable enforcement modes.
 *)
 Capabilities(h) ==
@@ -43,7 +44,7 @@ Capabilities(h) ==
                     [] OTHER -> "event",
      idleWake |-> h \in {"claude", "opencode2"},
      status |-> h \in {"claude", "pi", "neovim"},
-     noticesOutside |-> h \in {"claude", "codex", "neovim"}]
+     noticesOutside |-> h \in {"claude", "codex", "opencode2", "neovim"}]
 
 Kinds == {"inspect", "repair", "publish", "complete"}
 Empty == [c \in Checks |-> {}]

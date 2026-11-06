@@ -43,8 +43,8 @@ def cases() -> list[dict]:
         for scope in ([], ['primary'], ['secondary']):
             programs.append((f'inherited {policy}, selected {scope}', 'RequestPublish Respond Ack RequestComplete Respond',
                              False, FAILED, FAILED, policy, scope, FAILED))
-    # Only hosts that tell another process's change from the session's can replay one.
-    noticing = {'claude', 'codex', 'neovim'}
+    # Only hosts that see another process's change before settling can replay one; Pi and OpenCode 1 cannot.
+    noticing = {'claude', 'codex', 'opencode2', 'neovim'}
     rows = [{'host': host, 'name': name, 'events': events.split(), 'busy': busy,
              'inTurn': name != 'idle result delivery', 'reports': reports, 'baseline': baseline, 'inherited': inherited, 'selected': scope, 'next': after}
             for host in HOSTS for name, events, busy, reports, baseline, inherited, scope, after in programs

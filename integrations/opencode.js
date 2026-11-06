@@ -137,6 +137,7 @@ export async function setupV2(ctx, checker = serialChecker()) {
     delivery.progressed(event.sessionID)
     const life = delivery.stateOf(event.sessionID)
     if (!EDITING_TOOLS.has(event.tool)) return
+    delivery.edited(event.sessionID)
     const output = await check({
       ...payload("PostToolUse", cwd, event.sessionID, "opencode2"),
       tool_name: event.tool,

@@ -112,6 +112,8 @@ export async function v2Host(project, check, outputs, session = { id: 'model' })
     inspect: () => hooks['execute.before']({ tool: 'read', sessionID: session.id, input: {} }),
     repair: () => hooks['execute.before']({ tool: 'edit', sessionID: session.id, input: {} }),
     progress: () => hooks['execute.after']({ tool: 'read', sessionID: session.id, input: {} }),
+    // OpenCode 2 checks before each model call as well, with no edit before it: where another process's change is first seen.
+    notice: () => hooks.context({ sessionID: session.id, system: [] }),
     context: async () => { const event = { sessionID: session.id, system: [] }; await hooks.context(event); contexts.push(...event.system.map(part => part.text)); return event },
     observation: () => ({ contexts: [...contexts], warnings: 0, corrections: prompts.length }),
     complete: async () => {

@@ -11,7 +11,7 @@ export class SessionDelivery {
 
   stateOf(id) {
     assert(typeof id === 'string' && id !== '', `delivery session ${id} must have an ID`)
-    if (!this.sessions.has(id)) this.sessions.set(id, { pending: undefined, correction: undefined, isCorrectionPass: false, closed: false })
+    if (!this.sessions.has(id)) this.sessions.set(id, { pending: undefined, correction: undefined, isCorrectionPass: false, isEditedSinceCorrection: false, closed: false })
     const state = this.sessions.get(id)
     assert(state !== undefined, `delivery session ${id} was not initialized`)
     return state
@@ -47,9 +47,20 @@ export class SessionDelivery {
     if (output.decision !== 'block') { state.correction = undefined; return false }
     const signature = output.overwatch?.signature ?? output.reason
     if (state.correction === signature) return false
+    // A result that changed with no edit of the session's since the last correction is another process's doing.
+    if (state.correction !== undefined && !state.isEditedSinceCorrection) return false
     state.correction = signature
     state.isCorrectionPass = true
+    state.isEditedSinceCorrection = false
     return true
+  }
+
+  /** The session ran an editing tool, so a result that changes after it may ask for another correction. */
+  edited(id) {
+    assert(this.sessions.has(id), `an edit belongs to unknown session ${id}; record it after the session's first event`)
+    const state = this.stateOf(id)
+    state.isEditedSinceCorrection = true
+    assert(state.isEditedSinceCorrection, `edit in ${id} was not recorded`)
   }
 
   /** Work outside a correction pass releases its deduplication; inside one, the work is that correction's answer. */

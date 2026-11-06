@@ -239,7 +239,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 # [Model-derived integration contracts]($section.id('model-derived-integration-contracts'))
 
-These 132 cases are generated from the same TLC expectations replayed against all six integrations. Each event is followed by the model observation asserted by the replay. Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
+These 134 cases are generated from the same TLC expectations replayed against all six integrations. Each event is followed by the model observation asserted by the replay. Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
 
 [Read the spec](https://benomahony.github.io/overwatch/model/) for the complete state machines, host capabilities, and checked properties.
 
@@ -1693,6 +1693,50 @@ These 132 cases are generated from the same TLC expectations replayed against al
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
 - [When]($text.attrs('when')) `Deliver` occurs.
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+
+### [OpenCode 2 - outside change keeps one correction]($section.id('opencode-2---outside-change-keeps-one-correction').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+
+### [OpenCode 2 - outside failure is not told as the sessions]($section.id('opencode-2---outside-failure-is-not-told-as-the-sessions').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": [], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Deliver` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
 
 ### [OpenCode 2 - session change after a correction permits a fresh one]($section.id('opencode-2---session-change-after-a-correction-permits-a-fresh-one').attrs('verified'))
 

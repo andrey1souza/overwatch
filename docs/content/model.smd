@@ -633,9 +633,10 @@ The host determines whether protected requests wait for a running check,
 how guarded completion is handled, and which delivery channels exist.
 A host notices another process's change when it can tell it from the
 session's own: Claude Code reads each watcher result against the session's
-edits, Codex sees a change first at a hook that follows no edit of the
-session's, and an editor treats every save alike. Other hosts read every
-result as the session's.
+edits, Codex and OpenCode 2 see a change first at a hook that follows no
+edit of the session's, and an editor treats every save alike. Pi and
+OpenCode 1 check only after the session's own edits and at settlement, so
+they read every result as the session's.
 These are integration capabilities, not user-selectable enforcement modes.
 
 ### [IntegrationContract - Capabilities]($heading.id('integrationcontract---capabilities'))
@@ -655,7 +656,7 @@ These are integration capabilities, not user-selectable enforcement modes.
 &\quad \hspace{6.67em}\Box \mathit{OTHER} \to \texttt{"event"} , \\
 &\quad \hspace{1.67em}\mathit{idleWake} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"opencode2"} \} , \\
 &\quad \hspace{1.67em}\mathit{status} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"pi"} , \texttt{"neovim"} \} , \\
-&\quad \hspace{1.67em}\mathit{noticesOutside} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"codex"} , \texttt{"neovim"} \} ]
+&\quad \hspace{1.67em}\mathit{noticesOutside} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"codex"} , \texttt{"opencode2"} , \texttt{"neovim"} \} ]
 \end{aligned}
 ```
 
