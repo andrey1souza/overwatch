@@ -631,6 +631,11 @@ These are host capabilities, not advisory/strict policy modes. A warning    cann
 
 The host determines whether protected requests wait for a running check,
 how guarded completion is handled, and which delivery channels exist.
+A host notices another process's change when it can tell it from the
+session's own: Claude Code reads each watcher result against the session's
+edits, Codex sees a change first at a hook that follows no edit of the
+session's, and an editor treats every save alike. Other hosts read every
+result as the session's.
 These are integration capabilities, not user-selectable enforcement modes.
 
 ### [IntegrationContract - Capabilities]($heading.id('integrationcontract---capabilities'))
@@ -649,7 +654,8 @@ These are integration capabilities, not user-selectable enforcement modes.
 &\quad \hspace{6.67em}\Box \mathit{h} = \texttt{"neovim"} \to \texttt{"quickfix"} \\
 &\quad \hspace{6.67em}\Box \mathit{OTHER} \to \texttt{"event"} , \\
 &\quad \hspace{1.67em}\mathit{idleWake} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"opencode2"} \} , \\
-&\quad \hspace{1.67em}\mathit{status} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"pi"} , \texttt{"neovim"} \} ]
+&\quad \hspace{1.67em}\mathit{status} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"pi"} , \texttt{"neovim"} \} , \\
+&\quad \hspace{1.67em}\mathit{noticesOutside} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"codex"} , \texttt{"neovim"} \} ]
 \end{aligned}
 ```
 
@@ -700,7 +706,7 @@ idle wakeups are separate observations.
 &\quad \hspace{3.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \\
 &\quad \hspace{3.33em}\mathit{visible} , \mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
 &\quad \hspace{3.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
-&\quad \hspace{3.33em}\mathit{correctionPending} , \mathit{correctionTurn}
+&\quad \hspace{3.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides}
 \end{aligned}
 ```
 
@@ -712,7 +718,7 @@ idle wakeups are separate observations.
 &\quad \hspace{3.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{3.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
 &\quad \hspace{3.33em}\mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
-&\quad \hspace{3.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+&\quad \hspace{3.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -780,7 +786,8 @@ do not assert a runtime limit on requests or sessions.
 &\quad \hspace{1.33em}\land \mathit{contexts} \in 0 \mathbin{\text{..}} ( \mathit{MaxChanges} + \mathit{MaxSessions} + 1 ) \\
 &\quad \hspace{1.33em}\land \mathit{warnings} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} ) \\
 &\quad \hspace{1.33em}\land \mathit{corrections} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} ) \\
-&\quad \hspace{1.33em}\land \mathit{correctionPending} \in \mathit{BOOLEAN} \land \mathit{correctionTurn} \in \mathit{BOOLEAN}
+&\quad \hspace{1.33em}\land \mathit{correctionPending} \in \mathit{BOOLEAN} \land \mathit{correctionTurn} \in \mathit{BOOLEAN} \land \mathit{outside} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{outsides} \in 0 \mathbin{\text{..}} \mathit{MaxChanges}
 \end{aligned}
 ```
 
@@ -802,7 +809,7 @@ No reply, visible report, deferred context, or correction has been produced.
 &\quad \hspace{1.33em}\land \mathit{visible} = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{Empty} ] \\
 &\quad \hspace{1.33em}\land \mathit{contextPending} = \mathit{FALSE} \land \mathit{contextSent} = \mathit{FALSE} \land \mathit{correctionQueued} = \mathit{FALSE} \\
 &\quad \hspace{1.33em}\land \mathit{contexts} = 0 \land \mathit{warnings} = 0 \land \mathit{corrections} = 0 \land \mathit{wakes} = 0 \land \mathit{work} = 0 \land \mathit{inTurn} \in \mathit{BOOLEAN} \\
-&\quad \hspace{1.33em}\land \mathit{correctionPending} = \mathit{FALSE} \land \mathit{correctionTurn} = \mathit{FALSE}
+&\quad \hspace{1.33em}\land \mathit{correctionPending} = \mathit{FALSE} \land \mathit{correctionTurn} = \mathit{FALSE} \land \mathit{outside} = \mathit{FALSE} \land \mathit{outsides} = 0
 \end{aligned}
 ```
 
@@ -823,7 +830,7 @@ corrections, and wakeups; Acknowledge releases the request slot.
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{changes} , \mathit{session} , \mathit{visible} , \mathit{contextPending} , \mathit{contextSent} , \\
 &\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
-&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -882,7 +889,7 @@ corrections, and wakeups; Acknowledge releases the request slot.
 &\quad \hspace{8.33em}\mathit{THEN} 1 \mathit{ELSE} 0 \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
-&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{contexts} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{contexts} , \mathit{work} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -896,7 +903,7 @@ corrections, and wakeups; Acknowledge releases the request slot.
 &\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
 &\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
-&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -917,7 +924,7 @@ publishes event context or retains it for Deliver. Recovery clears stale context
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
 &\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
-&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -928,14 +935,38 @@ The result-ordering and baseline rules are specified in Overwatch.tla.    This l
 ```=mathtex
 \begin{aligned}
 &\mathit{FinishCheck} ( \mathit{f} ) \triangleq \land \mathit{active} \land \mathit{busy} \land \mathit{changes} < \mathit{MaxChanges} \\
-&\quad \hspace{1.33em}\land \mathit{reports} ' = \mathit{f} \land \mathit{busy} ' = \mathit{FALSE} \land \mathit{changes} ' = \mathit{changes} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{reports} ' = \mathit{f} \land \mathit{busy} ' = \mathit{FALSE} \land \mathit{changes} ' = \mathit{changes} + 1 \land \mathit{outside} ' = \mathit{FALSE} \\
 &\quad \hspace{1.33em}\land \mathit{IF} \mathit{f} \neq \mathit{reports} \\
 &\quad \hspace{3.0em}\mathit{THEN} \land \mathit{contextSent} ' = \mathit{FALSE} \land \mathit{correctionQueued} ' = \mathit{FALSE} \\
 &\quad \hspace{4.67em}\land \mathit{contextPending} ' = \mathit{FALSE} \\
 &\quad \hspace{3.0em}\mathit{ELSE} \mathit{UNCHANGED} \langle \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contextPending} \rangle \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \mathit{request} , \\
 &\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{session} , \mathit{visible} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outsides} \rangle
+\end{aligned}
+```
+
+A check that finishes on another process's change, with no session edit    since the last result, replaces the reports for status and guards alone:    it neither releases correction deduplication nor counts as a change the    session made, and Report gives it no failure context. A context still    waiting for the old reports is dropped, as a newer result replaces it.
+
+### [IntegrationContract - OutsideFinish]($heading.id('integrationcontract---outsidefinish'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{OutsideFinish} ( \mathit{f} ) \triangleq \land \mathit{active} \land \mathit{busy} \land \mathit{outsides} < \mathit{MaxChanges} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{noticesOutside} \\
+&\quad \hspace{1.33em}\land \mathit{reports} ' = \mathit{f} \land \mathit{busy} ' = \mathit{FALSE} \land \mathit{outside} ' = \mathit{TRUE} \land \mathit{outsides} ' = \mathit{outsides} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{contextPending} ' = ( \mathit{contextPending} \land \mathit{f} = \mathit{reports} ) \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \mathit{request} , \\
+&\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \mathit{contextSent} , \\
+&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
 &\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - Told]($heading.id('integrationcontract---told'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Told} \triangleq \mathit{Notify} \land \neg \mathit{outside}
 \end{aligned}
 ```
 
@@ -945,13 +976,13 @@ The result-ordering and baseline rules are specified in Overwatch.tla.    This l
 \begin{aligned}
 &\mathit{Report} \triangleq \land \mathit{active} \land \neg \mathit{busy} \\
 &\quad \hspace{1.33em}\land \mathit{visible} ' = [ \mathit{known} \mapsto \mathit{TRUE} , \mathit{failures} \mapsto \mathit{reports} ] \\
-&\quad \hspace{1.33em}\land \mathit{contextPending} ' = ( \mathit{Notify} \land \neg \mathit{contextSent} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} \in \{ \texttt{"turn"} , \texttt{"context"} \} ) \\
-&\quad \hspace{1.33em}\land \mathit{contextSent} ' = ( \mathit{contextSent} \lor ( \mathit{Notify} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} = \texttt{"event"} ) ) \\
-&\quad \hspace{1.33em}\land \mathit{contexts} ' = \mathit{contexts} + \mathit{IF} \mathit{Notify} \land \neg \mathit{contextSent} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} = \texttt{"event"} \mathit{THEN} 1 \mathit{ELSE} 0 \\
+&\quad \hspace{1.33em}\land \mathit{contextPending} ' = ( \mathit{Told} \land \neg \mathit{contextSent} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} \in \{ \texttt{"turn"} , \texttt{"context"} \} ) \\
+&\quad \hspace{1.33em}\land \mathit{contextSent} ' = ( \mathit{contextSent} \lor ( \mathit{Told} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} = \texttt{"event"} ) ) \\
+&\quad \hspace{1.33em}\land \mathit{contexts} ' = \mathit{contexts} + \mathit{IF} \mathit{Told} \land \neg \mathit{contextSent} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} = \texttt{"event"} \mathit{THEN} 1 \mathit{ELSE} 0 \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \\
 &\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
-&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -965,7 +996,7 @@ The result-ordering and baseline rules are specified in Overwatch.tla.    This l
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{work} , \\
-&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -992,7 +1023,7 @@ own turn, where inspecting and repairing are its answer.
 &\quad \hspace{1.33em}\land \mathit{contextPending} ' = \mathit{FALSE} \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \mathit{requests} , \\
 &\quad \hspace{6.33em}\mathit{changes} , \mathit{session} , \mathit{contextSent} , \mathit{correctionQueued} , \\
-&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -1007,8 +1038,9 @@ own turn, where inspecting and repairing are its answer.
 &\quad \hspace{1.33em}\land \mathit{baseline} ' = \mathit{reports} \\
 &\quad \hspace{1.33em}\land \mathit{request} ' = \texttt{"none"} \land \mathit{reply} ' = \mathit{NoReply} \land \mathit{requests} ' = 0 \\
 &\quad \hspace{1.33em}\land \mathit{visible} ' = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{Empty} ] \\
-&\quad \hspace{1.33em}\land \mathit{contextPending} ' = \mathit{FALSE} \land \mathit{contextSent} ' = \mathit{FALSE} \land \mathit{correctionQueued} ' = \mathit{FALSE} \\
-&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{reports} , \mathit{inherited} , \mathit{selected} , \mathit{changes} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{1.33em}\land \mathit{contextPending} ' = \mathit{FALSE} \land \mathit{contextSent} ' = \mathit{FALSE} \land \mathit{correctionQueued} ' = \mathit{FALSE} \land \mathit{outside} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{reports} , \mathit{inherited} , \mathit{selected} , \mathit{changes} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \\
+&\quad \hspace{6.33em}\mathit{wakes} , \mathit{work} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -1022,7 +1054,7 @@ own turn, where inspecting and repairing are its answer.
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
-&\quad \hspace{6.33em}\mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} , \mathit{correctionPending} \rangle
+&\quad \hspace{6.33em}\mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} , \mathit{correctionPending} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -1035,7 +1067,7 @@ own turn, where inspecting and repairing are its answer.
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
-&\quad \hspace{6.33em}\mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -1049,7 +1081,7 @@ own turn, where inspecting and repairing are its answer.
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \\
-&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} , \mathit{outside} , \mathit{outsides} \rangle
 \end{aligned}
 ```
 
@@ -1064,7 +1096,7 @@ remains enabled even while a check is held.
 
 ```=mathtex
 \begin{aligned}
-&\mathit{CheckCompletes} \triangleq \exists \mathit{f} \in \mathit{Snapshots} : \mathit{FinishCheck} ( \mathit{f} )
+&\mathit{CheckCompletes} \triangleq \exists \mathit{f} \in \mathit{Snapshots} : \mathit{FinishCheck} ( \mathit{f} ) \lor \mathit{OutsideFinish} ( \mathit{f} )
 \end{aligned}
 ```
 

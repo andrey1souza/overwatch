@@ -55,7 +55,8 @@ local function replay(trace)
       if event == 'RequestRepair' then vim.fn.writefile({ 'repaired' }, directory .. '/build.zig'); response = 'allow' end
       if event == 'RequestPublish' or event == 'RequestComplete' then vim.cmd('let g:overwatch_contract_action = 1'); response = 'allow' end
       if event == 'Respond' or event == 'Poll' then assert(response == expected.decision, trace.name .. ': ' .. response) end
-      if event == 'Finish' then failed = trace.next; report(failed) end
+      -- An editor cannot tell a person's save from another process's, so either finish is read the same way.
+      if event == 'Finish' or event == 'OutsideFinish' then failed = trace.next; report(failed) end
       if event == 'Report' and not stopped then
         report(failed or trace.reports)
         local status = overwatch.status()

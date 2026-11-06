@@ -14,6 +14,11 @@ SCENARIOS = (
     .when("Each correction turn reads files and runs the check, and the warnings do not change", World.claude_inspecting_corrections)
     .then("Only one correction is requested", World.claude_inspection_does_not_repeat),
 
+    Scenario("Another process's changes give Claude at most one correction", "Claude retry limits", ("claude", "completion", "retry-loop", "outside-changes"))
+    .given("A Claude session whose checks are clean and which makes no edits", World.claude_clean_session)
+    .when("Another process changes files several times, so the check fails with a different count each time", World.claude_outside_changes)
+    .then("The session receives at most one correction, none says the failures came after its latest change, and completion stays guarded", World.claude_outside_changes_correct_once),
+
     Scenario("Denied publication does not restart Claude corrections", "Claude retry limits", ("claude", "completion", "protected-actions"))
     .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
     .when("An empty correction remains guarded and publication is repeatedly denied", World.claude_denied_tools)

@@ -31,13 +31,22 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 - [When]($text.attrs('when')) [Each correction turn reads files and runs the check, and the warnings do not change](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
 - [Then]($text.attrs('then')) [Only one correction is requested](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
+### [Another process's changes give Claude at most one correction]($section.id('another-processs-changes-give-claude-at-most-one-correction').attrs('verified'))
+
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [retry-loop]($text.attrs('tag')) [outside-changes]($text.attrs('tag'))
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L17)
+
+- [Given]($text.attrs('given')) [A Claude session whose checks are clean and which makes no edits](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L274).
+- [When]($text.attrs('when')) [Another process changes files several times, so the check fails with a different count each time](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
+- [Then]($text.attrs('then')) [The session receives at most one correction, none says the failures came after its latest change, and completion stays guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
+
 ### [Denied publication does not restart Claude corrections]($section.id('denied-publication-does-not-restart-claude-corrections').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [protected-actions]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L17)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L22)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- [When]($text.attrs('when')) [An empty correction remains guarded and publication is repeatedly denied](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L324).
+- [When]($text.attrs('when')) [An empty correction remains guarded and publication is repeatedly denied](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L350).
 - [Then]($text.attrs('then')) [Publication never executes and no further correction is submitted](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ## [Claude recovery and changed findings]($section.id('claude-recovery-and-changed-findings'))
@@ -45,25 +54,25 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Claude requests a fresh correction after work resumes]($section.id('claude-requests-a-fresh-correction-after-work-resumes').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [repair]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L22)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L27)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- [When]($text.attrs('when')) [An empty correction remains guarded and the agent resumes inspection in a new turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L297).
+- [When]($text.attrs('when')) [An empty correction remains guarded and the agent resumes inspection in a new turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L323).
 - [Then]($text.attrs('then')) [Inspection succeeds and the remaining warnings request another correction](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ### [Changed findings give Claude one fresh correction]($section.id('changed-findings-give-claude-one-fresh-correction').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [new-findings]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L27)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L32)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
-- [When]($text.attrs('when')) [An empty correction remains guarded and the agent's next edit adds warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L342).
+- [When]($text.attrs('when')) [An empty correction remains guarded and the agent's next edit adds warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L368).
 - [Then]($text.attrs('then')) [The new warnings request one fresh correction and empty retries remain guarded](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
 ### [Passing checks release a queued Claude correction]($section.id('passing-checks-release-a-queued-claude-correction').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [recovery]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L32)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L37)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [The checks recover during the correction turn and the agent attempts publication](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -72,7 +81,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [A recovered Claude failure can request correction again]($section.id('a-recovered-claude-failure-can-request-correction-again').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [failure-cycle]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L37)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L42)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [The failure is corrected and the same warnings return after another change](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -83,7 +92,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [An interrupted Claude turn settles without a correction]($section.id('an-interrupted-claude-turn-settles-without-a-correction').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [interruption]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L42)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L47)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [The agent turn is interrupted](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -92,7 +101,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [An interrupted Claude correction stays stopped]($section.id('an-interrupted-claude-correction-stays-stopped').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [interruption]($text.attrs('tag')) [retry-loop]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L47)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L52)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [The correction turn is interrupted and the watcher repeats the same failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -101,7 +110,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Claude API-error completion does not queue a correction]($section.id('claude-api-error-completion-does-not-queue-a-correction').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [api-error]($text.attrs('tag')) [rate-limit]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L52)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L57)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [Claude completes with the runtime's API-error event and the watcher repeats its failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -110,7 +119,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [A user turn restores Claude reporting after interruption]($section.id('a-user-turn-restores-claude-reporting-after-interruption').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [user-resume]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L57)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L62)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [The turn is interrupted and the user starts a new investigation turn](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -121,9 +130,9 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Claude gates follow each watcher's recovery]($section.id('claude-gates-follow-each-watchers-recovery').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [check-scope]($text.attrs('tag')) [recovery]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L62)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L67)
 
-- [Given]($text.attrs('given')) [Claude has failing Zig and Zanity watchers and publication requires only Zanity](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L436).
+- [Given]($text.attrs('given')) [Claude has failing Zig and Zanity watchers and publication requires only Zanity](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L462).
 - [When]($text.attrs('when')) [Zanity recovers before Zig and the agent attempts publication and completion](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
 - [Then]($text.attrs('then')) [Publication follows Zanity while completion waits for both watchers to recover](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L258).
 
@@ -132,7 +141,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [A restarted Claude session resets correction suppression]($section.id('a-restarted-claude-session-resets-correction-suppression').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [session]($text.attrs('tag')) [restart]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L67)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L72)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [A correction is interrupted and the session is ended and started again](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -141,7 +150,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [A resumed Claude session resets correction suppression]($section.id('a-resumed-claude-session-resets-correction-suppression').attrs('verified'))
 
 [Claude Code]($text.attrs('agent')) [session]($text.attrs('tag')) [resume]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L72)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L77)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
 - [When]($text.attrs('when')) [A correction is interrupted and Claude resumes the session](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L251).
@@ -152,7 +161,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Repair remains possible during failure]($section.id('repair-remains-possible-during-failure').attrs('verified'))
 
 [repair]($text.attrs('tag')) [warnings]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L77)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L82)
 
 - [Given]($text.attrs('given')) [A previously passing check now reports 29 warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L82).
 - [When]($text.attrs('when')) [The agent lists, searches, reads, edits, and runs check commands](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L90).
@@ -161,7 +170,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Protected actions stay protected on every attempt]($section.id('protected-actions-stay-protected-on-every-attempt').attrs('verified'))
 
 [protected-actions]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L82)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L87)
 
 - [Given]($text.attrs('given')) [A previously passing check now reports 29 warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L82).
 - [When]($text.attrs('when')) [The agent attempts configured publication actions twice](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L115).
@@ -170,7 +179,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Completion stays guarded during a continuation]($section.id('completion-stays-guarded-during-a-continuation').attrs('verified'))
 
 [completion]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L87)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L92)
 
 - [Given]($text.attrs('given')) [A previously passing check now reports 29 warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L82).
 - [When]($text.attrs('when')) [The agent repeatedly tries to finish, including a Stop continuation](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L131).
@@ -179,7 +188,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Successful checks release the failure gate]($section.id('successful-checks-release-the-failure-gate').attrs('verified'))
 
 [recovery]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L92)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L97)
 
 - [Given]($text.attrs('given')) [A previously passing check now reports 29 warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L82).
 - [When]($text.attrs('when')) [The repaired code passes its check](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L143).
@@ -188,7 +197,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Protected actions consult their relevant checks]($section.id('protected-actions-consult-their-relevant-checks').attrs('verified'))
 
 [check-scope]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L110)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L115)
 
 - [Given]($text.attrs('given')) [Publication requires the passing Go check](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L202).
 - [And]($text.attrs('given')) [The unrelated Zanity check develops 29 warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L82).
@@ -198,7 +207,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Inspection never starts a check]($section.id('inspection-never-starts-a-check').attrs('verified'))
 
 [repair]($text.attrs('tag')) [check-execution]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L116)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L121)
 
 - [Given]($text.attrs('given')) [A previously passing check now reports 29 warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L82).
 - [And]($text.attrs('given')) [The checker is unavailable for a new run](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L217).
@@ -210,7 +219,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Inherited debt does not absorb new failures]($section.id('inherited-debt-does-not-absorb-new-failures').attrs('verified'))
 
 [baseline]($text.attrs('tag')) [regressions]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L97)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L102)
 
 - [Given]($text.attrs('given')) [The session starts with 29 inherited warnings under the default policy](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L156).
 - [When]($text.attrs('when')) [The agent attempts completion and publication](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L176).
@@ -221,7 +230,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 ### [Strict inherited-finding policy still permits inspection]($section.id('strict-inherited-finding-policy-still-permits-inspection').attrs('verified'))
 
 [baseline]($text.attrs('tag')) [strict]($text.attrs('tag'))
-[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L104)
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L109)
 
 - [Given]($text.attrs('given')) [Inherited findings are configured to block](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L163).
 - [And]($text.attrs('given')) [The session starts with 29 inherited warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L156).
@@ -230,7 +239,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 # [Model-derived integration contracts]($section.id('model-derived-integration-contracts'))
 
-These 120 cases are generated from the same TLC expectations replayed against all six integrations. Each event is followed by the model observation asserted by the replay. Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
+These 132 cases are generated from the same TLC expectations replayed against all six integrations. Each event is followed by the model observation asserted by the replay. Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
 
 [Read the spec](https://benomahony.github.io/overwatch/model/) for the complete state machines, host capabilities, and checked properties.
 
@@ -381,6 +390,77 @@ These 120 cases are generated from the same TLC expectations replayed against al
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
 - [When]($text.attrs('when')) `Deliver` occurs.
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 1.
+
+### [Claude Code - outside change keeps one correction]($section.id('claude-code---outside-change-keeps-one-correction').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+
+### [Claude Code - outside failure is not told as the sessions]($section.id('claude-code---outside-failure-is-not-told-as-the-sessions').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": [], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Deliver` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+
+### [Claude Code - session change after a correction permits a fresh one]($section.id('claude-code---session-change-after-a-correction-permits-a-fresh-one').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Begin` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Finish` occurs with result `{"primary": ["a"], "secondary": ["a"]}`.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context pending; contexts: 0; warnings: 0; corrections: 1; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context pending; contexts: 0; warnings: 0; corrections: 2; wakes: 0.
 
 ### [Claude Code - delivery survives deduplication]($section.id('claude-code---delivery-survives-deduplication').attrs('verified'))
 
@@ -760,6 +840,77 @@ These 120 cases are generated from the same TLC expectations replayed against al
 - [When]($text.attrs('when')) `Deliver` occurs.
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
 
+### [Codex - outside change keeps one correction]($section.id('codex---outside-change-keeps-one-correction').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+
+### [Codex - outside failure is not told as the sessions]($section.id('codex---outside-failure-is-not-told-as-the-sessions').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": [], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Deliver` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+
+### [Codex - session change after a correction permits a fresh one]($section.id('codex---session-change-after-a-correction-permits-a-fresh-one').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Begin` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Finish` occurs with result `{"primary": ["a"], "secondary": ["a"]}`.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `block`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+
 ### [Codex - delivery survives deduplication]($section.id('codex---delivery-survives-deduplication').attrs('verified'))
 
 [model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
@@ -1137,6 +1288,33 @@ These 120 cases are generated from the same TLC expectations replayed against al
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
 - [When]($text.attrs('when')) `Deliver` occurs.
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+
+### [OpenCode 1 - session change after a correction permits a fresh one]($section.id('opencode-1---session-change-after-a-correction-permits-a-fresh-one').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `warn`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 1; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `warn`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 1; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `warn`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 1; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Begin` occurs.
+- [Then]($text.attrs('then')) reply `warn`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 1; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Finish` occurs with result `{"primary": ["a"], "secondary": ["a"]}`.
+- [Then]($text.attrs('then')) reply `warn`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 1; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `warn`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 1; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 1; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `warn`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 2; corrections: 0; wakes: 0.
 
 ### [OpenCode 1 - delivery survives deduplication]($section.id('opencode-1---delivery-survives-deduplication').attrs('verified'))
 
@@ -1516,6 +1694,33 @@ These 120 cases are generated from the same TLC expectations replayed against al
 - [When]($text.attrs('when')) `Deliver` occurs.
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
 
+### [OpenCode 2 - session change after a correction permits a fresh one]($section.id('opencode-2---session-change-after-a-correction-permits-a-fresh-one').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Begin` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Finish` occurs with result `{"primary": ["a"], "secondary": ["a"]}`.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report known (failing checks: primary, secondary); context pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context pending; contexts: 0; warnings: 0; corrections: 1; wakes: 1.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `queue`; session active; check idle; visible report known (failing checks: primary, secondary); context pending; contexts: 0; warnings: 0; corrections: 2; wakes: 2.
+
 ### [OpenCode 2 - delivery survives deduplication]($section.id('opencode-2---delivery-survives-deduplication').attrs('verified'))
 
 [model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
@@ -1893,6 +2098,33 @@ These 120 cases are generated from the same TLC expectations replayed against al
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
 - [When]($text.attrs('when')) `Deliver` occurs.
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+
+### [Pi - session change after a correction permits a fresh one]($section.id('pi---session-change-after-a-correction-permits-a-fresh-one').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `continue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `continue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `continue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Begin` occurs.
+- [Then]($text.attrs('then')) reply `continue`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Finish` occurs with result `{"primary": ["a"], "secondary": ["a"]}`.
+- [Then]($text.attrs('then')) reply `continue`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `continue`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `continue`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 1; warnings: 0; corrections: 0; wakes: 0.
 
 ### [Pi - delivery survives deduplication]($section.id('pi---delivery-survives-deduplication').attrs('verified'))
 
@@ -2272,6 +2504,77 @@ These 120 cases are generated from the same TLC expectations replayed against al
 - [When]($text.attrs('when')) `Deliver` occurs.
 - [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
 
+### [Neovim - outside change keeps one correction]($section.id('neovim---outside-change-keeps-one-correction').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+
+### [Neovim - outside failure is not told as the sessions]($section.id('neovim---outside-failure-is-not-told-as-the-sessions').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": [], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideBegin` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `OutsideFinish` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Deliver` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+
+### [Neovim - session change after a correction permits a fresh one]($section.id('neovim---session-change-after-a-correction-permits-a-fresh-one').attrs('verified'))
+
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+
+[Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
+
+- [Given]($text.attrs('given')) inherited policy `allow`, selected checks `[]` (empty means all), reports `{"primary": ["a"], "secondary": []}`, baseline `{"primary": [], "secondary": []}`, and a turn in progress.
+- [And]($text.attrs('given')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Ack` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `CorrectionTurn` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Begin` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check running; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Finish` occurs with result `{"primary": ["a"], "secondary": ["a"]}`.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report cleared (failing checks: none); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Report` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `RequestComplete` occurs.
+- [Then]($text.attrs('then')) reply `pending`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+- [When]($text.attrs('when')) `Respond` occurs.
+- [Then]($text.attrs('then')) reply `allow`; session active; check idle; visible report known (failing checks: primary, secondary); context not pending; contexts: 0; warnings: 0; corrections: 0; wakes: 0.
+
 ### [Neovim - delivery survives deduplication]($section.id('neovim---delivery-survives-deduplication').attrs('verified'))
 
 [model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
@@ -2509,7 +2812,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Editing a function activates its inherited findings]($section.id('editing-a-function-activates-its-inherited-findings').attrs('proposed'))
 
 [changed-code]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L122)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L127)
 
 - [Given]($text.attrs('given')) A function has three inherited warnings and another function has twelve.
 - [When]($text.attrs('when')) The agent changes the first function.
@@ -2519,7 +2822,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Changed code activates the cross-file findings it participates in]($section.id('changed-code-activates-the-cross-file-findings-it-participates-in').attrs('proposed'))
 
 [changed-code]($text.attrs('tag')) [cross-file]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L133)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L138)
 
 - [Given]($text.attrs('given')) An inherited finding involves functions in two files.
 - [When]($text.attrs('when')) The agent changes one of those participating functions.
@@ -2528,7 +2831,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Disabling a rule is not a resolution]($section.id('disabling-a-rule-is-not-a-resolution').attrs('proposed'))
 
 [rules]($text.attrs('tag')) [resolution]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L143)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L148)
 
 - [Given]($text.attrs('given')) A finding requires cleanup in changed code.
 - [When]($text.attrs('when')) Its rule is disabled or its source path is excluded.
@@ -2539,7 +2842,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Moving a finding preserves its identity and age]($section.id('moving-a-finding-preserves-its-identity-and-age').attrs('proposed'))
 
 [identity]($text.attrs('tag')) [age]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L128)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L133)
 
 - [Given]($text.attrs('given')) An inherited finding has a recorded identity and first-seen date.
 - [When]($text.attrs('when')) Unrelated lines are inserted above it or the agent session restarts.
@@ -2548,7 +2851,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Untouched debt escalates at its configured deadline]($section.id('untouched-debt-escalates-at-its-configured-deadline').attrs('proposed'))
 
 [age]($text.attrs('tag')) [deadlines]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L138)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L143)
 
 - [Given]($text.attrs('given')) An inherited finding has a project-configured deadline.
 - [When]($text.attrs('when')) A check runs after that deadline.
@@ -2559,7 +2862,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Advisory mode reports failures without guarding]($section.id('advisory-mode-reports-failures-without-guarding').attrs('proposed'))
 
 [modes]($text.attrs('tag')) [advisory]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L148)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L153)
 
 - [Given]($text.attrs('given')) The project runs overwatch in advisory mode.
 - [And]($text.attrs('given')) A change introduces a new failure.
@@ -2570,7 +2873,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Strict mode waits for a result of the latest edit]($section.id('strict-mode-waits-for-a-result-of-the-latest-edit').attrs('proposed'))
 
 [modes]($text.attrs('tag')) [strict]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L155)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L160)
 
 - [Given]($text.attrs('given')) The project runs overwatch in strict mode.
 - [When]($text.attrs('when')) The agent edits and tries to finish before the checks have run on that edit.
@@ -2579,7 +2882,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Edits wait while the agent is too far ahead of its checks]($section.id('edits-wait-while-the-agent-is-too-far-ahead-of-its-checks').attrs('proposed'))
 
 [limits]($text.attrs('tag')) [max-ahead]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L160)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L165)
 
 - [Given]($text.attrs('given')) The project allows the agent three edits ahead of its latest result.
 - [And]($text.attrs('given')) Checks are still running on an earlier edit.
@@ -2590,7 +2893,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [Strict mode hands a lingering failure to a person]($section.id('strict-mode-hands-a-lingering-failure-to-a-person').attrs('proposed'))
 
 [limits]($text.attrs('tag')) [red-budget]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L167)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L172)
 
 - [Given]($text.attrs('given')) The project runs overwatch in strict mode with a budget of edits while red.
 - [And]($text.attrs('given')) A new failure has been reported.
@@ -2600,7 +2903,7 @@ These 120 cases are generated from the same TLC expectations replayed against al
 ### [A check that exceeds its time limit fails]($section.id('a-check-that-exceeds-its-time-limit-fails').attrs('proposed'))
 
 [limits]($text.attrs('tag')) [timeout]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L173)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L178)
 
 - [Given]($text.attrs('given')) The project sets a time limit on checks.
 - [When]($text.attrs('when')) A run exceeds it.

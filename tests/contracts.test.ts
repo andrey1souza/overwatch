@@ -17,7 +17,7 @@ for (const trace of CONTRACT_TRACES.filter(trace => trace.host === 'claude')) {
     await begin()
     await snapshot(trace.baseline)
     if (trace.inTurn) await host.fire('turn.start', { text: 'work', turnId: 'contract' })
-    // The model's starting reports, like each Finish, follow the session's own change.
+    // The model's starting reports, like each Finish, follow the session's own change; OutsideFinish follows another process's.
     const edit = () => host.fire('tool.call', { tool: 'Edit', file_path: '/repo/main.zig', old_string: 'a', new_string: 'b' })
     await edit()
     await snapshot(trace.reports)
@@ -40,8 +40,8 @@ for (const trace of CONTRACT_TRACES.filter(trace => trace.host === 'claude')) {
         }
         if (event === 'Respond' || event === 'Poll') { await pending; expect(response).toBe(expected.decision) }
         if (event === 'Begin' && !stopped) await edit()
-        if (event === 'Finish' || event === 'LateFinish' && !stopped) await snapshot(trace.next)
-        if (event === 'Report' && !stopped) await snapshot(index > 0 && trace.events.slice(0, index).includes('Finish') ? trace.next : trace.reports)
+        if (event === 'Finish' || event === 'OutsideFinish' || event === 'LateFinish' && !stopped) await snapshot(trace.next)
+        if (event === 'Report' && !stopped) await snapshot(index > 0 && trace.events.slice(0, index).some(each => each === 'Finish' || each === 'OutsideFinish') ? trace.next : trace.reports)
         if (event === 'Deliver' && !stopped) await host.timer('flush')
         if (event === 'Stop') { stopped = true; await host.fire('session.end', { reason: 'prompt_input_exit', sessionId: 's1' }) }
         if (event === 'Work') await host.fire('tool.call', { tool: 'Read' })

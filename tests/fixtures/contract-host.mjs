@@ -87,7 +87,7 @@ function codexHost(project, check, session) {
   assert(typeof check === 'function', `Codex checker is ${typeof check}`)
   assert(contexts.length === 0, 'Codex context must start empty')
   return {
-    start: () => event('SessionStart'), read: () => event('PostToolUse', 'Edit'),
+    start: () => event('SessionStart'), read: () => event('PostToolUse', 'Edit'), notice: () => event('UserPromptSubmit'),
     inspect: () => event('PreToolUse', 'Read'), repair: () => event('PreToolUse', 'Edit'),
     publish: async () => (await event('PreToolUse', 'Publish')).hookSpecificOutput?.permissionDecision === 'deny',
     complete: async () => (await event('Stop')).decision === 'block',
@@ -112,11 +112,19 @@ class ContractRunner {
     this.stopped = false
   }
 
-  async begin() {
+  /** Starts a check on the next snapshot: read after the session's edit, or noticed at a hook no edit precedes when another process made the change. */
+  async begin(outside = false) {
+    this.outside = outside
     this.files.hold()
     this.files.set(this.trace.reports)
-    this.running = this.host.read()
+    this.running = outside ? this.host.notice() : this.host.read()
     await this.files.waiting()
+  }
+
+  /** Reads the latest snapshot again through the hook that saw its change: the session's edit, or another process's. */
+  reread() {
+    assert(typeof this.host.read === 'function', `the ${this.trace.host} driver has no read`)
+    return this.outside ? this.host.notice() : this.host.read()
   }
 
   request(event) {
@@ -169,16 +177,35 @@ class ContractRunner {
     assert.equal(this.trace.host === 'opencode2' ? all.reduce((sum, value) => sum + value.corrections, 0) : 0, expected.wakes, 'idle wakeups')
   }
 
+  /** Releases the held check with the trace's next snapshot and waits for its result. */
+  async finish() {
+    this.files.set(this.trace.next)
+    this.files.release()
+    await this.running
+    this.running = undefined
+  }
+
+  /** Closes the session, cancelling any reply still outstanding. */
+  async stop() {
+    this.stopped = true
+    this.ready = true
+    this.response = 'cancelled'
+    await this.host.close()
+  }
+
   async step(event, expected) {
+    // Trace event names, as scripts/integration_traces.py writes them, to the host steps that replay them.
+    const actions = new Map([
+      ['Respond', () => this.respond(event, expected)], ['Poll', () => this.respond(event, expected)],
+      ['Work', () => this.host.progress()],
+      ['Begin', () => this.begin(false)], ['OutsideBegin', () => this.begin(true)],
+      ['Finish', () => this.finish()], ['OutsideFinish', () => this.finish()], ['LateFinish', () => this.finish()],
+      ['Report', () => (this.stopped || this.running ? undefined : this.reread())],
+      ['Deliver', () => (this.stopped ? undefined : this.host.context())],
+      ['Stop', () => this.stop()], ['Restart', () => this.restart()],
+    ])
     if (event.startsWith('Request')) this.request(event)
-    if (event === 'Respond' || event === 'Poll') await this.respond(event, expected)
-    if (event === 'Work') await this.host.progress()
-    if (event === 'Begin') await this.begin()
-    if (event === 'Finish' || event === 'LateFinish') { this.files.set(this.trace.next); this.files.release(); await this.running; this.running = undefined }
-    if (event === 'Report' && !this.stopped && !this.running) await this.host.read()
-    if (event === 'Deliver' && !this.stopped) await this.host.context()
-    if (event === 'Stop') { this.stopped = true; this.ready = true; this.response = 'cancelled'; await this.host.close() }
-    if (event === 'Restart') await this.restart()
+    await actions.get(event)?.()
     this.observe(event, expected)
   }
 }

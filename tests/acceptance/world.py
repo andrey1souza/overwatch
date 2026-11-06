@@ -271,6 +271,32 @@ class AcceptanceWorld(unittest.TestCase):
         '}',
     ))
 
+    def claude_clean_session(self) -> None:
+        """A real Claude hook chain whose checks start clean, with no edit of the session's to follow."""
+        assert not hasattr(self, "claude_steps"), f"Start in a fresh acceptance world; existing transcript: {getattr(self, 'claude_steps', None)!r}"
+        self.claude_phase = "clean"
+        self.claude_steps = ["await $.session.start(start)", "await clock.advance(300)"]
+
+    claude_outside_changes = partialmethod(prepare_claude_steps, expected_phase='clean', phase='outside', steps=(
+        'await clock.advance(1200)',
+        "await $.turn.start({ text: 'what does this module do?', turnId: 'q1' })",
+        "await $.turn.complete({ ...ended, turnId: 'q1' })",
+        "setReport('zanity: 0 errors and 31 warnings in 1 of 1 files\\n')",
+        'await clock.advance(1000)',
+        "await $.turn.start({ text: prompts[0] ?? 'next', turnId: 'q2' })",
+        "await $.turn.complete({ ...ended, turnId: 'q2' })",
+        "setReport('zanity: 0 errors and 33 warnings in 1 of 1 files\\n')",
+        'await clock.advance(1000)',
+        "await $.turn.start({ text: 'and this one?', turnId: 'q3' })",
+        "await $.turn.complete({ ...ended, turnId: 'q3' })",
+    ))
+
+    claude_outside_changes_correct_once = partialmethod(verify_claude, phase='outside', expectations=(
+        'expect(prompts.length).toBe(1)',
+        "expect(prompts.filter(text => text.includes('after the latest change'))).toEqual([])",
+        "expect(calls).toEqual([])",
+    ))
+
     claude_inspecting_corrections = partialmethod(prepare_claude_steps, expected_phase='ready', phase='inspected', steps=(
         'await $.turn.complete(ended)',
         'expect(prompts.length).toBe(1)',

@@ -88,6 +88,8 @@ type State = {
   completionCorrection: string | undefined
   /** Whether the running turn is that correction's own, whose tools do not earn it another copy. */
   isCorrectionTurn: boolean
+  /** Whether the agent edited since the last correction was submitted; a guard that changed without one is not submitted again. */
+  isEditedSinceCorrection: boolean
   /** Whether the running turn has had its one message from overwatch. */
   isToldThisTurn: boolean
   /** The messages not yet sent, by their slot's key and kind. */
@@ -712,6 +714,7 @@ async function stop($: EngineInterface, state: State) {
   state.onWatcherEnded = undefined
   state.completionCorrection = undefined
   state.isCorrectionTurn = false
+  state.isEditedSinceCorrection = false
   state.head = undefined
   state.isTurnRunning = false
   state.isPromptQueued = false
@@ -802,8 +805,10 @@ async function completionGuard($: EngineInterface, state: State): Promise<string
     return undefined
   }
   if (state.completionCorrection === reason) return reason
+  if (state.completionCorrection !== undefined && !state.isEditedSinceCorrection) return reason
   assert(reason.startsWith('overwatch: '), `completion correction ${reason} does not say it is from overwatch`)
   state.completionCorrection = reason
+  state.isEditedSinceCorrection = false
   state.isTurnRunning = false
   if (!state.isPromptQueued) {
     state.isPromptQueued = true
@@ -869,6 +874,7 @@ async function afterTool($: EngineInterface, state: State, tool: string) {
   if (!state.isCorrectionTurn) state.completionCorrection = undefined
   assert(!state.isCorrectionTurn || state.completionCorrection !== undefined, `the correction turn lost its correction after ${tool}; keep it while the turn answers it`)
   if (!EDITING_TOOLS.has(tool)) return
+  state.isEditedSinceCorrection = true
   for (const each of state.slots) {
     each.isEdited = true
     each.isEditedSinceResult = true
@@ -895,6 +901,7 @@ const initialState = (): State => {
     head: undefined,
     completionCorrection: undefined,
     isCorrectionTurn: false,
+    isEditedSinceCorrection: false,
     isToldThisTurn: false,
     outbox: new Map(),
     flushing: undefined,

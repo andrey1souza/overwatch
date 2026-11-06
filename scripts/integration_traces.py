@@ -15,6 +15,7 @@ HOSTS = ('claude', 'codex', 'opencode1', 'opencode2', 'pi', 'neovim')
 CHECKS = ('primary', 'secondary')
 EMPTY = {check: [] for check in CHECKS}
 FAILED = {'primary': ['a'], 'secondary': []}
+BOTH = {'primary': ['a'], 'secondary': ['a']}
 
 
 def cases() -> list[dict]:
@@ -28,6 +29,9 @@ def cases() -> list[dict]:
         ('work in the correction turn keeps one correction', 'RequestComplete Respond Ack CorrectionTurn Work RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], FAILED),
         ('work in a later turn permits a fresh correction', 'RequestComplete Respond Ack CorrectionTurn RequestComplete Respond Ack Turn Work RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], FAILED),
         ('idle result delivery', 'Report Deliver', False, FAILED, EMPTY, 'allow', [], FAILED),
+        ('outside change keeps one correction', 'RequestComplete Respond Ack CorrectionTurn OutsideBegin OutsideFinish Report RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], BOTH),
+        ('outside failure is not told as the session\'s', 'OutsideBegin OutsideFinish Report Deliver', False, EMPTY, EMPTY, 'allow', [], FAILED),
+        ('session change after a correction permits a fresh one', 'RequestComplete Respond Ack CorrectionTurn Begin Finish Report RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], BOTH),
         ('delivery survives deduplication', 'Report Deliver Report Deliver', False, FAILED, EMPTY, 'allow', [], FAILED),
         ('pending recovery cancels stale delivery', 'Report Begin Finish Report Deliver', False, FAILED, EMPTY, 'allow', [], EMPTY),
         ('shutdown discards pending delivery', 'Report Stop Deliver', False, FAILED, EMPTY, 'allow', [], FAILED),
@@ -39,9 +43,12 @@ def cases() -> list[dict]:
         for scope in ([], ['primary'], ['secondary']):
             programs.append((f'inherited {policy}, selected {scope}', 'RequestPublish Respond Ack RequestComplete Respond',
                              False, FAILED, FAILED, policy, scope, FAILED))
+    # Only hosts that tell another process's change from the session's can replay one.
+    noticing = {'claude', 'codex', 'neovim'}
     rows = [{'host': host, 'name': name, 'events': events.split(), 'busy': busy,
              'inTurn': name != 'idle result delivery', 'reports': reports, 'baseline': baseline, 'inherited': inherited, 'selected': scope, 'next': after}
-            for host in HOSTS for name, events, busy, reports, baseline, inherited, scope, after in programs]
+            for host in HOSTS for name, events, busy, reports, baseline, inherited, scope, after in programs
+            if host in noticing or 'Outside' not in events]
     assert len({(row['host'], row['name']) for row in rows}) == len(rows), 'Host contract case names must be unique'
     assert {row['host'] for row in rows} == set(HOSTS), f'Cases cover {[row["host"] for row in rows]}, expected {HOSTS}'
     return rows
@@ -72,7 +79,8 @@ Action == CASE Event = "RequestInspect" -> Request("inspect")
             [] Event = "Respond" -> IF reply.ready THEN UNCHANGED vars ELSE Respond
             [] Event = "Poll" -> IF CanRespond THEN Respond ELSE UNCHANGED vars
             [] Event = "Ack" -> Acknowledge
-            [] Event = "Begin" -> BeginCheck
+            [] Event \in {"Begin", "OutsideBegin"} -> BeginCheck
+            [] Event = "OutsideFinish" -> OutsideFinish(Cases[scenario].after)
             [] Event = "Finish" -> FinishCheck(Cases[scenario].after)
             [] Event = "LateFinish" -> IF active THEN FinishCheck(Cases[scenario].after) ELSE UNCHANGED vars
             [] Event = "Report" -> Report

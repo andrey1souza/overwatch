@@ -37,6 +37,9 @@ from unix import exclusive, is_private, on_path, output_selector, read_available
 
 
 OVERRIDE_PATH = ".overwatch.json"
+# Tools that can change the workspace, by the names Codex, OpenCode and Pi give them. A change first seen at any other
+# event came from another process, since each of these is followed by its own PostToolUse.
+EDITING_TOOLS = frozenset({"apply_patch", "Bash", "bash", "Edit", "edit", "MultiEdit", "powershell", "shell", "Write", "write"})
 COMMAND_TIMEOUT = 540
 # How long a stopped command has to exit before it is killed, in seconds.
 TERMINATE_GRACE = 3
@@ -794,8 +797,9 @@ def write_log(session: Session, report: Report, prefix: str = "") -> Path:
     return log
 
 
-def failure_message(reports: list[Report], baseline: Mapping[str, First], logs: dict[str, Path]) -> str:
-    """Tells the agent which checks newly fail, what fails in each and where the full output is."""
+def failure_message(reports: list[Report], baseline: Mapping[str, First], logs: dict[str, Path], outside: bool = False) -> str:
+    """Tells the agent which checks newly fail, what fails in each and where the full output is; outside when the
+    failure was first seen after another process's change rather than the session's own edit."""
     assert all(report_key(report) in logs for report in reports), f"no log for {[report.name for report in reports if report_key(report) not in logs]}; write one for each report"
     messages: list[str] = []
     for report in reports:
@@ -803,10 +807,13 @@ def failure_message(reports: list[Report], baseline: Mapping[str, First], logs: 
         fresh = [name for name in report.failures if name not in known]
         old = len(report.failures) - len(fresh)
         messages.append(
-            f"overwatch: `{report.command}`{where(report)} failed after the latest change: {report.summary}\n"
+            f"overwatch: `{report.command}`{where(report)} failed after "
+            f"{'a change made outside this session' if outside else 'the latest change'}: {report.summary}\n"
             f"{failing_line(fresh)}"
             f"{f'{old} more were already failing when the session started.' + chr(10) if old else ''}"
-            "Fix these new failures before finishing. Tools remain available while you investigate.\n"
+            + ("This session made no edit since the previous result, so another process may be changing these files; "
+               "check before overwriting its work.\n" if outside else
+               "Fix these new failures before finishing. Tools remain available while you investigate.\n") +
             f"Full output: `{logs[report_key(report)]}`"
         )
     text = "\n\n".join(messages)
@@ -1083,7 +1090,8 @@ def report_output(event: Event, old: State, current: State, session: Session) ->
     if current.failed and current.told != old.told:
         regressions = [report for report in reports if is_regression(report, current.baseline)]
         logs = {report_key(report): write_log(session, report) for report in regressions}
-        message = failure_message(regressions, current.baseline, logs)
+        outside = not (event.hook_event_name == "PostToolUse" and event.tool_name in EDITING_TOOLS)
+        message = failure_message(regressions, current.baseline, logs, outside)
         parts.append(message)
         output["systemMessage"] = failure_status(regressions)
     elif not current.failed and old.failed:

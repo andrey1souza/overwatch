@@ -22,6 +22,11 @@ ASSUME Hosts \subseteq AllHosts /\ Hosts # {}
 
 The host determines whether protected requests wait for a running check,
 how guarded completion is handled, and which delivery channels exist.
+A host notices another process's change when it can tell it from the
+session's own: Claude Code reads each watcher result against the session's
+edits, Codex sees a change first at a hook that follows no edit of the
+session's, and an editor treats every save alike. Other hosts read every
+result as the session's.
 These are integration capabilities, not user-selectable enforcement modes.
 *)
 Capabilities(h) ==
@@ -37,7 +42,8 @@ Capabilities(h) ==
                     [] h = "neovim" -> "quickfix"
                     [] OTHER -> "event",
      idleWake |-> h \in {"claude", "opencode2"},
-     status |-> h \in {"claude", "pi", "neovim"}]
+     status |-> h \in {"claude", "pi", "neovim"},
+     noticesOutside |-> h \in {"claude", "codex", "neovim"}]
 
 Kinds == {"inspect", "repair", "publish", "complete"}
 Empty == [c \in Checks |-> {}]
@@ -54,13 +60,13 @@ VARIABLES host, active, busy, reports, baseline, inherited, selected,
           request, reply, requests, changes, session,
           visible, contextPending, contextSent, correctionQueued,
           contexts, warnings, corrections, inTurn, wakes, work,
-          correctionPending, correctionTurn
+          correctionPending, correctionTurn, outside, outsides
 
 vars == <<host, active, busy, reports, baseline, inherited, selected,
           request, reply, requests, changes, session, visible,
           contextPending, contextSent, correctionQueued, contexts,
           warnings, corrections, inTurn, wakes, work,
-          correctionPending, correctionTurn>>
+          correctionPending, correctionTurn, outside, outsides>>
 
 (* Section: Guard selection and inherited policy
 
@@ -95,7 +101,8 @@ TypeOK ==
     /\ contexts \in 0..(MaxChanges + MaxSessions + 1)
     /\ warnings \in 0..((MaxSessions + 1) * MaxRequests)
     /\ corrections \in 0..((MaxSessions + 1) * MaxRequests)
-    /\ correctionPending \in BOOLEAN /\ correctionTurn \in BOOLEAN
+    /\ correctionPending \in BOOLEAN /\ correctionTurn \in BOOLEAN /\ outside \in BOOLEAN
+    /\ outsides \in 0..MaxChanges
 
 (* Section: Initial state
 
@@ -111,7 +118,7 @@ Init ==
     /\ visible = [known |-> FALSE, failures |-> Empty]
     /\ contextPending = FALSE /\ contextSent = FALSE /\ correctionQueued = FALSE
     /\ contexts = 0 /\ warnings = 0 /\ corrections = 0 /\ wakes = 0 /\ work = 0 /\ inTurn \in BOOLEAN
-    /\ correctionPending = FALSE /\ correctionTurn = FALSE
+    /\ correctionPending = FALSE /\ correctionTurn = FALSE /\ outside = FALSE /\ outsides = 0
 
 (* Section: Requests and completion decisions
 
@@ -126,7 +133,7 @@ Request(k) ==
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    changes, session, visible, contextPending, contextSent,
                    correctionQueued, contexts, warnings, corrections, inTurn, wakes, work,
-                   correctionPending, correctionTurn>>
+                   correctionPending, correctionTurn, outside, outsides>>
 
 CanRespond ==
     active /\ request # "none" /\ ~reply.ready /\
@@ -157,7 +164,7 @@ Respond ==
                          THEN 1 ELSE 0
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    request, requests, changes, session, visible,
-                   contextPending, contextSent, contexts, work>>
+                   contextPending, contextSent, contexts, work, outside, outsides>>
 
 Acknowledge ==
     /\ request # "none" /\ reply.ready
@@ -166,7 +173,7 @@ Acknowledge ==
                    reply, requests, changes, session, visible,
                    contextPending, contextSent, correctionQueued,
                    contexts, warnings, corrections, inTurn, wakes, work,
-                   correctionPending, correctionTurn>>
+                   correctionPending, correctionTurn, outside, outsides>>
 
 (* Section: Checks and result delivery
 
@@ -181,32 +188,47 @@ BeginCheck ==
                    request, reply, requests, changes, session, visible,
                    contextPending, contextSent, correctionQueued,
                    contexts, warnings, corrections, inTurn, wakes, work,
-                   correctionPending, correctionTurn>>
+                   correctionPending, correctionTurn, outside, outsides>>
 
 (* The result-ordering and baseline rules are specified in Overwatch.tla.
    This layer accepts a completed result at that boundary, then constrains
    what every host must expose and which requests it may hold behind a check. *)
 FinishCheck(f) ==
     /\ active /\ busy /\ changes < MaxChanges
-    /\ reports' = f /\ busy' = FALSE /\ changes' = changes + 1
+    /\ reports' = f /\ busy' = FALSE /\ changes' = changes + 1 /\ outside' = FALSE
     /\ IF f # reports
          THEN /\ contextSent' = FALSE /\ correctionQueued' = FALSE
               /\ contextPending' = FALSE
          ELSE UNCHANGED <<contextSent, correctionQueued, contextPending>>
     /\ UNCHANGED <<host, active, baseline, inherited, selected, request,
                    reply, requests, session, visible, contexts, warnings, corrections, inTurn, wakes, work,
+                   correctionPending, correctionTurn, outsides>>
+
+(* A check that finishes on another process's change, with no session edit
+   since the last result, replaces the reports for status and guards alone:
+   it neither releases correction deduplication nor counts as a change the
+   session made, and Report gives it no failure context. A context still
+   waiting for the old reports is dropped, as a newer result replaces it. *)
+OutsideFinish(f) ==
+    /\ active /\ busy /\ outsides < MaxChanges /\ Capabilities(host).noticesOutside
+    /\ reports' = f /\ busy' = FALSE /\ outside' = TRUE /\ outsides' = outsides + 1
+    /\ contextPending' = (contextPending /\ f = reports)
+    /\ UNCHANGED <<host, active, baseline, inherited, selected, request,
+                   reply, requests, changes, session, visible, contextSent,
+                   correctionQueued, contexts, warnings, corrections, inTurn, wakes, work,
                    correctionPending, correctionTurn>>
 
+Told == Notify /\ ~outside
 Report ==
     /\ active /\ ~busy
     /\ visible' = [known |-> TRUE, failures |-> reports]
-    /\ contextPending' = (Notify /\ ~contextSent /\ Capabilities(host).delivery \in {"turn", "context"})
-    /\ contextSent' = (contextSent \/ (Notify /\ Capabilities(host).delivery = "event"))
-    /\ contexts' = contexts + IF Notify /\ ~contextSent /\ Capabilities(host).delivery = "event" THEN 1 ELSE 0
+    /\ contextPending' = (Told /\ ~contextSent /\ Capabilities(host).delivery \in {"turn", "context"})
+    /\ contextSent' = (contextSent \/ (Told /\ Capabilities(host).delivery = "event"))
+    /\ contexts' = contexts + IF Told /\ ~contextSent /\ Capabilities(host).delivery = "event" THEN 1 ELSE 0
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    request, reply, requests, changes, session,
                    correctionQueued, warnings, corrections, inTurn, wakes, work,
-                   correctionPending, correctionTurn>>
+                   correctionPending, correctionTurn, outside, outsides>>
 
 Deliver ==
     /\ active /\ contextPending
@@ -215,7 +237,7 @@ Deliver ==
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    request, reply, requests, changes, session, visible,
                    correctionQueued, warnings, corrections, inTurn, work,
-                   correctionPending, correctionTurn>>
+                   correctionPending, correctionTurn, outside, outsides>>
 
 (* Section: Shutdown restart and new work
 
@@ -236,7 +258,7 @@ Stop ==
     /\ contextPending' = FALSE
     /\ UNCHANGED <<host, reports, baseline, inherited, selected, requests,
                    changes, session, contextSent, correctionQueued,
-                   contexts, warnings, corrections, wakes, work>>
+                   contexts, warnings, corrections, wakes, work, outside, outsides>>
 
 Restart ==
     /\ ~active /\ session < MaxSessions
@@ -246,8 +268,9 @@ Restart ==
     /\ baseline' = reports
     /\ request' = "none" /\ reply' = NoReply /\ requests' = 0
     /\ visible' = [known |-> FALSE, failures |-> Empty]
-    /\ contextPending' = FALSE /\ contextSent' = FALSE /\ correctionQueued' = FALSE
-    /\ UNCHANGED <<host, reports, inherited, selected, changes, contexts, warnings, corrections, wakes, work>>
+    /\ contextPending' = FALSE /\ contextSent' = FALSE /\ correctionQueued' = FALSE /\ outside' = FALSE
+    /\ UNCHANGED <<host, reports, inherited, selected, changes, contexts, warnings, corrections,
+                   wakes, work, outsides>>
 
 StartTurn ==
     /\ active /\ ~inTurn /\ inTurn' = TRUE
@@ -256,7 +279,7 @@ StartTurn ==
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    request, reply, requests, changes, session, visible,
                    contextPending, contextSent, correctionQueued, contexts,
-                   warnings, corrections, wakes, work, correctionPending>>
+                   warnings, corrections, wakes, work, correctionPending, outside, outsides>>
 
 StartCorrectionTurn ==
     /\ active /\ ~inTurn /\ correctionPending
@@ -264,7 +287,7 @@ StartCorrectionTurn ==
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    request, reply, requests, changes, session, visible,
                    contextPending, contextSent, correctionQueued, contexts,
-                   warnings, corrections, wakes, work>>
+                   warnings, corrections, wakes, work, outside, outsides>>
 
 WorkCompleted ==
     /\ active /\ work < (MaxSessions + 1) * MaxRequests
@@ -273,7 +296,7 @@ WorkCompleted ==
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    request, reply, requests, changes, session, visible,
                    contextPending, contextSent, contexts, warnings, corrections, inTurn, wakes,
-                   correctionPending, correctionTurn>>
+                   correctionPending, correctionTurn, outside, outsides>>
 
 (* Section: Allowed executions and fairness
 
@@ -281,7 +304,7 @@ Spec composes check-completion fairness with fair response and report
 servicing. Inspection independence is a safety property: its response
 remains enabled even while a check is held.
 *)
-CheckCompletes == \E f \in Snapshots : FinishCheck(f)
+CheckCompletes == \E f \in Snapshots : FinishCheck(f) \/ OutsideFinish(f)
 Next == (\E k \in Kinds : Request(k)) \/ Respond \/ Acknowledge \/ BeginCheck
         \/ CheckCompletes \/ Report \/ Deliver \/ Stop \/ Restart
         \/ StartTurn \/ StartCorrectionTurn \/ WorkCompleted
