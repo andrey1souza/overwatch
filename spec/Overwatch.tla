@@ -1,5 +1,5 @@
 ---------------------------- MODULE Overwatch ----------------------------
-EXTENDS Naturals, FiniteSets, Sequences
+EXTENDS Naturals, FiniteSets, Sequences, FailurePolicy
 
 CONSTANTS Names, MaxEdits, Timeout
 ASSUME "timeout" \notin Names
@@ -38,7 +38,7 @@ TypeOK ==
     /\ knows \in Outcomes /\ elapsed \in 0..Timeout
 
 Failing == report.known /\ report.failures # {}
-Regressed(f) == TimedOut \in f \/ (baseline.known /\ ~(f \subseteq baseline.failures))
+Regressed(f) == TimedOut \in f \/ (baseline.known /\ NewFailure(f, baseline.failures))
 Guard == Failing /\ Regressed(report.failures)
 
 Init ==

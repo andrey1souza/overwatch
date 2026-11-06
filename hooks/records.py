@@ -28,6 +28,7 @@ class Event:
     cwd: str
     tool_name: str
     tool_input: object
+    integration: str = ""
 
 
 @dataclass(frozen=True)

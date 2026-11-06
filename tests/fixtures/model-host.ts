@@ -37,6 +37,7 @@ function outputStream() {
   assert(!stopped, 'model stream must start open')
   return {
     stream,
+    isStopped: () => stopped,
     async write(text: string) {
       assert(!stopped, `cannot emit ${JSON.stringify(text)} into a stopped model watcher`)
       if (reader !== undefined) {
@@ -50,16 +51,18 @@ function outputStream() {
 }
 
 /** The repository files and environment available to a single Zig watcher. */
-function projectIO(getCommit: () => string) {
+type ModelOptions = { inherited?: 'allow' | 'block'; checks?: readonly string[]; multi?: boolean }
+
+function projectIO(getCommit: () => string, options: ModelOptions) {
   const initial = getCommit()
   assert(/^[a-f0-9]{40}$/.test(initial), `model commit ${initial} must be a SHA-1 hex string`)
   const io = {
     env: { get: async (name: string) => name === 'PATH' ? '/usr/bin' : undefined },
     fs: {
-      exists: async (path: string) => ['/repo/.git', '/repo/build.zig'].includes(path),
+      exists: async (path: string) => ['/repo/.git', '/repo/build.zig', ...(options.multi ? ['/usr/bin/zanity'] : [])].includes(path),
       read: async (path: string) => {
         if (path === '/repo/.git/HEAD') return getCommit()
-        if (path === '/repo/.overwatch.json') return JSON.stringify({ gate: { protected_actions: [{ tool: 'Publish' }] } })
+        if (path === '/repo/.overwatch.json') return JSON.stringify({ gate: { inherited: options.inherited ?? 'allow', protected_actions: [{ tool: 'Publish', checks: options.checks ?? [] }] } })
         throw new Error(`model host has no file ${path}; add it to the fixture if required`)
       },
       stat: async (path: string) => ({ realPath: path }),
@@ -84,7 +87,7 @@ async function runTimer(timers: Timer[], selected: Timer['kind']) {
 }
 
 /** Replace only host I/O and clocks; all transitions run the production register function. */
-export function modelHost() {
+export function modelHost(options: ModelOptions = {}) {
   const handlers = new Map<string, Handler>()
   const timers: Timer[] = []
   const messages: string[] = []
@@ -94,10 +97,10 @@ export function modelHost() {
   let commit = 'a'.repeat(40)
   let publications = 0
   let completions = 0
-  const { stream, write } = outputStream()
+  const streams = { zig: outputStream(), zanity: outputStream() }
   // Unsupported I/O cannot fall back to the real machine.
   const host = {
-    ...projectIO(() => commit),
+    ...projectIO(() => commit, options),
     clock: {
       now: async () => 0,
       after: (_ms: number, run: () => unknown) => {
@@ -106,7 +109,11 @@ export function modelHost() {
         return { cancel: () => { timer.cancelled = true } }
       },
     },
-    process: { spawn: () => stream },
+    process: { spawn: ({ argv }: { argv: string[] }) => {
+      const key = argv[0] === 'zanity' ? 'zanity' : 'zig'
+      if (streams[key].isStopped()) streams[key] = outputStream()
+      return streams[key].stream
+    } },
     ui: { status: (text?: string) => { status = text ?? '' }, log: () => {}, toast: () => {} },
     session: { append: async (event: { message: unknown }) => { messages.push(JSON.stringify(event.message)) } },
     prompt: { submit: async ({ text }: { text: string }) => { prompts.push(text) } },
@@ -127,9 +134,9 @@ export function modelHost() {
       await settle()
       return result
     },
-    async emit(text: string) {
+    async emit(text: string, checker: 'zig' | 'zanity' = 'zig') {
       kind = 'read'
-      await write(text)
+      await streams[checker].write(text)
       kind = 'flush'
     },
     async timer(selected: Timer['kind']) {

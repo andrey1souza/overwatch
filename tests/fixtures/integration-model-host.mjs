@@ -39,15 +39,24 @@ function eventStream() {
   return source
 }
 
-function piHost(project, check) {
-  const handlers = {}, statuses = []
+export function piHost(project, check, session = { id: 'model' }) {
+  const handlers = {}, statuses = [], contexts = []
   registerPi({ on: (name, handler) => { handlers[name] = handler } }, check)
-  const ctx = { cwd: project, sessionManager: { getSessionId: () => 'model' }, ui: { setStatus: (_key, text) => statuses.push(text) } }
+  const ctx = { cwd: project, sessionManager: { getSessionId: () => session.id }, ui: { setStatus: (_key, text) => statuses.push(text) } }
   assert(handlers.session_start && handlers.agent_before_settle, 'Pi must register startup and settlement handlers')
   assert(statuses.length === 0, 'Pi must not publish a status before startup')
   return {
     start: () => handlers.session_start({ reason: 'startup' }, ctx),
-    read: () => handlers.tool_result({ toolName: 'edit', toolCallId: 'model', input: {}, content: [] }, ctx),
+    read: async () => {
+      const result = await handlers.tool_result({ toolName: 'edit', toolCallId: 'model', input: {}, content: [] }, ctx)
+      if (result?.content) contexts.push(...result.content.filter(part => part.type === 'text').map(part => part.text))
+      return result
+    },
+    inspect: () => handlers.tool_call({ toolName: 'read', input: {} }, ctx),
+    repair: () => handlers.tool_call({ toolName: 'edit', input: {} }, ctx),
+    progress: () => handlers.tool_result({ toolName: 'read', input: {}, content: [] }, ctx),
+    context: async () => { const result = await handlers.before_agent_start(); if (result?.message) contexts.push(result.message.content); return result },
+    observation: () => ({ contexts: [...contexts], status: statuses.at(-1), warnings: 0, corrections: 0 }),
     complete: async () => (await handlers.agent_before_settle({ entries: [] }, ctx))?.continue === true,
     publish: async () => (await handlers.tool_call({ toolName: 'Publish', input: {} }, ctx))?.block === true,
     status: () => statuses.at(-1),
@@ -55,48 +64,66 @@ function piHost(project, check) {
   }
 }
 
-function v1Host(project, check, outputs) {
-  const warnings = []
+export function v1Host(project, check, outputs, session = { id: 'model' }) {
+  const warnings = [], contexts = []
+  let idleWarnings = 0
   const hooks = createV1Hooks({ directory: project, client: { tui: { showToast: async ({ body }) => warnings.push(body.message) } } }, check)
   assert(typeof hooks.event === 'function', 'OpenCode V1 needs its event hook')
   assert(warnings.length === 0, 'OpenCode V1 must not warn before an event')
   return {
-    start: () => hooks.event({ event: { type: 'session.created', sessionID: 'model' } }),
-    read: () => hooks['tool.execute.after']({ tool: 'edit', sessionID: 'model', args: {} }, { output: 'edited' }),
+    start: () => hooks.event({ event: { type: 'session.created', sessionID: session.id } }),
+    read: async () => {
+      const result = { output: 'edited' }
+      await hooks['tool.execute.after']({ tool: 'edit', sessionID: session.id, args: {} }, result)
+      if (result.output !== 'edited') contexts.push(result.output)
+      return result
+    },
+    inspect: () => hooks['tool.execute.before']({ tool: 'read', sessionID: session.id }, { args: {} }),
+    repair: () => hooks['tool.execute.before']({ tool: 'edit', sessionID: session.id }, { args: {} }),
+    progress: () => hooks['tool.execute.after']({ tool: 'read', sessionID: session.id }, { output: 'read' }),
+    context: () => {},
+    observation: () => ({ contexts: [...contexts], warnings: idleWarnings, corrections: 0 }),
     complete: async () => {
       const before = warnings.length
-      await hooks.event({ event: { type: 'session.idle', sessionID: 'model' } })
+      await hooks.event({ event: { type: 'session.idle', sessionID: session.id } })
       const guarded = outputs.at(-1).decision === 'block'
       assert.equal(warnings.length - before, guarded ? 1 : 0)
+      idleWarnings += warnings.length - before
       return guarded
     },
     publish: async () => {
-      try { await hooks['tool.execute.before']({ tool: 'Publish', sessionID: 'model' }, { args: {} }); return false }
+      try { await hooks['tool.execute.before']({ tool: 'Publish', sessionID: session.id }, { args: {} }); return false }
       catch (error) { assert.match(error.message, /guarded/); return true }
     },
-    close: () => {},
+    close: () => hooks.event({ event: { type: 'session.deleted', sessionID: session.id } }),
   }
 }
 
-async function v2Host(project, check, outputs) {
-  const hooks = {}, prompts = [], events = eventStream()
+export async function v2Host(project, check, outputs, session = { id: 'model' }) {
+  const hooks = {}, prompts = [], contexts = [], events = eventStream()
   const close = await setupV2({ location: { directory: project },
     session: { hook: async (name, fn) => { hooks[name] = fn }, prompt: async event => prompts.push(event) },
     tool: { hook: async (name, fn) => { hooks[name] = fn } }, event: events }, check)
   assert(hooks.context && hooks['execute.after'], 'OpenCode V2 needs context and editing hooks')
   assert(prompts.length === 0, 'OpenCode V2 must not queue a prompt at setup')
   return {
-    start: () => hooks.context({ sessionID: 'model', system: [] }),
-    read: () => hooks['execute.after']({ tool: 'edit', sessionID: 'model', input: {} }),
+    start: () => hooks.context({ sessionID: session.id, system: [] }),
+    read: () => hooks['execute.after']({ tool: 'edit', sessionID: session.id, input: {} }),
+    inspect: () => hooks['execute.before']({ tool: 'read', sessionID: session.id, input: {} }),
+    repair: () => hooks['execute.before']({ tool: 'edit', sessionID: session.id, input: {} }),
+    progress: () => hooks['execute.after']({ tool: 'read', sessionID: session.id, input: {} }),
+    context: async () => { const event = { sessionID: session.id, system: [] }; await hooks.context(event); contexts.push(...event.system.map(part => part.text)); return event },
+    observation: () => ({ contexts: [...contexts], warnings: 0, corrections: prompts.length }),
     complete: async () => {
       const before = prompts.length
-      await events.send({ type: 'session.idle', sessionID: 'model' })
+      await events.send({ type: 'session.idle', sessionID: session.id })
       const guarded = outputs.at(-1).decision === 'block'
-      assert.equal(prompts.length - before, guarded ? 1 : 0)
+      assert(prompts.length - before <= 1, `idle event queued ${prompts.length - before} corrections; queue at most one`)
+      if (!guarded) assert.equal(prompts.length, before)
       return guarded
     },
     publish: async () => {
-      try { await hooks['execute.before']({ tool: 'Publish', sessionID: 'model', input: {} }); return false }
+      try { await hooks['execute.before']({ tool: 'Publish', sessionID: session.id, input: {} }); return false }
       catch (error) { assert.match(error.message, /guarded/); return true }
     }, close,
   }

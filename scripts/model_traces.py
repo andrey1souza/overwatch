@@ -111,7 +111,8 @@ Export == PrintT("OVERWATCH_TRACE " \o
 def generate(jar: Path) -> str:
     with tempfile.TemporaryDirectory(prefix='overwatch-traces-') as directory:
         work = Path(directory)
-        shutil.copyfile(ROOT / 'spec/Overwatch.tla', work / 'Overwatch.tla')
+        for name in ('Overwatch.tla', 'FailurePolicy.tla'):
+            shutil.copyfile(ROOT / 'spec' / name, work / name)
         (work / 'Conformance.tla').write_text(wrapper())
         (work / 'Conformance.cfg').write_text('''INIT TraceInit
 NEXT TraceNext

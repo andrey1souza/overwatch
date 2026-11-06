@@ -25,8 +25,12 @@ function checkedPayload(payload) {
   const { tool_name: tool, tool_input: input } = payload
   if (tool !== undefined && typeof tool !== "string") throw new TypeError(`the ${event} event's tool_name is ${typeof tool}; pass it as text`)
   const checked = { hook_event_name: event, session_id: session, cwd, tool_name: tool, tool_input: input }
+  if (payload.integration !== undefined) {
+    if (typeof payload.integration !== "string") throw new TypeError(`integration is ${typeof payload.integration}; pass its name`)
+    checked.integration = payload.integration
+  }
   assert(checked.hook_event_name === event && checked.cwd === cwd, `checked event ${JSON.stringify(checked)} lost its name or cwd; copy both`)
-  assert(Object.keys(checked).length === 5, `checked event has fields ${Object.keys(checked)}; forward only the five the checker reads`)
+  assert(Object.keys(checked).length === (payload.integration === undefined ? 5 : 6), `checked event has fields ${Object.keys(checked)}; forward only fields the checker reads`)
   return checked
 }
 
@@ -93,6 +97,9 @@ export function serialChecker(check = runCheck) {
   assert(check.length <= 2, `check takes ${check.length} arguments; serialChecker passes only the payload`)
   let tail = Promise.resolve()
   return payload => {
+    // Let the backend decide protection before joining a long-running check.
+    // Protected calls still take its session lock; ordinary calls need no state.
+    if (payload.hook_event_name === "PreToolUse") return check(payload)
     const current = tail.then(() => check(payload), () => check(payload))
     tail = current.catch(() => undefined)
     return current

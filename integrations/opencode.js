@@ -9,6 +9,7 @@
  */
 import assert from "node:assert/strict"
 import { contextOf, deniedAction, serialChecker } from "./check.js"
+import { SessionDelivery } from "./delivery.js"
 
 const EDITING_TOOLS = new Set(["apply_patch", "bash", "edit", "shell", "write"])
 
@@ -16,10 +17,10 @@ const EDITING_TOOLS = new Set(["apply_patch", "bash", "edit", "shell", "write"])
  * The checker's hook event for event in cwd's session sessionID: the fields every event the checker answers
  * carries. Each hook below builds its event from this.
  */
-function payload(event, cwd, sessionID) {
+function payload(event, cwd, sessionID, integration = "opencode1") {
   assert(typeof event === "string" && event !== "", `payload for event ${event}; name the hook event`)
   assert(typeof cwd === "string" && cwd !== "", `payload for ${event} has cwd ${cwd}; pass OpenCode's directory`)
-  return { hook_event_name: event, session_id: sessionID, cwd }
+  return { hook_event_name: event, session_id: sessionID, cwd, integration }
 }
 
 /**
@@ -53,6 +54,7 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
   assert(typeof directory === "string" && directory !== "", `OpenCode gave directory ${directory}; the hooks need the project's directory`)
   assert(typeof checker === "function", `checker is ${typeof checker}; pass a function from payload to output`)
   const check = checker
+  const sessions = new SessionDelivery()
   // Shows message as a warning toast. A toast that cannot be shown is logged, as OpenCode's own plugins do, since
   // failing the hook would stop the agent for a notice it can do without.
   const warn = async message => {
@@ -76,17 +78,20 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
     event: async ({ event }) => {
       const sessionID = sessionIDOf(event)
       if (!sessionID) return
+      if (event.type === "session.deleted") { sessions.remove(sessionID); return }
+      const life = sessions.stateOf(sessionID)
       if (event.type === "session.created") {
         const output = await check({ ...payload("SessionStart", directory, sessionID), source: "startup" })
-        if (output.systemMessage) await warn(output.systemMessage)
+        if (!life.closed) await warn(output.systemMessage ?? contextOf(output))
       }
       if (event.type === "session.idle") {
         const output = await check(payload("Stop", directory, sessionID))
-        if (output.decision === "block") await warn(warningText(output))
+        if (!life.closed && output.decision === "block") await warn(warningText(output))
       }
     },
     "tool.execute.after": async (input, output) => {
       if (!EDITING_TOOLS.has(input.tool)) return
+      const life = sessions.stateOf(input.sessionID)
       const result = await check({
         ...payload("PostToolUse", directory, input.sessionID),
         tool_name: input.tool,
@@ -94,7 +99,7 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
         tool_input: input.args,
       })
       const message = contextOf(result)
-      if (message) output.output = `${output.output}\n\n${message}`
+      if (!life.closed && message) output.output = `${output.output}\n\n${message}`
     },
   }
 }
@@ -108,47 +113,60 @@ export async function setupV2(ctx, checker = serialChecker()) {
   assert(typeof checker === "function", `checker is ${typeof checker}; pass a function from payload to output`)
   const check = checker
   const cwd = ctx.location.directory
+  const delivery = new SessionDelivery()
+  const controller = new AbortController()
   assert(typeof cwd === "string" && cwd !== "", `OpenCode gave directory ${cwd}; the hooks need the project's directory`)
 
   await ctx.tool.hook("execute.before", async event => {
-    const output = await check({ ...payload("PreToolUse", cwd, event.sessionID),
+    const output = await check({ ...payload("PreToolUse", cwd, event.sessionID, "opencode2"),
       tool_name: event.tool, tool_input: event.input })
     const reason = deniedAction(output)
     if (reason !== undefined) throw new Error(reason)
   })
 
   await ctx.session.hook("context", async event => {
-    const output = await check(payload("UserPromptSubmit", cwd, event.sessionID))
-    const message = contextOf(output)
+    const life = delivery.stateOf(event.sessionID)
+    const output = await check(payload("UserPromptSubmit", cwd, event.sessionID, "opencode2"))
+    if (controller.signal.aborted || life.closed) return
+    delivery.observe(event.sessionID, output)
+    const message = delivery.take(event.sessionID)
     if (message) event.system.push({ type: "text", text: message })
   })
 
   await ctx.tool.hook("execute.after", async event => {
+    delivery.progressed(event.sessionID)
+    const life = delivery.stateOf(event.sessionID)
     if (!EDITING_TOOLS.has(event.tool)) return
-    await check({
-      ...payload("PostToolUse", cwd, event.sessionID),
+    const output = await check({
+      ...payload("PostToolUse", cwd, event.sessionID, "opencode2"),
       tool_name: event.tool,
       tool_use_id: event.id ?? event.callID,
       tool_input: event.input,
     })
+    if (!controller.signal.aborted && !life.closed) delivery.observe(event.sessionID, output)
   })
 
-  const controller = new AbortController()
-  void (async () => {
-    try {
+  void followIdle(ctx, check, { cwd, delivery, controller })
+  return () => { controller.abort(); delivery.clear() }
+}
+
+async function followIdle(ctx, check, { cwd, delivery, controller }) {
+  assert(typeof ctx.event.subscribe === 'function', 'OpenCode V2 needs an event subscription')
+  assert(!controller.signal.aborted, 'OpenCode V2 cannot start an aborted subscription')
+  try {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        if (event.type !== "session.idle") continue
         const sessionID = sessionIDOf(event)
         if (!sessionID) continue
-        const output = await check(payload("Stop", cwd, sessionID))
-        if (output.decision !== "block") continue
+        if (event.type === "session.deleted") { delivery.remove(sessionID); continue }
+        if (event.type !== "session.idle") continue
+        const output = await check(payload("Stop", cwd, sessionID, "opencode2"))
+        if (controller.signal.aborted) return
+        if (!delivery.correction(sessionID, output)) continue
         await ctx.session.prompt({ sessionID, text: output.reason, delivery: "queue" })
       }
     } catch (error) {
       if (!controller.signal.aborted) console.error("overwatch event loop", error)
     }
-  })()
-  return () => controller.abort()
 }
 
 /** OpenCode 1 discovers named plugin functions. */

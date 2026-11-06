@@ -102,6 +102,14 @@ def mkdir(path: Path) -> None:
 
 
 class CodexHookTests(unittest.TestCase):
+    def test_inspection_does_not_wait_for_running_checks(self) -> None:
+        """A baseline holding the session lock must not prevent inspection tools."""
+        root = codex.data_root(str(self.data))
+        event = codex.Event("PreToolUse", "session-1", str(self.cwd), "Bash", {"command": "git status"})
+        with codex.locked(codex.state_path(event, self.cwd, root), root):
+            output, _ = self.call("PreToolUse", tool_name="Bash", tool_input={"command": "git status"})
+        self.assertEqual(output, {})
+
     def setUp(self) -> None:
         """Gives each test its own temporary directory, removed when it ends, holding a fresh git repository for the
         project, a data directory for the hook's state, and an empty bin directory for fake tools, which call puts

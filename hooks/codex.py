@@ -88,7 +88,7 @@ class ConfigurationError(Exception):
     """The project, its .overwatch.json or the hook event cannot be used; the message says what to change."""
 
 
-EVENT_FIELDS = ("hook_event_name", "session_id", "cwd", "tool_name")
+EVENT_FIELDS = ("hook_event_name", "session_id", "cwd", "tool_name", "integration")
 
 
 def read_event() -> Event:
@@ -104,7 +104,7 @@ def read_event() -> Event:
     if wrong:
         raise ConfigurationError(f"the Codex hook event's fields {wrong} must be strings; send each as a JSON string")
     event = Event(**fields, tool_input=value.get("tool_input"))
-    read = (event.hook_event_name, event.session_id, event.cwd, event.tool_name)
+    read = (event.hook_event_name, event.session_id, event.cwd, event.tool_name, event.integration)
     assert read == tuple(fields[name] for name in EVENT_FIELDS), f"event {event} lost one of the fields {fields}"
     assert event.tool_input is value.get("tool_input"), f"event for {event.hook_event_name} replaced its tool input; pass it through"
     return event
@@ -974,6 +974,12 @@ def process_event(event: Event, root: Path) -> dict[str, Any]:
     cwd = repository_of(Path(event.cwd or os.getcwd()).resolve())
     if cwd is None:
         return {}
+    # Inspection and repair calls need no check state. Do not queue them behind
+    # a baseline build holding the session lock.
+    if event.hook_event_name == "PreToolUse":
+        checks = protected_checks(event.tool_name, tool_command(event.tool_input), read_gate(read_override(cwd)))
+        if checks is None:
+            return {}
     with locked(state_path(event, cwd, root), root) as session:
         if event.hook_event_name == "PreToolUse":
             return protected_output(event, cwd, session)
@@ -1034,9 +1040,23 @@ def report_output(event: Event, old: State, current: State, session: Session) ->
         output.update({"decision": "block", "reason": gate_reason(gate_reports(current))})
     if parts:
         output.update(context_output(event.hook_event_name, "\n\n".join(parts)))
+    if event.integration:
+        output['overwatch'] = integration_report(current)
     assert blocking == (output.get("decision") == "block"), f"output {output} disagrees with blocking={blocking}; block only a guarded Stop"
     assert bool(parts) == ("hookSpecificOutput" in output), f"output {output} drops or invents context for {len(parts)} parts"
     return output
+
+
+def integration_report(current: State) -> dict[str, Any]:
+    """Internal plugin transport metadata; native Codex hook responses retain their existing schema and deduplication."""
+    reports = current.reports
+    status = ' · '.join(f"{report.name} {'✗' if report.failed else '✓'} {SUMMARY_DECORATION.sub('', report.summary)}{failing_suffix(report.failures)}"
+                        for report in reports)
+    result = {'status': f'Overwatch: {status}' if status else None,
+              'guarded': bool(gate_reports(current)), 'signature': current.told}
+    assert result['guarded'] == bool(gate_reports(current)), f'Plugin report {result} lost its guarded state'
+    assert not reports or result['status'], f'{len(reports)} reports produced no plugin status'
+    return result
 
 
 def main() -> None:

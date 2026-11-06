@@ -386,8 +386,10 @@ local function watch(run)
   local started_at = vim.uv.now()
   set_status(run, ('overwatch %s: starting %s'):format(watcher.name, command_line(watcher.argv)))
   local process = spawn(run, watcher.argv, function(data)
+    if not is_running(run) then return end
     output, recent = output .. data, (recent .. data):sub(-4000)
     flush:start(QUIET_MS, 0, vim.schedule_wrap(function()
+      if not is_running(run) then return end
       local lines = output:match('^(.*\n)') or ''
       local report = M.read_report(watcher, lines)
       if report == nil then return end

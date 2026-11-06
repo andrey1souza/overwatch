@@ -196,9 +196,9 @@ The [behavior guide](https://benomahony.github.io/overwatch/behavior/) is genera
 
 Add a scenario by composing `Scenario(...).given(...).when(...).then(...)` with fixture actions for every implemented step. Titles must be unique. Use `status="proposed"` with no executable actions for a planned behavior. Keep hook payloads, temporary paths, and test setup in the fixture rather than the prose.
 
-`spec/Overwatch.tla` specifies baseline handling, buffered completed builds, notification ordering, and the default completion guard for one watcher. Reads select the newest completed build; partial output cannot become a result. The model has no advisory or strict modes. `scripts/model_traces.py` asks TLC to derive expected observations for event sequences, including every failure-set combination for selected buffering and notification interleavings. It generates TypeScript and JSON fixtures; CI rejects stale expectations.
+The [behavioral specification](https://github.com/benomahony/overwatch/blob/main/spec/README.md) covers every integration. `Overwatch.tla` models baselines, workspace versions, buffered builds, and notification ordering. `IntegrationContract.tla` specifies the six hosts' request/response behavior, independent inspection during checks, scoped guards, completion feedback, delivery, and lifecycle. Both layers share `FailurePolicy.tla`. Host differences are explicit: OpenCode 1 warns at idle, Pi continues, OpenCode 2 queues a correction, Codex and Claude guard completion, and Neovim has no agent gates.
 
-The replays exercise production code with controlled host I/O. Claude's hook chain checks status, publication, completion, and notifications. Codex runs real commands and saves real hook state, checking baselines and repeated guards; its output reader also receives the chunk sequences. Pi and both OpenCode APIs run the same check sequences through their native callbacks and the real shared checker. OpenCode 1 verifies idle warnings because its API cannot refuse settlement. Neovim receives the raw chunks through its watcher callbacks and checks the resulting status; it has no agent gates. These are bounded observations of one watcher, not proofs of every timeout, cancellation, multi-watcher, or lifecycle path. The full model check and runtime acceptance tests run separately.
+TLC computes the expected observations for the result and host-contract replays; CI rejects stale generated fixtures. The replays exercise production hooks, native callbacks, real shared-checker processes, held session locks, and Neovim watcher callbacks. The spec documents the model bounds, composition assumptions, and each host's observable channels.
 
 ```sh
 python3 scripts/table.py      # after editing watchers.json
@@ -208,9 +208,11 @@ python3 docs/sync.py --write  # regenerate site pages from README and the verifi
 python3 -m unittest discover -s tests -p 'test_*.py'
 node --test tests/test_integrations.mjs
 node --test tests/test_model_integrations.mjs  # native integration callbacks with the real checker
+node --test tests/test_integration_contract.mjs  # scoped guards, contention, delivery, and lifecycle
 node --test tests/test_agents.mjs  # pi, opencode and codex against a scripted model; npm install --no-save @copilotkit/aimock first
 nvim --headless -l tests/overwatch_spec.lua
 nvim --headless -l tests/model_spec.lua  # model-derived stream replays
+nvim --headless -l tests/integration_contract_spec.lua  # editor host contract
 claude plugin validate .
 claude plugin test .
 claude --plugin-dir .
@@ -218,6 +220,8 @@ cd docs && zine                # the site, served locally
 java -cp tla2tools.jar tlc2.TLC -metadir /tmp/tlc -config spec/Overwatch.cfg spec/Overwatch.tla  # model check the timing
 python3 scripts/model_traces.py --jar /path/to/tla2tools.jar  # regenerate expectations after a model change
 python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check  # reject stale expectations
+python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar  # regenerate all host contracts
+python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
 python3 scripts/timing.py gaps    # fit the gaps between edits in your Claude Code transcripts
 python3 scripts/timing.py budget --first 300  # longest rerun time for a 10% slowdown at each max-ahead
 ```
