@@ -9,6 +9,11 @@ SCENARIOS = (
     .when("The correction turns repeatedly finish without using tools", World.claude_empty_corrections)
     .then("Only one correction is requested while completion and publication stay guarded", World.claude_loop_stops),
 
+    Scenario("Inspecting in a correction turn does not repeat the correction", "Claude retry limits", ("claude", "completion", "retry-loop", "inspection"))
+    .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
+    .when("Each correction turn reads files and runs the check, and the warnings do not change", World.claude_inspecting_corrections)
+    .then("Only one correction is requested", World.claude_inspection_does_not_repeat),
+
     Scenario("Denied publication does not restart Claude corrections", "Claude retry limits", ("claude", "completion", "protected-actions"))
     .given("A previously passing Claude watcher now reports warnings", World.claude_new_failure)
     .when("An empty correction remains guarded and publication is repeatedly denied", World.claude_denied_tools)

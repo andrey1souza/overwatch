@@ -8,6 +8,7 @@ import {
   SEARCH,
   WATCHERS,
   applyOverride,
+  bareSummary,
   commandLine,
   configure,
   environmentIn,
@@ -81,6 +82,8 @@ type State = {
   head: string | undefined
   /** Last completion correction; only useful work or changed findings may request another pass. */
   completionCorrection: string | undefined
+  /** Whether the running turn is that correction's own, whose tools do not earn it another copy. */
+  isCorrectionTurn: boolean
   /** Whether the running turn has had its one message from overwatch. */
   isToldThisTurn: boolean
   /** The messages not yet sent, by their slot's key and kind. */
@@ -678,6 +681,7 @@ async function stop($: EngineInterface, state: State) {
   state.cwd = undefined
   state.onWatcherEnded = undefined
   state.completionCorrection = undefined
+  state.isCorrectionTurn = false
   state.head = undefined
   state.isTurnRunning = false
   state.isPromptQueued = false
@@ -747,8 +751,9 @@ function guardedFailure(state: State, policy: GatePolicy, checks: readonly strin
   })
   if (blocked.length === 0) return undefined
   assert(blocked.every(each => each.report?.isFailed), `slots ${blocked.map(each => each.key)} guard while passing`)
-  const summaries = blocked.map(each => `${each.watcher?.name}: ${each.report?.summary}`).join('; ')
+  const summaries = blocked.map(each => `${each.watcher?.name}: ${each.report === undefined ? '' : bareSummary(each.report)}`).join('; ').replace(/\.$/, '')
   assert(summaries.split('; ').length >= blocked.length, `reason ${summaries} names fewer than ${blocked.length} guarding checks`)
+  assert(!summaries.endsWith('.'), `reason ${summaries} ends in a full stop the guard text adds again; strip it`)
   return `overwatch: this action is guarded while relevant checks fail. ${summaries}. Inspection, edits, and check commands remain available.`
 }
 
@@ -821,17 +826,28 @@ async function rebaselineOnMove($: EngineInterface, state: State) {
   assert(state.slots.every(each => each.baseline === undefined && !each.isEdited), `a slot kept its baseline after HEAD moved to ${head}; clear each`)
 }
 
-/** After a tool runs another correction pass may be useful; an editing tool also reruns each check and may have moved HEAD. */
+/**
+ * A tool that ran is work, so the same correction may be told again, except in the correction's own turn, where
+ * inspecting it is the answer to it. An editing tool also reruns each check and may have moved HEAD.
+ */
 async function afterTool($: EngineInterface, state: State, tool: string) {
   assert(tool !== '', `a tool call named the tool ${JSON.stringify(tool)}; pass the name of the tool the agent called`)
-  state.completionCorrection = undefined
+  if (!state.isCorrectionTurn) state.completionCorrection = undefined
+  assert(!state.isCorrectionTurn || state.completionCorrection !== undefined, `the correction turn lost its correction after ${tool}; keep it while the turn answers it`)
   if (!EDITING_TOOLS.has(tool)) return
   for (const each of state.slots) {
     each.isEdited = true
     each.changed?.()
   }
   await rebaselineOnMove($, state)
-  assert(state.completionCorrection === undefined, `a correction ${state.completionCorrection} was kept across ${tool}; clear it so another pass may follow`)
+  assert(state.slots.every(each => each.isEdited || each.baseline === undefined), `a slot was not marked edited after ${tool}; mark each so its next result is read against the edit`)
+}
+
+/** Notes whether a starting turn is overwatch's own correction, submitted with that correction's text. */
+function startTurn(state: State, text: string) {
+  assert(typeof text === 'string', `a turn started with ${JSON.stringify(text)}, not its prompt text; pass turn.start's text`)
+  state.isCorrectionTurn = state.completionCorrection !== undefined && text === state.completionCorrection
+  assert(!state.isCorrectionTurn || text.startsWith('overwatch: '), `the turn ${JSON.stringify(text)} was taken for overwatch's correction; only its own text starts one`)
 }
 
 /** A session's state before it starts: no directory, slots or messages. */
@@ -843,6 +859,7 @@ const initialState = (): State => {
     isPromptQueued: false,
     head: undefined,
     completionCorrection: undefined,
+    isCorrectionTurn: false,
     isToldThisTurn: false,
     outbox: new Map(),
     flushing: undefined,
@@ -886,6 +903,7 @@ export const register: Register = on => {
   })
 
   on('turn.start', ($, e, next) => {
+    startTurn(state, e.text)
     state.isTurnRunning = true
     state.isToldThisTurn = state.isPromptQueued
     state.isPromptQueued = false

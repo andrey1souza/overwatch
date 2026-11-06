@@ -939,7 +939,7 @@ def protected_output(event: Event, cwd: Path, session: Session) -> dict[str, Any
 def gate_reason(reports: list[Report]) -> str:
     """Why an action is refused: the failing checks that guard it, and that repairs remain possible."""
     assert reports, "gate_reason was given no reports; give it the checks that guard the action"
-    lines = [f"- {report.name}: {' '.join(report.summary.split())}" for report in reports]
+    lines = [f"- {report.name}: {' '.join(SUMMARY_DECORATION.sub('', report.summary).split())}" for report in reports]
     assert len(lines) == len(reports) and all("\n" not in line for line in lines), f"reason lines {lines} do not give each guarding check one line"
     return ("overwatch: this action is guarded while relevant checks fail:\n" + "\n".join(lines) + "\n"
             "Inspection, edits, and check commands remain available. Rerun the checks after repairing the failure.")

@@ -268,6 +268,22 @@ class AcceptanceWorld(unittest.TestCase):
         '}',
     ))
 
+    claude_inspecting_corrections = partialmethod(prepare_claude_steps, expected_phase='ready', phase='inspected', steps=(
+        'await $.turn.complete(ended)',
+        'expect(prompts.length).toBe(1)',
+        'for (let i = 0; i < 3; i++) {',
+        'await $.turn.start({ text: prompts[0]!, turnId: `inspect-${i}` })',
+        "await $.tool.call({ tool: 'Read', file_path: '/repo/example.py' })",
+        "await $.tool.call({ tool: 'Bash', command: 'zanity check .' })",
+        'await $.turn.complete({ ...ended, turnId: `inspect-${i}` })',
+        '}',
+    ))
+
+    claude_inspection_does_not_repeat = partialmethod(verify_claude, phase='inspected', expectations=(
+        'expect(prompts.length).toBe(1)',
+        "expect(calls).toEqual(['Read', 'Bash', 'Read', 'Bash', 'Read', 'Bash'])",
+    ))
+
     claude_loop_stops = partialmethod(verify_claude, phase='guarded', expectations=(
         'expect(prompts.length).toBe(1)',
         "expect(calls).toEqual([])",

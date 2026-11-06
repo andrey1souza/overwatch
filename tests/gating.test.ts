@@ -38,6 +38,24 @@ for (const inherited of ['allow', 'block'] as const) {
   })
 }
 
+test('a guard names each check once and ends its summaries with one full stop', async ($, on) => {
+  const { clock, prompts, setReport } = gatingProject(on)
+  setReport('zanity: 0 errors, 1 warning in 1/1 file.\n')
+  try {
+    await $.session.start(start)
+    await clock.advance(1500)
+    await $.turn.start({ text: 'finish', turnId: 't1' })
+    await $.turn.complete(ended)
+    expect(prompts.filter(text => text.includes('guarded'))).toEqual([
+      'overwatch: this action is guarded while relevant checks fail. zanity: 0 errors, 1 warning in 1/1 file. Inspection, edits, and check commands remain available.',
+    ])
+  } finally {
+    const ending = $.session.end({ reason: 'prompt_input_exit', sessionId: 's1', resume: { id: 's1' } })
+    await clock.advance(1000)
+    await ending
+  }
+})
+
 test('publication and repeated completion stay guarded until passing checks release them', async ($, on) => {
   const { clock, calls, repair } = gatingProject(on)
   try {

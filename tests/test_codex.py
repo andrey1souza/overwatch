@@ -480,6 +480,12 @@ class CodexHookTests(unittest.TestCase):
             with self.subTest(settings=settings), self.assertRaisesRegex(codex.ConfigurationError, re.escape(field)):
                 codex.find_watchers(self.cwd)
 
+    def test_a_guard_names_each_check_once(self) -> None:
+        summary = "zanity: 0 errors, 1 warning in 1/1 file."
+        report = codex.Report("zanity", "zanity", "zanity check .", None, summary, True, (), None, summary)
+        self.assertIn("\n- zanity: 0 errors, 1 warning in 1/1 file.\n", codex.gate_reason([report]))
+        self.assertNotIn("zanity: zanity:", codex.gate_reason([report]))
+
     def test_the_typescript_table_is_generated_from_watchers_json(self) -> None:
         self.assertEqual(read(table.TARGET), table.render(), "run python3 scripts/table.py")
 

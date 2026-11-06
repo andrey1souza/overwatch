@@ -447,12 +447,20 @@ export function gaveUpMessage(watcher: Watcher, exits: number, retryMs: number, 
 /** The decoration each tool puts around its summary, which the status line leaves out. */
 const SUMMARY_DECORATION = /^Build Summary:\s*|^zanity:\s*|^=+\s*|\s*=+$|^Test Files\s+|^Test Suites:\s*|^DONE\s+|^(?:ok|FAILED) \| /g
 
+/** A report's summary without the decoration its tool puts around it, such as zanity's own name, for text that names the check itself. */
+export function bareSummary(report: Report): string {
+  assert(!report.summary.includes('\n'), `summary ${JSON.stringify(report.summary)} spans lines; pass a report readReport made, whose summary is one line`)
+  const bare = report.summary.replace(SUMMARY_DECORATION, '')
+  assert(bare.length <= report.summary.length && report.summary.includes(bare.trim()), `stripping ${report.summary} gave ${bare}; remove only its decoration`)
+  return bare
+}
+
 /** A watcher's part of the status line: its name, a mark, its summary undecorated and its first failure. */
 export function statusLine(watcher: Watcher, report: Report): string {
   const mark = report.isFailed ? '✗' : '✓'
   const [first, ...rest] = report.failures
   const failing = first === undefined ? '' : `: ${first}${rest.length > 0 ? ` +${rest.length} more` : ''}`
-  const line = `overwatch ${watcher.name} ${mark} ${report.summary.replace(SUMMARY_DECORATION, '')}${failing}`
+  const line = `overwatch ${watcher.name} ${mark} ${bareSummary(report)}${failing}`
   assert(line.startsWith(`overwatch ${watcher.name} ${mark} `), `status ${line} does not open with ${watcher.name} and its mark; build it from the name, mark and summary`)
   assert(first === undefined || line.includes(`: ${first}`), `status ${line} does not name ${watcher.name}'s first failure ${first}; append it after a colon`)
   return line
