@@ -567,37 +567,43 @@ async function findIn($: EngineInterface, cwd: string): Promise<{ watcher: Watch
  * during one, another follows it. A watcher that exits asks for another, see `restart`.
  */
 async function ensureAll($: EngineInterface, state: State) {
-  const { cwd, epoch } = state
-  if (cwd === undefined) return
+  if (state.cwd === undefined) return
   if (state.isFinding) {
     state.isFindDue = true
     return
   }
   // A search asked for during one runs once after it; asks come from hooks and exits, so each round answers all so far.
-  do {
-    state.isFinding = true
-    state.isFindDue = false
-    state.finding = findIn($, cwd)
-    const watchers = await state.finding.finally(() => {
-      state.isFinding = false
-      state.finding = undefined
-    })
-    if (state.epoch !== epoch) return
-    const now = await $.clock.now()
-    for (const { watcher, dir } of watchers) {
-      const key = `${languageOf(watcher)}:${dir}`
-      let found = state.slots.find(each => each.key === key)
-      if (found === undefined) {
-        found = slot(key, dir)
-        state.slots.push(found)
+  // The search stays marked running until its watchers have started, so a search asked for meanwhile waits its turn.
+  // Each round reads the session afresh, so a search a newer session asked for runs in that session's directory.
+  try {
+    do {
+      const { cwd, epoch } = state
+      if (cwd === undefined) break
+      state.isFinding = true
+      state.isFindDue = false
+      state.finding = findIn($, cwd)
+      const watchers = await state.finding.finally(() => {
+        state.finding = undefined
+      })
+      if (state.epoch !== epoch) continue
+      const now = await $.clock.now()
+      for (const { watcher, dir } of watchers) {
+        const key = `${languageOf(watcher)}:${dir}`
+        let found = state.slots.find(each => each.key === key)
+        if (found === undefined) {
+          found = slot(key, dir)
+          state.slots.push(found)
+        }
+        if (found.isWatching || now < found.retryAt) continue
+        found.isWatching = true
+        void start($, state, found, watcher)
       }
-      if (found.isWatching || now < found.retryAt) continue
-      found.isWatching = true
-      void start($, state, found, watcher)
-    }
-    assert(watchers.every(({ watcher, dir }) => state.slots.some(each => each.key === `${languageOf(watcher)}:${dir}`)), `a watcher of ${cwd} has no slot`)
-  } while (state.isFindDue && state.epoch === epoch)
-  assert(!state.isFinding, `a search of ${cwd} is still marked running after it ended`)
+      assert(watchers.every(({ watcher, dir }) => state.slots.some(each => each.key === `${languageOf(watcher)}:${dir}`)), `a watcher of ${cwd} has no slot`)
+    } while (state.isFindDue)
+  } finally {
+    state.isFinding = false
+  }
+  assert(state.finding === undefined, `a search of ${state.cwd} left its finding ${state.finding} behind after it ended`)
 }
 
 async function start($: EngineInterface, state: State, slot: Slot, watcher: Watcher) {
