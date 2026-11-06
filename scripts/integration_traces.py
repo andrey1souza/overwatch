@@ -25,7 +25,8 @@ def cases() -> list[dict]:
         ('latest result decides protected action', 'RequestPublish Poll Finish Respond', True, EMPTY, EMPTY, 'allow', [], FAILED),
         ('recovery decides protected action', 'RequestPublish Poll Finish Respond', True, FAILED, EMPTY, 'allow', [], EMPTY),
         ('completion does not queue duplicates', 'RequestComplete Respond Ack RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], FAILED),
-        ('work permits a fresh correction', 'RequestComplete Respond Ack Turn Work RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], FAILED),
+        ('work in the correction turn keeps one correction', 'RequestComplete Respond Ack CorrectionTurn Work RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], FAILED),
+        ('work in a later turn permits a fresh correction', 'RequestComplete Respond Ack CorrectionTurn RequestComplete Respond Ack Turn Work RequestComplete Respond', False, FAILED, EMPTY, 'allow', [], FAILED),
         ('idle result delivery', 'Report Deliver', False, FAILED, EMPTY, 'allow', [], FAILED),
         ('delivery survives deduplication', 'Report Deliver Report Deliver', False, FAILED, EMPTY, 'allow', [], FAILED),
         ('pending recovery cancels stale delivery', 'Report Begin Finish Report Deliver', False, FAILED, EMPTY, 'allow', [], EMPTY),
@@ -80,6 +81,7 @@ Action == CASE Event = "RequestInspect" -> Request("inspect")
             [] Event = "Restart" -> Restart
             [] Event = "StartTurn" -> StartTurn
             [] Event = "Turn" -> IF inTurn THEN UNCHANGED vars ELSE StartTurn
+            [] Event = "CorrectionTurn" -> IF inTurn THEN UNCHANGED vars ELSE IF correctionPending THEN StartCorrectionTurn ELSE StartTurn
             [] Event = "Work" -> WorkCompleted
 TraceNext == IF step < Len(Cases[scenario].events)
              THEN /\ Action /\ step' = step + 1 /\ UNCHANGED scenario
@@ -134,7 +136,7 @@ CONSTANTS
  Hosts = {"claude", "codex", "opencode1", "opencode2", "pi", "neovim"}
  Checks = {"primary", "secondary"}
  Names = {"a"}
- MaxRequests = 2
+ MaxRequests = 3
  MaxChanges = 1
  MaxSessions = 1
 INVARIANTS

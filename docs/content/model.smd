@@ -655,7 +655,8 @@ idle wakeups are separate observations.
 &\mathit{VARIABLES} \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{3.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \\
 &\quad \hspace{3.33em}\mathit{visible} , \mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
-&\quad \hspace{3.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work}
+&\quad \hspace{3.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{3.33em}\mathit{correctionPending} , \mathit{correctionTurn}
 \end{aligned}
 ```
 
@@ -666,7 +667,8 @@ idle wakeups are separate observations.
 &\mathit{vars} \triangleq \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{3.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{3.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
-&\quad \hspace{3.33em}\mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{3.33em}\mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{3.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -733,7 +735,8 @@ do not assert a runtime limit on requests or sessions.
 &\quad \hspace{1.33em}\land \mathit{contextPending} \in \mathit{BOOLEAN} \land \mathit{contextSent} \in \mathit{BOOLEAN} \land \mathit{correctionQueued} \in \mathit{BOOLEAN} \\
 &\quad \hspace{1.33em}\land \mathit{contexts} \in 0 \mathbin{\text{..}} ( \mathit{MaxChanges} + \mathit{MaxSessions} + 1 ) \\
 &\quad \hspace{1.33em}\land \mathit{warnings} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} ) \\
-&\quad \hspace{1.33em}\land \mathit{corrections} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} )
+&\quad \hspace{1.33em}\land \mathit{corrections} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} ) \\
+&\quad \hspace{1.33em}\land \mathit{correctionPending} \in \mathit{BOOLEAN} \land \mathit{correctionTurn} \in \mathit{BOOLEAN}
 \end{aligned}
 ```
 
@@ -754,7 +757,8 @@ No reply, visible report, deferred context, or correction has been produced.
 &\quad \hspace{1.33em}\land \mathit{requests} = 0 \land \mathit{changes} = 0 \land \mathit{session} = 0 \\
 &\quad \hspace{1.33em}\land \mathit{visible} = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{Empty} ] \\
 &\quad \hspace{1.33em}\land \mathit{contextPending} = \mathit{FALSE} \land \mathit{contextSent} = \mathit{FALSE} \land \mathit{correctionQueued} = \mathit{FALSE} \\
-&\quad \hspace{1.33em}\land \mathit{contexts} = 0 \land \mathit{warnings} = 0 \land \mathit{corrections} = 0 \land \mathit{wakes} = 0 \land \mathit{work} = 0 \land \mathit{inTurn} \in \mathit{BOOLEAN}
+&\quad \hspace{1.33em}\land \mathit{contexts} = 0 \land \mathit{warnings} = 0 \land \mathit{corrections} = 0 \land \mathit{wakes} = 0 \land \mathit{work} = 0 \land \mathit{inTurn} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{correctionPending} = \mathit{FALSE} \land \mathit{correctionTurn} = \mathit{FALSE}
 \end{aligned}
 ```
 
@@ -774,7 +778,8 @@ corrections, and wakeups; Acknowledge releases the request slot.
 &\quad \hspace{1.33em}\land \mathit{request} ' = \mathit{k} \land \mathit{reply} ' = \mathit{NoReply} \land \mathit{requests} ' = \mathit{requests} + 1 \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{changes} , \mathit{session} , \mathit{visible} , \mathit{contextPending} , \mathit{contextSent} , \\
-&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -808,14 +813,22 @@ corrections, and wakeups; Acknowledge releases the request slot.
 \end{aligned}
 ```
 
+### [IntegrationContract - EndsTurn]($heading.id('integrationcontract---endsturn'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{EndsTurn} \triangleq \mathit{request} = \texttt{"complete"} \land ( \mathit{Decision} \in \{ \texttt{"allow"} , \texttt{"warn"} , \texttt{"queue"} \} \lor \mathit{host} = \texttt{"claude"} )
+\end{aligned}
+```
+
 ### [IntegrationContract - Respond]($heading.id('integrationcontract---respond'))
 
 ```=mathtex
 \begin{aligned}
 &\mathit{Respond} \triangleq \land \mathit{CanRespond} \\
-&\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{IF} \mathit{request} = \texttt{"complete"} \land \\
-&\quad \hspace{7.67em}( \mathit{Decision} \in \{ \texttt{"allow"} , \texttt{"warn"} , \texttt{"queue"} \} \lor \mathit{host} = \texttt{"claude"} ) \\
-&\quad \hspace{6.0em}\mathit{THEN} \mathit{FALSE} \mathit{ELSE} \mathit{inTurn} \\
+&\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{IF} \mathit{EndsTurn} \mathit{THEN} \mathit{FALSE} \mathit{ELSE} \mathit{inTurn} \\
+&\quad \hspace{1.33em}\land \mathit{correctionTurn} ' = \mathit{IF} \mathit{EndsTurn} \mathit{THEN} \mathit{FALSE} \mathit{ELSE} \mathit{correctionTurn} \\
+&\quad \hspace{1.33em}\land \mathit{correctionPending} ' = ( \mathit{correctionPending} \lor ( \mathit{QueuesCorrection} \land \neg \mathit{correctionQueued} ) ) \\
 &\quad \hspace{1.33em}\land \mathit{reply} ' = [ \mathit{ready} \mapsto \mathit{TRUE} , \mathit{decision} \mapsto \mathit{Decision} ] \\
 &\quad \hspace{1.33em}\land \mathit{warnings} ' = \mathit{warnings} + \mathit{IF} \mathit{Decision} = \texttt{"warn"} \mathit{THEN} 1 \mathit{ELSE} 0 \\
 &\quad \hspace{1.33em}\land \mathit{corrections} ' = \mathit{corrections} + \mathit{IF} \mathit{QueuesCorrection} \land \neg \mathit{correctionQueued} \mathit{THEN} 1 \mathit{ELSE} 0 \\
@@ -838,7 +851,8 @@ corrections, and wakeups; Acknowledge releases the request slot.
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
-&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -858,7 +872,8 @@ publishes event context or retains it for Deliver. Recovery clears stale context
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
-&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -875,7 +890,8 @@ The result-ordering and baseline rules are specified in Overwatch.tla.    This l
 &\quad \hspace{4.67em}\land \mathit{contextPending} ' = \mathit{FALSE} \\
 &\quad \hspace{3.0em}\mathit{ELSE} \mathit{UNCHANGED} \langle \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contextPending} \rangle \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \mathit{request} , \\
-&\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{session} , \mathit{visible} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{session} , \mathit{visible} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -890,7 +906,8 @@ The result-ordering and baseline rules are specified in Overwatch.tla.    This l
 &\quad \hspace{1.33em}\land \mathit{contexts} ' = \mathit{contexts} + \mathit{IF} \mathit{Notify} \land \neg \mathit{contextSent} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} = \texttt{"event"} \mathit{THEN} 1 \mathit{ELSE} 0 \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \\
-&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -903,7 +920,8 @@ The result-ordering and baseline rules are specified in Overwatch.tla.    This l
 &\quad \hspace{1.33em}\land \mathit{contextSent} ' = \mathit{TRUE} \land \mathit{contextPending} ' = \mathit{FALSE} \land \mathit{contexts} ' = \mathit{contexts} + 1 \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
-&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{work} \rangle
+&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{work} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -912,7 +930,10 @@ The result-ordering and baseline rules are specified in Overwatch.tla.    This l
 
 Stop cancels an outstanding request and clears visible and pending delivery.
 Restart preserves project policy, takes reports as the new baseline, and
-resets delivery state. Completed tool work permits a fresh correction.
+resets delivery state. A submitted correction runs in a turn of its own,
+which on OpenCode 2 is always the next; any other turn is the person's.
+Completed tool work permits a fresh correction, except in the correction's
+own turn, where inspecting and repairing are its answer.
 
 ### [IntegrationContract - Stop]($heading.id('integrationcontract---stop'))
 
@@ -920,6 +941,7 @@ resets delivery state. Completed tool work permits a fresh correction.
 \begin{aligned}
 &\mathit{Stop} \triangleq \land \mathit{active} \\
 &\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{correctionPending} ' = \mathit{FALSE} \land \mathit{correctionTurn} ' = \mathit{FALSE} \\
 &\quad \hspace{1.33em}\land \mathit{active} ' = \mathit{FALSE} \land \mathit{busy} ' = \mathit{FALSE} \land \mathit{request} ' = \texttt{"none"} \\
 &\quad \hspace{1.33em}\land \mathit{reply} ' = [ \mathit{ready} \mapsto \mathit{TRUE} , \mathit{decision} \mapsto \texttt{"cancelled"} ] \\
 &\quad \hspace{1.33em}\land \mathit{visible} ' = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{Empty} ] \\
@@ -936,6 +958,7 @@ resets delivery state. Completed tool work permits a fresh correction.
 \begin{aligned}
 &\mathit{Restart} \triangleq \land \neg \mathit{active} \land \mathit{session} < \mathit{MaxSessions} \\
 &\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{correctionPending} ' = \mathit{FALSE} \land \mathit{correctionTurn} ' = \mathit{FALSE} \\
 &\quad \hspace{1.33em}\land \mathit{active} ' = \mathit{TRUE} \land \mathit{session} ' = \mathit{session} + 1 \land \mathit{busy} ' = \mathit{FALSE} \\
 &\quad \hspace{1.33em}\land \mathit{baseline} ' = \mathit{reports} \\
 &\quad \hspace{1.33em}\land \mathit{request} ' = \texttt{"none"} \land \mathit{reply} ' = \mathit{NoReply} \land \mathit{requests} ' = 0 \\
@@ -950,6 +973,21 @@ resets delivery state. Completed tool work permits a fresh correction.
 ```=mathtex
 \begin{aligned}
 &\mathit{StartTurn} \triangleq \land \mathit{active} \land \neg \mathit{inTurn} \land \mathit{inTurn} ' = \mathit{TRUE} \\
+&\quad \hspace{1.33em}\land \neg ( \mathit{host} = \texttt{"opencode2"} \land \mathit{correctionPending} ) \\
+&\quad \hspace{1.33em}\land \mathit{correctionTurn} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
+&\quad \hspace{6.33em}\mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} , \mathit{correctionPending} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - StartCorrectionTurn]($heading.id('integrationcontract---startcorrectionturn'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{StartCorrectionTurn} \triangleq \land \mathit{active} \land \neg \mathit{inTurn} \land \mathit{correctionPending} \\
+&\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{TRUE} \land \mathit{correctionTurn} ' = \mathit{TRUE} \land \mathit{correctionPending} ' = \mathit{FALSE} \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
 &\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
@@ -962,10 +1000,12 @@ resets delivery state. Completed tool work permits a fresh correction.
 ```=mathtex
 \begin{aligned}
 &\mathit{WorkCompleted} \triangleq \land \mathit{active} \land \mathit{work} < ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} \\
-&\quad \hspace{1.33em}\land \mathit{work} ' = \mathit{work} + 1 \land \mathit{correctionQueued} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{work} ' = \mathit{work} + \mathit{IF} \mathit{correctionTurn} \mathit{THEN} 0 \mathit{ELSE} 1 \\
+&\quad \hspace{1.33em}\land \mathit{correctionQueued} ' = ( \mathit{correctionTurn} \land \mathit{correctionQueued} ) \\
 &\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
 &\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
-&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} \rangle
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \\
+&\quad \hspace{6.33em}\mathit{correctionPending} , \mathit{correctionTurn} \rangle
 \end{aligned}
 ```
 
@@ -989,7 +1029,8 @@ remains enabled even while a check is held.
 ```=mathtex
 \begin{aligned}
 &\mathit{Next} \triangleq ( \exists \mathit{k} \in \mathit{Kinds} : \mathit{Request} ( \mathit{k} ) ) \lor \mathit{Respond} \lor \mathit{Acknowledge} \lor \mathit{BeginCheck} \\
-&\quad \hspace{2.67em}\lor \mathit{CheckCompletes} \lor \mathit{Report} \lor \mathit{Deliver} \lor \mathit{Stop} \lor \mathit{Restart} \lor \mathit{StartTurn} \lor \mathit{WorkCompleted} \\
+&\quad \hspace{2.67em}\lor \mathit{CheckCompletes} \lor \mathit{Report} \lor \mathit{Deliver} \lor \mathit{Stop} \lor \mathit{Restart} \\
+&\quad \hspace{2.67em}\lor \mathit{StartTurn} \lor \mathit{StartCorrectionTurn} \lor \mathit{WorkCompleted} \\
 &\quad \hspace{2.67em}\lor ( \neg \mathit{active} \land \mathit{session} = \mathit{MaxSessions} \land \mathit{UNCHANGED} \mathit{vars} )
 \end{aligned}
 ```

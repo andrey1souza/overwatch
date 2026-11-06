@@ -41,7 +41,8 @@ for (const trace of CONTRACT_TRACES.filter(trace => trace.host === 'claude')) {
         if (event === 'Deliver' && !stopped) await host.timer('flush')
         if (event === 'Stop') { stopped = true; await host.fire('session.end', { reason: 'prompt_input_exit', sessionId: 's1' }) }
         if (event === 'Work') await host.fire('tool.call', { tool: 'Read' })
-        if (event === 'Turn') await host.fire('turn.start', { text: 'correction', turnId: 'contract' })
+        if (event === 'Turn') await host.fire('turn.start', { text: 'a person asks again', turnId: 'contract' })
+        if (event === 'CorrectionTurn') await host.fire('turn.start', { text: host.snapshot().prompts.at(-1) ?? 'work', turnId: 'contract' })
         if (event === 'StartTurn') await host.fire('turn.start', { text: 'work', turnId: 'contract' })
         if (event === 'Restart') { stopped = false; await begin(); await snapshot(trace.reports) }
         if (event === 'Deliver') {

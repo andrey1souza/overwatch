@@ -11,7 +11,7 @@ export class SessionDelivery {
 
   stateOf(id) {
     assert(typeof id === 'string' && id !== '', `delivery session ${id} must have an ID`)
-    if (!this.sessions.has(id)) this.sessions.set(id, { pending: undefined, correction: undefined, closed: false })
+    if (!this.sessions.has(id)) this.sessions.set(id, { pending: undefined, correction: undefined, isCorrectionPass: false, closed: false })
     const state = this.sessions.get(id)
     assert(state !== undefined, `delivery session ${id} was not initialized`)
     return state
@@ -35,22 +35,29 @@ export class SessionDelivery {
     return text
   }
 
+  /**
+   * Whether a settling session's result asks for a new correction pass. A queued pass runs until the session settles
+   * again, so this also ends the pass before it and, when it asks, begins the next.
+   */
   correction(id, output) {
     assert(output && typeof output === 'object', `correction output for ${id} must be an object`)
     assert(output.reason === undefined || typeof output.reason === 'string', `correction reason for ${id} must be text`)
     const state = this.stateOf(id)
+    state.isCorrectionPass = false
     if (output.decision !== 'block') { state.correction = undefined; return false }
     const signature = output.overwatch?.signature ?? output.reason
     if (state.correction === signature) return false
     state.correction = signature
+    state.isCorrectionPass = true
     return true
   }
 
+  /** Work outside a correction pass releases its deduplication; inside one, the work is that correction's answer. */
   progressed(id) {
     const state = this.stateOf(id)
     assert(this.sessions.has(id), `work progress belongs to unknown session ${id}`)
-    state.correction = undefined
-    assert(state.correction === undefined, `work in ${id} did not release correction deduplication`)
+    if (!state.isCorrectionPass) state.correction = undefined
+    assert(state.isCorrectionPass || state.correction === undefined, `work in ${id} did not release correction deduplication`)
   }
 
   remove(id) {
