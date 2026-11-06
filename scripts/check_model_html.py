@@ -1,7 +1,9 @@
 """Require source-derived equations to appear as native mathematics in the built documentation."""
 from html.parser import HTMLParser
 from pathlib import Path
-from model_math import EQUATIONS, equation_latex
+from model_math import model_formulas
+from spec_sources import spec_sources
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,7 +15,9 @@ class ModelMath(HTMLParser):
         self.formulas = []
         self.annotation = None
         self.math_count = 0
+        self.visible_count = 0
         self.embeds = []
+        self.headings = []
         assert not self.formulas, 'HTML inspection must start without observations'
         assert self.annotation is None, 'HTML inspection cannot start inside an annotation'
 
@@ -21,6 +25,10 @@ class ModelMath(HTMLParser):
         values = dict(attrs)
         assert tag, f'Empty HTML tag with attributes {attrs}'
         assert len(values) == len(attrs), f'Duplicate attributes on {tag}: {attrs}'
+        if tag == 'h2':
+            self.headings.append(values.get('id'))
+        if tag == 'span' and 'katex-html' in values.get('class', '').split():
+            self.visible_count += 1
         if tag == 'math':
             self.math_count += 1
         if tag == 'annotation' and values.get('encoding') == 'application/x-tex':
@@ -49,13 +57,20 @@ def check_model_html() -> None:
     parser = ModelMath()
     html = (ROOT / 'docs/public/model/index.html').read_text()
     parser.feed(html)
-    expected = [equation_latex((ROOT / 'spec' / f'{module}.tla').read_text(), name)
-                for module, name, _ in EQUATIONS]
+    expected = model_formulas(ROOT)
+    modules = [source.stem.lower() for source in spec_sources(ROOT)]
+    assert parser.headings[:len(modules)] == modules, f'Document module order differs from the spec package: {parser.headings} / {modules}'
+    css = ROOT / 'docs/public/vendor/katex.min.css'
+    assert css.is_file(), f'Missing equation stylesheet: {css}'
+    fonts = re.findall(r'url\((fonts/[^)]+)\)', css.read_text())
+    assert fonts, 'Equation stylesheet contains no font references'
+    assert all((css.parent / font).is_file() for font in fonts), f'Missing deployed equation fonts: {fonts}'
     assert parser.formulas == expected, f'Rendered equations differ from the TLA+ source: {len(parser.formulas)} observed, {len(expected)} expected'
     assert parser.math_count == len(expected), f'Expected {len(expected)} native math elements, found {parser.math_count}'
+    assert parser.visible_count == len(expected), f'Expected {len(expected)} visible equation layouts, found {parser.visible_count}'
     assert not parser.embeds, f'Document pages are still embedded: {parser.embeds}'
     assert 'type="math/tex' not in html, 'TeX expressions were left unrendered'
-    print(f'{len(expected)} source-derived equations verified as native MathML')
+    print(f'{len(expected)} source-derived equations, visible layouts, module order, and font assets verified')
 
 
 if __name__ == '__main__':

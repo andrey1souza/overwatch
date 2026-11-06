@@ -941,17 +941,37 @@
 \tlatex
  \@x{\makebox[0pt][r]{\scriptsize 1\hspace{1em}}}\moduleLeftDash\@xx{
  {\MODULE} FailurePolicy}\moduleRightDash\@xx{}%
-\@x{\makebox[0pt][r]{\scriptsize 2\hspace{1em}} {\EXTENDS} FiniteSets}%
+\begin{lcom}{0}%
+\begin{cpar}{0}{T}{F}{7.5}{0}{}%
+Section: Imports
+\end{cpar}%
+\vshade{5.0}%
+\begin{cpar}{1}{F}{F}{0}{0}{}%
+Shared operators used by this module are imported below.
+\end{cpar}%
+\end{lcom}%
+\@x{\makebox[0pt][r]{\scriptsize 6\hspace{1em}} {\EXTENDS} FiniteSets}%
 \@pvspace{8.0pt}%
- \@x{\makebox[0pt][r]{\scriptsize 4\hspace{1em}} NewFailure ( failures ,\,
+\begin{lcom}{0}%
+\begin{cpar}{0}{T}{F}{7.5}{0}{}%
+Section: Failure policy
+\end{cpar}%
+\vshade{5.0}%
+\begin{cpar}{1}{F}{F}{0}{0}{}%
+A timeout or a finding outside the inherited baseline is a new failure.
+ The inherited policy determines whether existing findings also guard an
+ action.
+\end{cpar}%
+\end{lcom}%
+ \@x{\makebox[0pt][r]{\scriptsize 13\hspace{1em}} NewFailure ( failures ,\,
  baseline ) \.{\defeq}}%
- \@x{\makebox[0pt][r]{\scriptsize 5\hspace{1em}}\@s{16.4}\@w{timeout} \.{\in}
+ \@x{\makebox[0pt][r]{\scriptsize 14\hspace{1em}}\@s{16.4}\@w{timeout} \.{\in}
  failures \.{\lor} {\lnot} ( failures \.{\subseteq} baseline )}%
 \@pvspace{8.0pt}%
- \@x{\makebox[0pt][r]{\scriptsize 7\hspace{1em}} FailureGuards ( failures ,\,
+ \@x{\makebox[0pt][r]{\scriptsize 16\hspace{1em}} FailureGuards ( failures ,\,
  baseline ,\, inherited ) \.{\defeq}}%
- \@x{\makebox[0pt][r]{\scriptsize 8\hspace{1em}}\@s{16.4} failures \.{\neq} \{
- \} \.{\land} ( inherited \.{=}\@w{block} \.{\lor} NewFailure ( failures ,\,
- baseline ) )}%
-\@x{\makebox[0pt][r]{\scriptsize 9\hspace{1em}}}\bottombar\@xx{}%
+ \@x{\makebox[0pt][r]{\scriptsize 17\hspace{1em}}\@s{16.4} failures \.{\neq}
+ \{ \} \.{\land} ( inherited \.{=}\@w{block} \.{\lor} NewFailure ( failures
+ ,\, baseline ) )}%
+\@x{\makebox[0pt][r]{\scriptsize 18\hspace{1em}}}\bottombar\@xx{}%
 \end{document}

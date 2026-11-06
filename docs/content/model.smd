@@ -1,287 +1,1133 @@
 ---
-.title = "Formal model",
-.description = "TLA+ contracts, model-derived integration scenarios, and generated LaTeX and PDFs.",
-.date = .date("2026-10-21T00:00:02"),
+.title = "Spec",
+.description = "The complete TLA+ specification, rendered directly from its source.",
+.date = .date("2026-10-21T00:00:04"),
 .layout = "page.shtml",
 ---
 
 
-The specification covers Claude Code, Codex, OpenCode 1, OpenCode 2, Pi, and Neovim. Their different host capabilities are explicit contracts, not exceptions in a shared test adapter.
+Generated from every module in `spec/`. Sections, comments, declarations, and definitions follow the source.
 
-There are two layers:
+# [FailurePolicy]($heading.id('failurepolicy'))
 
-- `Overwatch.tla` models workspace versions, inherited baselines, runs, buffered results, and notification ordering. A read consumes the newest completed result, preserves unfinished output, and never makes the agent's edits inherited debt.
-- `IntegrationContract.tla` models requests and responses, check contention, selected checks, inherited-finding policy, report delivery, completion feedback, shutdown, and restart. `IntegrationLifecycle.cfg` checks another bounded instance of this same contract with a restart. Both layers use `FailurePolicy.tla`; they do not maintain independent definitions of a regression.
+[Source](https://github.com/benomahony/overwatch/blob/main/spec/FailurePolicy.tla)
 
-Failure atoms represent what a runner exposes: named identities or count slots for summary-only checkers. The model cannot recover identities that the runner does not emit.
+## [FailurePolicy - Imports]($heading.id('failurepolicy---imports'))
 
-The interface model receives completed snapshots from the result layer. This is a composition boundary: it abstracts process bytes and workspace discovery, while the result model abstracts host callbacks. Runtime replays test both sides of that boundary. It is not an automatic refinement proof of the implementation.
 
-# [Model equations]($heading.id('model-equations'))
+Shared operators used by this module are imported below.
 
-These equations are generated from the named TLA+ definitions. The notation is rendered as mathematics in this page; the complete modules remain available below.
-
-## [NewFailure]($heading.id('newfailure'))
-
-A timeout or a finding outside the baseline counts as a new failure.
+### [FailurePolicy - EXTENDS]($heading.id('failurepolicy---extends'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{NewFailure} ( \mathit{failures} , \mathit{baseline} ) &\triangleq \\
-&\quad \texttt{"timeout"} \in \mathit{failures} \lor \neg ( \mathit{failures} \subseteq \mathit{baseline} )
+&\mathit{EXTENDS} \mathit{FiniteSets}
 \end{aligned}
 ```
 
-[Definition in FailurePolicy.tla](https://github.com/benomahony/overwatch/blob/main/spec/FailurePolicy.tla)
+## [FailurePolicy - Failure policy]($heading.id('failurepolicy---failure-policy'))
 
-## [FailureGuards]($heading.id('failureguards'))
 
-A nonempty finding set guards an action when inherited findings are blocked or the findings include a new failure.
+A timeout or a finding outside the inherited baseline is a new failure.
+The inherited policy determines whether existing findings also guard an action.
+
+### [FailurePolicy - NewFailure]($heading.id('failurepolicy---newfailure'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{FailureGuards} ( \mathit{failures} , \mathit{baseline} , \mathit{inherited} ) &\triangleq \\
-&\quad \mathit{failures} \neq \{ \} \land ( \mathit{inherited} = \texttt{"block"} \lor \mathit{NewFailure} ( \mathit{failures} , \mathit{baseline} ) )
+&\mathit{NewFailure} ( \mathit{failures} , \mathit{baseline} ) \triangleq \texttt{"timeout"} \in \mathit{failures} \lor \neg ( \mathit{failures} \subseteq \mathit{baseline} )
 \end{aligned}
 ```
 
-[Definition in FailurePolicy.tla](https://github.com/benomahony/overwatch/blob/main/spec/FailurePolicy.tla)
-
-## [ReadsSelectLatestComplete]($heading.id('readsselectlatestcomplete'))
-
-Reading buffered results selects the newest completed result.
+### [FailurePolicy - FailureGuards]($heading.id('failurepolicy---failureguards'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{ReadsSelectLatestComplete} &\triangleq \\
-&\quad \mathit{report} . \mathit{known} \Rightarrow \mathit{report} . \mathit{id} = \mathit{consumed}
+&\mathit{FailureGuards} ( \mathit{failures} , \mathit{baseline} , \mathit{inherited} ) \triangleq \mathit{failures} \neq \{ \} \land ( \mathit{inherited} = \texttt{"block"} \lor \mathit{NewFailure} ( \mathit{failures} , \mathit{baseline} ) )
 \end{aligned}
 ```
 
-[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
+# [Overwatch]($heading.id('overwatch'))
 
-## [BaselineNeverAbsorbsEdits]($heading.id('baselineneverabsorbsedits'))
+[Source](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
 
-The inherited baseline cannot absorb findings introduced by later edits.
+## [Overwatch - Imports]($heading.id('overwatch---imports'))
+
+
+Shared operators used by this module are imported below.
+
+### [Overwatch - EXTENDS]($heading.id('overwatch---extends'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{BaselineNeverAbsorbsEdits} &\triangleq \\
-&\quad \mathit{baseline} . \mathit{known} \Rightarrow \mathit{baseline} . \mathit{failures} \subseteq \mathit{truth} [ \mathit{based} ]
+&\mathit{EXTENDS} \mathit{Naturals} , \mathit{FiniteSets} , \mathit{Sequences} , \mathit{FailurePolicy}
 \end{aligned}
 ```
 
-[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
+## [Overwatch - State and result domains]($heading.id('overwatch---state-and-result-domains'))
 
-## [RunsEnd]($heading.id('runsend'))
 
-A running check eventually ends. This is the progress assumption used by the host layer.
+Workspace versions, completed outcomes, and message records form the result layer.
+Finite bounds are supplied by the TLC configuration, not by the runtime.
+
+### [Overwatch - CONSTANTS]($heading.id('overwatch---constants'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{RunsEnd} &\triangleq \\
-&\quad \mathit{busy} \leadsto \neg \mathit{busy}
+&\mathit{CONSTANTS} \mathit{Names} , \mathit{MaxEdits} , \mathit{Timeout}
 \end{aligned}
 ```
 
-[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
-
-## [RegressionsReachAgent]($heading.id('regressionsreachagent'))
-
-A regression eventually reaches the agent, or the check times out.
+### [Overwatch - ASSUME]($heading.id('overwatch---assume'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{RegressionsReachAgent} &\triangleq \\
-&\quad \Diamond \Box ( ( \mathit{truth} [ \mathit{head} ] \setminus \mathit{truth} [ \mathit{based} ] ) \subseteq \mathit{knows} \lor \mathit{TimedOut} \in \mathit{knows} )
+&\mathit{ASSUME} \texttt{"timeout"} \notin \mathit{Names}
 \end{aligned}
 ```
 
-[Definition in Overwatch.tla](https://github.com/benomahony/overwatch/blob/main/spec/Overwatch.tla)
-
-## [SelectedChecks]($heading.id('selectedchecks'))
-
-An empty check selection means all checks; otherwise the configured selection applies.
+### [Overwatch - Versions]($heading.id('overwatch---versions'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{SelectedChecks} &\triangleq \\
-&\quad \mathit{IF} \mathit{selected} = \{ \} \mathit{THEN} \mathit{Checks} \mathit{ELSE} \mathit{selected}
+&\mathit{Versions} \triangleq 0 \mathbin{\text{..}} \mathit{MaxEdits}
 \end{aligned}
 ```
 
-[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
-
-## [Guarded]($heading.id('guarded'))
-
-Only selected checks whose findings satisfy the shared failure policy guard an action.
+### [Overwatch - Results]($heading.id('overwatch---results'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{Guarded} ( \mathit{scope} ) &\triangleq \\
-&\quad \{ \mathit{c} \in \mathit{scope} : \mathit{FailureGuards} ( \mathit{reports} [ \mathit{c} ] , \mathit{baseline} [ \mathit{c} ] , \mathit{inherited} ) \}
+&\mathit{Results} \triangleq \mathit{SUBSET} \mathit{Names}
 \end{aligned}
 ```
 
-[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
-
-## [CanRespond]($heading.id('canrespond'))
-
-Inspection and repair can receive a response during a check. Protected requests follow the host capability.
+### [Overwatch - TimedOut]($heading.id('overwatch---timedout'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{CanRespond} &\triangleq \\
-&\quad \mathit{active} \land \mathit{request} \neq \texttt{"none"} \land \neg \mathit{reply} . \mathit{ready} \land \\
-&\quad ( \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \lor \neg \mathit{Capabilities} ( \mathit{host} ) . \mathit{agent} \lor \\
-&\quad \neg \mathit{Capabilities} ( \mathit{host} ) . \mathit{waitsForCheck} \lor \neg \mathit{busy} )
+&\mathit{TimedOut} \triangleq \texttt{"timeout"}
 \end{aligned}
 ```
 
-[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
-
-## [InspectionAlwaysAllowed]($heading.id('inspectionalwaysallowed'))
-
-An answered inspection or repair request is always allowed.
+### [Overwatch - Outcomes]($heading.id('overwatch---outcomes'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{InspectionAlwaysAllowed} &\triangleq \\
-&\quad \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \land \mathit{reply} . \mathit{ready} \Rightarrow \mathit{reply} . \mathit{decision} = \texttt{"allow"}
+&\mathit{Outcomes} \triangleq \mathit{SUBSET} ( \mathit{Names} \cup \{ \mathit{TimedOut} \} )
 \end{aligned}
 ```
 
-[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
-
-## [PendingContextIsCurrent]($heading.id('pendingcontextiscurrent'))
-
-Pending failure context must still describe a report that warrants notification.
+### [Overwatch - NoMessage]($heading.id('overwatch---nomessage'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{PendingContextIsCurrent} &\triangleq \\
-&\quad \mathit{contextPending} \Rightarrow \mathit{Notify}
+&\mathit{NoMessage} \triangleq [ \mathit{held} \mapsto \mathit{FALSE} , \mathit{waking} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \{ \} ]
 \end{aligned}
 ```
 
-[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
-
-## [CorrectionRequestsAreDeduplicated]($heading.id('correctionrequestsarededuplicated'))
-
-Report changes, new sessions, and completed work bound the number of fresh correction requests.
+### [Overwatch - NotTold]($heading.id('overwatch---nottold'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{CorrectionRequestsAreDeduplicated} &\triangleq \\
-&\quad \mathit{corrections} \leq \mathit{changes} + \mathit{session} + \mathit{work} + 1
+&\mathit{NotTold} \triangleq [ \mathit{kind} \mapsto \texttt{"none"} , \mathit{fresh} \mapsto \{ \} ]
 \end{aligned}
 ```
 
-[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+## [Overwatch - State shape]($heading.id('overwatch---state-shape'))
 
-## [FinishedReportsBecomeVisible]($heading.id('finishedreportsbecomevisible'))
 
-Once a check has finished, its report eventually becomes visible unless the session closes.
+The checked version, unread results, inherited baseline, and delivery state are
+separate. TypeOK constrains their domains without advancing an execution.
+
+### [Overwatch - VARIABLES]($heading.id('overwatch---variables'))
 
 ```=mathtex
 \begin{aligned}
-\mathit{FinishedReportsBecomeVisible} &\triangleq \\
-&\quad ( \mathit{active} \land \neg \mathit{busy} ) \leadsto ( \mathit{visible} . \mathit{known} \lor \neg \mathit{active} )
+&\mathit{VARIABLES} \\
+&\quad \hspace{1.33em}\mathit{truth} , \mathit{head} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{quiet} , \mathit{installed} , \\
+&\quad \hspace{1.33em}\mathit{produced} , \mathit{consumed} , \mathit{pending} , \mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \\
+&\quad \hspace{1.33em}\mathit{outbox} , \mathit{told} , \mathit{flush} , \mathit{turn} , \mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} , \mathit{elapsed}
 \end{aligned}
 ```
 
-[Definition in IntegrationContract.tla](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+### [Overwatch - vars]($heading.id('overwatch---vars'))
 
-# [Host contracts]($heading.id('host-contracts'))
-
-`Capabilities` in `IntegrationContract.tla` defines each host's permission, completion, delivery, status, and wakeup behavior. The documentation table is generated from TLC's exported capability values alongside the event traces.
-
-| Host | Agent gates | Waits for check on protected calls | Completion feedback | Delivery | Persistent status | Idle wake |
-| --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | Yes | No | `block` | `turn` | Yes | Yes |
-| Codex | Yes | Yes | `block` | `event` | No | No |
-| OpenCode 1 | Yes | Yes | `warn` | `event` | No | No |
-| OpenCode 2 | Yes | Yes | `queue` | `context` | No | Yes |
-| Pi | Yes | Yes | `continue` | `event` | Yes | No |
-| Neovim | No | No | `none` | `quickfix` | Yes | No |
-
-Every host must permit unprotected inspection and repair independently of check progress. Protected calls consult only their selected checks; an empty selection means all checks. Inherited findings guard only under the configured `block` policy. Deduplicating a message or correction never releases a failure gate. Completed tool work can permit one fresh correction request for unchanged findings.
-
-The interface model represents notification counters as failure deliveries, not every log line, inherited-backlog notice, or recovery message. Completion decisions, queued corrections, warnings, and idle wakeups are distinct observations. In particular, an OpenCode 1 warning is never recorded as a blocked completion.
-
-Shutdown clears pending delivery and visible status. Old callbacks cannot affect a later session or overwrite a user's quickfix list. Restart creates a fresh baseline and delivery state while retaining project policy. The snapshots and counters in a replay are observed through the host's actual callback or output channel.
-
-# [Checked properties and assumptions]($heading.id('checked-properties-and-assumptions'))
-
-The result layer checks result ordering, correspondence to a checked version, baseline isolation, eventual check completion, and eventual reporting of regressions.
-
-The interface layer checks that inspection and repair responses are enabled while a check is held, that those responses are allowed, that host capabilities determine completion feedback, that editor paths never invent agent gates, that pending context is current, that queued corrections are deduplicated, and that closed sessions stay silent. It also checks response and delivery liveness.
-
-Delivery liveness assumes check completion fairness, corresponding to the result layer's `RunsEnd` guarantee, and fair host servicing of report/context callbacks. Inspection does not require that assumption: the responder remains enabled even if a check is still held. The runtime contention tests hold a real command-hook session lock until after inspection returns. The model does not specify a universal wall-clock response deadline.
-
-The committed model-checking configurations use finite bounds: two checks, a small failure alphabet, up to two requests, and up to one report change or session restart. These bounds exercise concurrency and policy combinations; passing them is not proof for every unbounded program execution or every external host version.
-
-# [Model-derived conformance tests]($heading.id('model-derived-conformance-tests'))
-
-`python3 scripts/model_traces.py --jar /path/to/tla2tools.jar` generates the result-layer traces. `python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar` generates the host contracts. Both scripts contain input programs; TLC computes the expected observations. `--check` rejects stale TypeScript or JSON fixtures.
-
-- Claude runs the production `register` hook chain with a controlled host protocol.
-- Codex uses real hook processes, commands, and file-backed state, including lock contention.
-- OpenCode and Pi run native callbacks through the real shared checker. Held-check requests, deferred context, persistent status, and correction counts are observed at their public callbacks.
-- Neovim runs the real watcher callbacks with controlled process I/O, checking status, editor actions, and late callbacks after shutdown.
-
-CI model-checks both layers and the lifecycle instance, verifies generated expectations, and runs all six adapters. Changes should fix code against the contracts. A spec change requires an intentional behavior or capability change, not a workaround for a failing implementation.
-
-# [Reading the models]($heading.id('reading-the-models'))
-
-TLA+ describes states and the actions allowed to change them. TLC explores all reachable states within a configuration's finite bounds, including different orders of concurrent events. A failing invariant or temporal property produces a counterexample sequence to investigate before changing the implementation.
-
-In `Overwatch.tla`, `truth` maps workspace versions to findings, `head` is the current version, and `based` identifies the inherited baseline. `pending` holds completed, unread results. `ReadResults` consumes the latest complete result; unfinished process output is outside that action. `outbox` and the turn state constrain when a report becomes visible and whether it can wake an idle agent.
-
-In `IntegrationContract.tla`, `reports` and `baseline` contain per-check finding sets. `busy` represents an unfinished check. `request` and `reply` separate asking for an action from receiving its decision, so TLC can explore a request arriving during a check. `visible`, `contextPending`, and the delivery counters represent the host's observable channels. `active` and `session` distinguish shutdown from restart. `Capabilities` declares the host differences; it does not offer user-selectable enforcement modes.
-
-An action such as `Respond` describes one transition. A primed variable such as `reply'` is its value after the transition; `UNCHANGED` lists values that the action preserves. `Init` defines possible starting states, and `Next` chooses a permitted action. Invariants hold in every reachable state. Temporal properties describe progress across a sequence of states. Weak fairness (`WF_vars`) rules out indefinitely ignoring an action that remains enabled; it does not impose a response time limit.
-
-The fixture event names correspond to model actions: `RequestInspect`, `RequestRepair`, `RequestPublish`, and `RequestComplete` call `Request` with the corresponding kind; `Respond` answers an enabled request; `Poll` answers only if enabled. `Ack` consumes the reply. `Begin` and `Finish` start and finish a check; the fixture supplies the next snapshot. `Report` updates the visible report and `Deliver` consumes deferred context when pending. `Stop` closes the session and `Restart` starts a fresh one. `Turn` starts a turn only when idle, `StartTurn` requires an idle turn, and `Work` records completed tool work. `LateFinish` represents a late check callback and has no effect on a closed session. Conditional no-ops are trace-wrapper behavior, not additional model transitions.
-
-The [Behavior page](https://benomahony.github.io/overwatch/behavior/#model-derived-integration-contracts) renders every fixture's input state, events, and TLC observations. These are the same expected observations used by the integration tests, including pending replies and channel-specific counters. The page is generated from the fixture rather than a separately maintained list of expected behaviors.
-
-# [Reproducing verification and typesetting]($heading.id('reproducing-verification-and-typesetting'))
-
-Install Java and obtain `tla2tools.jar` from the TLA+ project. The CI workflow pins the jar version and checksum. Run each configuration separately so that its state directory is isolated:
-
-```sh
-java -cp /path/to/tla2tools.jar tlc2.TLC -metadir /tmp/overwatch-results -config spec/Overwatch.cfg spec/Overwatch.tla
-java -cp /path/to/tla2tools.jar tlc2.TLC -metadir /tmp/overwatch-hosts -config spec/IntegrationContract.cfg spec/IntegrationContract.tla
-java -cp /path/to/tla2tools.jar tlc2.TLC -metadir /tmp/overwatch-lifecycle -config spec/IntegrationLifecycle.cfg spec/IntegrationLifecycle.tla
-python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check
-python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
+```=mathtex
+\begin{aligned}
+&\mathit{vars} \triangleq \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{quiet} , \mathit{installed} , \\
+&\quad \hspace{3.33em}\mathit{produced} , \mathit{consumed} , \mathit{pending} , \mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \\
+&\quad \hspace{3.33em}\mathit{outbox} , \mathit{told} , \mathit{flush} , \mathit{turn} , \mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} , \mathit{elapsed} \rangle
+\end{aligned}
 ```
 
-The Formal model page presents selected definitions as mathematical equations alongside their explanations. `scripts/model_math.py` extracts the definitions from the TLA+ source and translates their notation into LaTeX; it does not maintain separate copies of the formula bodies. Unsupported notation fails generation. Zine emits the TeX expressions, and the pinned KaTeX build step renders them as native MathML with the original TeX attached as an annotation. Release pages need no JavaScript, image viewer, or PDF plugin. Zine's local development server renders the same expressions in the browser using a bundled copy of the pinned KaTeX version; plain `cd docs && zine` works without a separate rendering step or network access. CI compares those annotations against the current source definitions.
+### [Overwatch - TypeOK]($heading.id('overwatch---typeok'))
 
-For the complete typeset-module downloads, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX generates the standalone `.tex` files from the same TLA+ modules. The generator checks alignment and rejects overflowing lines while leaving the committed PDFs unchanged:
-
-```sh
-python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar
-python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar --check
-mkdir -p /tmp/overwatch-typeset
-pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/Overwatch.tex
-pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/IntegrationContract.tex
-python3 docs/sync.py --write
-python3 docs/sync.py
+```=mathtex
+\begin{aligned}
+&\mathit{TypeOK} \triangleq \land \mathit{truth} \in [ \mathit{Versions} \to \mathit{Results} ] \\
+&\quad \hspace{1.33em}\land \mathit{head} \in \mathit{Versions} \land \mathit{based} \in 0 \mathbin{\text{..}} \mathit{head} \\
+&\quad \hspace{1.33em}\land \mathit{busy} \in \mathit{BOOLEAN} \land \mathit{from} \in \mathit{Versions} \land \mathit{quiet} \in \mathit{BOOLEAN} \land \mathit{installed} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{produced} \in 0 \mathbin{\text{..}} ( \mathit{MaxEdits} + 1 ) \land \mathit{consumed} \in 0 \mathbin{\text{..}} \mathit{produced} \\
+&\quad \hspace{1.33em}\land \mathit{pending} \in \mathit{Seq} ( [ \mathit{id} : 1 \mathbin{\text{..}} ( \mathit{MaxEdits} + 1 ) , \mathit{at} : \mathit{Versions} , \mathit{failures} : \mathit{Outcomes} ] ) \\
+&\quad \hspace{1.33em}\land \mathit{Len} ( \mathit{pending} ) \leq \mathit{MaxEdits} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{report} \in [ \mathit{known} : \mathit{BOOLEAN} , \mathit{id} : 0 \mathbin{\text{..}} \mathit{produced} , \mathit{at} : \mathit{Versions} , \mathit{failures} : \mathit{Outcomes} ] \\
+&\quad \hspace{1.33em}\land \mathit{baseline} \in [ \mathit{known} : \mathit{BOOLEAN} , \mathit{failures} : \mathit{Outcomes} ] \\
+&\quad \hspace{1.33em}\land \mathit{wasFailing} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{outbox} \in [ \mathit{held} : \mathit{BOOLEAN} , \mathit{waking} : \mathit{BOOLEAN} , \mathit{failures} : \mathit{Outcomes} ] \\
+&\quad \hspace{1.33em}\land \mathit{told} \in [ \mathit{kind} : \{ \texttt{"none"} , \texttt{"failed"} , \texttt{"recovered"} \} , \mathit{fresh} : \mathit{Outcomes} ] \\
+&\quad \hspace{1.33em}\land \mathit{flush} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{turn} \in \{ \texttt{"idle"} , \texttt{"running"} \} \\
+&\quad \hspace{1.33em}\land \mathit{toldThisTurn} \in \mathit{BOOLEAN} \land \mathit{promptQueued} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{knows} \in \mathit{Outcomes} \land \mathit{elapsed} \in 0 \mathbin{\text{..}} \mathit{Timeout}
+\end{aligned}
 ```
 
-To build the equations into the site, install the pinned renderer in a temporary directory and run the HTML rendering and verification steps after Zine:
+## [Overwatch - Failure gating]($heading.id('overwatch---failure-gating'))
 
-```sh
-npm install --no-save --prefix /tmp/overwatch-doc-math katex@0.16.22
-(cd docs && zine release --force)
-KATEX_MODULE=/tmp/overwatch-doc-math/node_modules/katex node scripts/render_model_math.mjs
-python3 scripts/check_model_html.py
+
+A failure report becomes a gate only when it is a regression against the
+session baseline, or when the check times out.
+
+### [Overwatch - Failing]($heading.id('overwatch---failing'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Failing} \triangleq \mathit{report} . \mathit{known} \land \mathit{report} . \mathit{failures} \neq \{ \}
+\end{aligned}
 ```
 
-The site generator reads this guide and discovers the source, configuration, LaTeX, and PDF downloads from `spec/`. CI verifies the generated LaTeX and fixture expectations, runs the contract replays, and rejects stale site pages. After an intentional model change, regenerate the fixtures and LaTeX, review the resulting PDFs, and run the implementation replays before publishing the docs.
+### [Overwatch - Regressed]($heading.id('overwatch---regressed'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Regressed} ( \mathit{f} ) \triangleq \mathit{TimedOut} \in \mathit{f} \lor ( \mathit{baseline} . \mathit{known} \land \mathit{NewFailure} ( \mathit{f} , \mathit{baseline} . \mathit{failures} ) )
+\end{aligned}
+```
+
+### [Overwatch - Guard]($heading.id('overwatch---guard'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Guard} \triangleq \mathit{Failing} \land \mathit{Regressed} ( \mathit{report} . \mathit{failures} )
+\end{aligned}
+```
+
+## [Overwatch - Initial state]($heading.id('overwatch---initial-state'))
+
+
+The first check starts at the inherited workspace version. No result or
+baseline is known and no notification has been sent.
+
+### [Overwatch - Init]($heading.id('overwatch---init'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Init} \triangleq \land \mathit{truth} \in [ \mathit{Versions} \to \mathit{Results} ] \\
+&\quad \hspace{1.33em}\land \mathit{head} = 0 \land \mathit{based} = 0 \\
+&\quad \hspace{1.33em}\land \mathit{busy} = \mathit{TRUE} \land \mathit{from} = 0 \land \mathit{quiet} = \mathit{FALSE} \land \mathit{installed} = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{produced} = 0 \land \mathit{consumed} = 0 \land \mathit{pending} = \langle \rangle \\
+&\quad \hspace{1.33em}\land \mathit{report} = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{id} \mapsto 0 , \mathit{at} \mapsto 0 , \mathit{failures} \mapsto \{ \} ] \\
+&\quad \hspace{1.33em}\land \mathit{baseline} = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \{ \} ] \\
+&\quad \hspace{1.33em}\land \mathit{wasFailing} = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{outbox} = \mathit{NoMessage} \land \mathit{told} = \mathit{NotTold} \land \mathit{flush} = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{turn} = \texttt{"idle"} \land \mathit{toldThisTurn} = \mathit{FALSE} \land \mathit{promptQueued} = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{knows} = \{ \} \land \mathit{elapsed} = 0
+\end{aligned}
+```
+
+## [Overwatch - Result delivery and baseline isolation]($heading.id('overwatch---result-delivery-and-baseline-isolation'))
+
+
+Queue deduplicates notification signatures. Deliver consumes a completed
+snapshot, establishes the inherited baseline, and queues a regression or recovery.
+A recovery can cancel a failure message that has not yet been delivered.
+
+### [Overwatch - Queue]($heading.id('overwatch---queue'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Queue} ( \mathit{signature} , \mathit{message} ) \triangleq \mathit{IF} \mathit{told} = \mathit{signature} \land \neg \mathit{outbox} . \mathit{held} \\
+&\quad \hspace{1.33em}\mathit{THEN} \mathit{UNCHANGED} \langle \mathit{outbox} , \mathit{told} , \mathit{flush} \rangle \\
+&\quad \hspace{1.33em}\mathit{ELSE} \land \mathit{told} ' = \mathit{signature} \land \mathit{outbox} ' = \mathit{message} \land \mathit{flush} ' = \mathit{TRUE}
+\end{aligned}
+```
+
+### [Overwatch - Deliver]($heading.id('overwatch---deliver'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Deliver} ( \mathit{v} , \mathit{id} , \mathit{f} ) \triangleq \mathit{LET} \mathit{b} \triangleq \mathit{IF} \mathit{baseline} . \mathit{known} \mathit{THEN} \mathit{baseline} . \mathit{failures} \mathit{ELSE} \mathit{IF} \mathit{head} = \mathit{based} \mathit{THEN} \mathit{f} \mathit{ELSE} \{ \} \\
+&\quad \hspace{2.67em}\mathit{isRegression} \triangleq \mathit{TimedOut} \in \mathit{f} \lor \neg ( \mathit{f} \subseteq \mathit{b} ) \\
+&\quad \hspace{1.33em}\mathit{IN} \land \mathit{report} ' = [ \mathit{known} \mapsto \mathit{TRUE} , \mathit{id} \mapsto \mathit{id} , \mathit{at} \mapsto \mathit{v} , \mathit{failures} \mapsto \mathit{f} ] \\
+&\quad \hspace{2.33em}\land \mathit{baseline} ' = \mathit{IF} \mathit{TimedOut} \in \mathit{f} \mathit{THEN} \mathit{baseline} \mathit{ELSE} [ \mathit{known} \mapsto \mathit{TRUE} , \mathit{failures} \mapsto \mathit{b} ] \\
+&\quad \hspace{2.33em}\land \mathit{wasFailing} ' = \mathit{isRegression} \\
+&\quad \hspace{2.33em}\land \mathit{IF} \mathit{isRegression} \\
+&\quad \hspace{4.0em}\mathit{THEN} \mathit{Queue} ( [ \mathit{kind} \mapsto \texttt{"failed"} , \mathit{fresh} \mapsto \mathit{f} \setminus \mathit{b} ] , [ \mathit{held} \mapsto \mathit{TRUE} , \mathit{waking} \mapsto \mathit{TRUE} , \mathit{failures} \mapsto \mathit{f} ] ) \\
+&\quad \hspace{3.33em}\mathit{ELSE} \mathit{IF} \neg \mathit{wasFailing} \\
+&\quad \hspace{4.0em}\mathit{THEN} \mathit{UNCHANGED} \langle \mathit{outbox} , \mathit{told} , \mathit{flush} \rangle \\
+&\quad \hspace{3.33em}\mathit{ELSE} \mathit{IF} \mathit{outbox} . \mathit{held} \\
+&\quad \hspace{4.0em}\mathit{THEN} \land \mathit{outbox} ' = \mathit{NoMessage} \land \mathit{told} ' = \mathit{NotTold} \land \mathit{UNCHANGED} \mathit{flush} \\
+&\quad \hspace{3.33em}\mathit{ELSE} \mathit{Queue} ( [ \mathit{kind} \mapsto \texttt{"recovered"} , \mathit{fresh} \mapsto \{ \} ] , [ \mathit{held} \mapsto \mathit{TRUE} , \mathit{waking} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{f} ] )
+\end{aligned}
+```
+
+## [Overwatch - Workspace changes and scheduling]($heading.id('overwatch---workspace-changes-and-scheduling'))
+
+
+An agent edit advances head without moving based. An external head change
+moves both and invalidates the baseline and unread results. QuietElapses
+starts the next check; Tick advances its timeout clock.
+
+### [Overwatch - Edit]($heading.id('overwatch---edit'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Edit} \triangleq \land \mathit{turn} = \texttt{"running"} \land \mathit{head} < \mathit{MaxEdits} \\
+&\quad \hspace{1.33em}\land \mathit{head} ' = \mathit{head} + 1 \land \mathit{quiet} ' = \mathit{TRUE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{installed} , \mathit{produced} , \mathit{consumed} , \mathit{pending} , \\
+&\quad \hspace{6.33em}\mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \mathit{outbox} , \mathit{told} , \mathit{flush} , \mathit{turn} , \\
+&\quad \hspace{6.33em}\mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} , \mathit{elapsed} \rangle
+\end{aligned}
+```
+
+### [Overwatch - HeadMoves]($heading.id('overwatch---headmoves'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{HeadMoves} \triangleq \land \mathit{head} < \mathit{MaxEdits} \\
+&\quad \hspace{1.33em}\land \mathit{head} ' = \mathit{head} + 1 \land \mathit{based} ' = \mathit{head} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{baseline} ' = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \{ \} ] \\
+&\quad \hspace{1.33em}\land \mathit{quiet} ' = \mathit{TRUE} \land \mathit{pending} ' = \langle \rangle \\
+&\quad \hspace{1.33em}\land \mathit{from} ' = \mathit{IF} \mathit{busy} \mathit{THEN} \mathit{head} + 1 \mathit{ELSE} \mathit{from} \\
+&\quad \hspace{1.33em}\land \mathit{elapsed} ' = \mathit{IF} \mathit{busy} \mathit{THEN} 0 \mathit{ELSE} \mathit{elapsed} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{busy} , \mathit{installed} , \mathit{produced} , \mathit{consumed} , \mathit{report} , \mathit{wasFailing} , \mathit{outbox} , \\
+&\quad \hspace{6.33em}\mathit{told} , \mathit{flush} , \mathit{turn} , \mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} \rangle
+\end{aligned}
+```
+
+### [Overwatch - QuietElapses]($heading.id('overwatch---quietelapses'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{QuietElapses} \triangleq \land \mathit{quiet} \land \mathit{installed} \\
+&\quad \hspace{1.33em}\land \mathit{quiet} ' = \mathit{FALSE} \land \mathit{busy} ' = \mathit{TRUE} \land \mathit{from} ' = \mathit{head} \land \mathit{elapsed} ' = 0 \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{installed} , \mathit{produced} , \mathit{consumed} , \mathit{pending} , \\
+&\quad \hspace{6.33em}\mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \mathit{outbox} , \mathit{told} , \mathit{flush} , \mathit{turn} , \\
+&\quad \hspace{6.33em}\mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} \rangle
+\end{aligned}
+```
+
+### [Overwatch - Tick]($heading.id('overwatch---tick'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Tick} \triangleq \land \mathit{busy} \land \mathit{elapsed} < \mathit{Timeout} \land \mathit{elapsed} ' = \mathit{elapsed} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{quiet} , \mathit{installed} , \mathit{produced} , \\
+&\quad \hspace{6.33em}\mathit{consumed} , \mathit{pending} , \mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \mathit{outbox} , \\
+&\quad \hspace{6.33em}\mathit{told} , \mathit{flush} , \mathit{turn} , \mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} \rangle
+\end{aligned}
+```
+
+Completion appends a result; it does not deliver it. Partial output is a    stuttering step at this abstraction: only a complete build enters pending.
+
+## [Overwatch - Buffered completion and consumption]($heading.id('overwatch---buffered-completion-and-consumption'))
+
+
+Run completion appends a snapshot to pending without publishing it.
+ReadResults consumes the newest completed snapshot and clears the buffer.
+A later incomplete build does not replace an earlier complete result.
+
+### [Overwatch - Buffer]($heading.id('overwatch---buffer'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Buffer} ( \mathit{v} , \mathit{f} ) \triangleq \land \mathit{produced} ' = \mathit{produced} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{pending} ' = \mathit{Append} ( \mathit{pending} , [ \mathit{id} \mapsto \mathit{produced} + 1 , \mathit{at} \mapsto \mathit{v} , \mathit{failures} \mapsto \mathit{f} ] ) \\
+&\quad \hspace{1.33em}\land \mathit{busy} ' = \mathit{FALSE} \land \mathit{installed} ' = \mathit{TRUE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{from} , \mathit{quiet} , \mathit{consumed} , \mathit{report} , \mathit{baseline} , \\
+&\quad \hspace{6.33em}\mathit{wasFailing} , \mathit{outbox} , \mathit{told} , \mathit{flush} , \mathit{turn} , \mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} , \mathit{elapsed} \rangle
+\end{aligned}
+```
+
+### [Overwatch - RunEnds]($heading.id('overwatch---runends'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{RunEnds} \triangleq \mathit{busy} \land \exists \mathit{v} \in \mathit{from} \mathbin{\text{..}} \mathit{head} : \mathit{Buffer} ( \mathit{v} , \mathit{truth} [ \mathit{v} ] )
+\end{aligned}
+```
+
+### [Overwatch - TimesOut]($heading.id('overwatch---timesout'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{TimesOut} \triangleq \mathit{busy} \land \mathit{elapsed} = \mathit{Timeout} \land \mathit{Buffer} ( \mathit{from} , \{ \mathit{TimedOut} \} )
+\end{aligned}
+```
+
+### [Overwatch - ReadResults]($heading.id('overwatch---readresults'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{ReadResults} \triangleq \land \mathit{pending} \neq \langle \rangle \\
+&\quad \hspace{1.33em}\land \mathit{LET} \mathit{latest} \triangleq \mathit{pending} [ \mathit{Len} ( \mathit{pending} ) ] \\
+&\quad \hspace{2.33em}\mathit{IN} \mathit{Deliver} ( \mathit{latest} . \mathit{at} , \mathit{latest} . \mathit{id} , \mathit{latest} . \mathit{failures} ) \\
+&\quad \hspace{1.33em}\land \mathit{consumed} ' = \mathit{produced} \land \mathit{pending} ' = \langle \rangle \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{quiet} , \mathit{installed} , \mathit{produced} , \\
+&\quad \hspace{6.33em}\mathit{turn} , \mathit{toldThisTurn} , \mathit{promptQueued} , \mathit{knows} , \mathit{elapsed} \rangle
+\end{aligned}
+```
+
+## [Overwatch - Notification delivery and turn completion]($heading.id('overwatch---notification-delivery-and-turn-completion'))
+
+
+A running turn receives at most one notification before another turn starts.
+An idle agent can receive one queued wakeup. Flush publishes eligible messages;
+TurnCompletes keeps a guarded turn running and permits a clean turn to settle.
+
+### [Overwatch - Held]($heading.id('overwatch---held'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Held} \triangleq \mathit{IF} \mathit{turn} = \texttt{"running"} \mathit{THEN} \mathit{toldThisTurn} \mathit{ELSE} \mathit{promptQueued} \lor \neg \mathit{outbox} . \mathit{waking}
+\end{aligned}
+```
+
+### [Overwatch - Flush]($heading.id('overwatch---flush'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Flush} \triangleq \land \mathit{flush} \land \mathit{flush} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{IF} \mathit{outbox} . \mathit{held} \land \neg \mathit{Held} \\
+&\quad \hspace{3.0em}\mathit{THEN} \land \mathit{outbox} ' = \mathit{NoMessage} \land \mathit{knows} ' = \mathit{outbox} . \mathit{failures} \\
+&\quad \hspace{4.67em}\land \mathit{IF} \mathit{turn} = \texttt{"running"} \\
+&\quad \hspace{6.33em}\mathit{THEN} \mathit{toldThisTurn} ' = \mathit{TRUE} \land \mathit{UNCHANGED} \mathit{promptQueued} \\
+&\quad \hspace{6.33em}\mathit{ELSE} \mathit{promptQueued} ' = \mathit{TRUE} \land \mathit{UNCHANGED} \mathit{toldThisTurn} \\
+&\quad \hspace{3.0em}\mathit{ELSE} \mathit{UNCHANGED} \langle \mathit{outbox} , \mathit{knows} , \mathit{toldThisTurn} , \mathit{promptQueued} \rangle \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{quiet} , \mathit{installed} , \mathit{produced} , \mathit{consumed} , \\
+&\quad \hspace{6.33em}\mathit{pending} , \mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \mathit{told} , \mathit{turn} , \mathit{elapsed} \rangle
+\end{aligned}
+```
+
+### [Overwatch - TurnStarts]($heading.id('overwatch---turnstarts'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{TurnStarts} \triangleq \land \mathit{turn} = \texttt{"idle"} \land \mathit{turn} ' = \texttt{"running"} \\
+&\quad \hspace{1.33em}\land \mathit{toldThisTurn} ' = \mathit{promptQueued} \land \mathit{promptQueued} ' = \mathit{FALSE} \land \mathit{flush} ' = \mathit{TRUE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{quiet} , \mathit{installed} , \mathit{produced} , \mathit{consumed} , \\
+&\quad \hspace{6.33em}\mathit{pending} , \mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \mathit{outbox} , \mathit{told} , \mathit{knows} , \mathit{elapsed} \rangle
+\end{aligned}
+```
+
+### [Overwatch - WokenTurnStarts]($heading.id('overwatch---wokenturnstarts'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{WokenTurnStarts} \triangleq \mathit{promptQueued} \land \mathit{TurnStarts}
+\end{aligned}
+```
+
+### [Overwatch - TurnCompletes]($heading.id('overwatch---turncompletes'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{TurnCompletes} \triangleq \land \mathit{turn} = \texttt{"running"} \\
+&\quad \hspace{1.33em}\land \mathit{IF} \mathit{Guard} \\
+&\quad \hspace{3.0em}\mathit{THEN} \land \mathit{toldThisTurn} ' = \mathit{TRUE} \land \mathit{knows} ' = \mathit{report} . \mathit{failures} \land \mathit{UNCHANGED} \langle \mathit{turn} , \mathit{flush} \rangle \\
+&\quad \hspace{3.0em}\mathit{ELSE} \land \mathit{turn} ' = \texttt{"idle"} \land \mathit{flush} ' = \mathit{TRUE} \land \mathit{UNCHANGED} \langle \mathit{toldThisTurn} , \mathit{knows} \rangle \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{truth} , \mathit{head} , \mathit{based} , \mathit{busy} , \mathit{from} , \mathit{quiet} , \mathit{installed} , \mathit{produced} , \mathit{consumed} , \\
+&\quad \hspace{6.33em}\mathit{pending} , \mathit{report} , \mathit{baseline} , \mathit{wasFailing} , \mathit{outbox} , \mathit{told} , \mathit{promptQueued} , \mathit{elapsed} \rangle
+\end{aligned}
+```
+
+## [Overwatch - Allowed executions and fairness]($heading.id('overwatch---allowed-executions-and-fairness'))
+
+
+Next chooses an enabled transition. Spec permits stuttering and requires
+weak fairness for the listed progress actions; this does not impose deadlines.
+
+### [Overwatch - Next]($heading.id('overwatch---next'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Next} \triangleq \mathit{Edit} \lor \mathit{HeadMoves} \lor \mathit{QuietElapses} \lor \mathit{Tick} \lor \mathit{RunEnds} \lor \mathit{TimesOut} \\
+&\quad \hspace{2.67em}\lor \mathit{ReadResults} \lor \mathit{Flush} \lor \mathit{TurnStarts} \lor \mathit{TurnCompletes}
+\end{aligned}
+```
+
+### [Overwatch - Spec]($heading.id('overwatch---spec'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Spec} \triangleq \land \mathit{Init} \land \Box [ \mathit{Next} ] _ \mathit{vars} \\
+&\quad \hspace{1.33em}\land \mathit{WF\_vars} ( \mathit{QuietElapses} ) \land \mathit{WF\_vars} ( \mathit{Tick} ) \land \mathit{WF\_vars} ( \mathit{TimesOut} ) \\
+&\quad \hspace{1.33em}\land \mathit{WF\_vars} ( \mathit{ReadResults} ) \land \mathit{WF\_vars} ( \mathit{Flush} ) \\
+&\quad \hspace{1.33em}\land \mathit{WF\_vars} ( \mathit{WokenTurnStarts} ) \land \mathit{WF\_vars} ( \mathit{TurnCompletes} )
+\end{aligned}
+```
+
+## [Overwatch - Safety and progress properties]($heading.id('overwatch---safety-and-progress-properties'))
+
+
+Results retain their ordering and checked version. The baseline cannot
+absorb later edits. Under Spec fairness, checks end and regressions reach the agent.
+These properties are model-checked within the committed configuration bounds.
+
+### [Overwatch - BufferedResultsAreOrdered]($heading.id('overwatch---bufferedresultsareordered'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{BufferedResultsAreOrdered} \triangleq \land \forall \mathit{i} \in 1 \mathbin{\text{..}} \mathit{Len} ( \mathit{pending} ) : \mathit{pending} [ \mathit{i} ] . \mathit{id} > \mathit{consumed} \land \mathit{pending} [ \mathit{i} ] . \mathit{id} \leq \mathit{produced} \\
+&\quad \hspace{1.33em}\land \forall \mathit{i} \in 1 \mathbin{\text{..}} ( \mathit{Len} ( \mathit{pending} ) - 1 ) : \mathit{pending} [ \mathit{i} ] . \mathit{id} < \mathit{pending} [ \mathit{i} + 1 ] . \mathit{id}
+\end{aligned}
+```
+
+### [Overwatch - ReadsSelectLatestComplete]($heading.id('overwatch---readsselectlatestcomplete'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{ReadsSelectLatestComplete} \triangleq \mathit{report} . \mathit{known} \Rightarrow \mathit{report} . \mathit{id} = \mathit{consumed}
+\end{aligned}
+```
+
+### [Overwatch - ResultsMatchBuilds]($heading.id('overwatch---resultsmatchbuilds'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{ResultsMatchBuilds} \triangleq \mathit{report} . \mathit{known} \Rightarrow \mathit{report} . \mathit{failures} = \mathit{truth} [ \mathit{report} . \mathit{at} ] \lor \mathit{report} . \mathit{failures} = \{ \mathit{TimedOut} \}
+\end{aligned}
+```
+
+### [Overwatch - BaselineNeverAbsorbsEdits]($heading.id('overwatch---baselineneverabsorbsedits'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{BaselineNeverAbsorbsEdits} \triangleq \mathit{baseline} . \mathit{known} \Rightarrow \mathit{baseline} . \mathit{failures} \subseteq \mathit{truth} [ \mathit{based} ]
+\end{aligned}
+```
+
+### [Overwatch - RunsEnd]($heading.id('overwatch---runsend'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{RunsEnd} \triangleq \mathit{busy} \leadsto \neg \mathit{busy}
+\end{aligned}
+```
+
+### [Overwatch - EveryEditIsChecked]($heading.id('overwatch---everyeditischecked'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{EveryEditIsChecked} \triangleq \Diamond \Box ( \mathit{report} . \mathit{known} \land \mathit{report} . \mathit{at} = \mathit{head} )
+\end{aligned}
+```
+
+### [Overwatch - RegressionsReachAgent]($heading.id('overwatch---regressionsreachagent'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{RegressionsReachAgent} \triangleq \Diamond \Box ( ( \mathit{truth} [ \mathit{head} ] \setminus \mathit{truth} [ \mathit{based} ] ) \subseteq \mathit{knows} \lor \mathit{TimedOut} \in \mathit{knows} )
+\end{aligned}
+```
+
+# [IntegrationContract]($heading.id('integrationcontract'))
+
+[Source](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationContract.tla)
+
+## [IntegrationContract - Imports]($heading.id('integrationcontract---imports'))
+
+
+Shared operators used by this module are imported below.
+
+### [IntegrationContract - EXTENDS]($heading.id('integrationcontract---extends'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{EXTENDS} \mathit{Naturals} , \mathit{FiniteSets} , \mathit{FailurePolicy}
+\end{aligned}
+```
+
+## [IntegrationContract - Integration boundary]($heading.id('integrationcontract---integration-boundary'))
+
+
+This layer receives completed per-check snapshots from Overwatch.
+It specifies requests, responses, delivery channels, and session lifecycle
+for every host. Both layers use the same FailurePolicy definitions.
+
+### [IntegrationContract - CONSTANTS]($heading.id('integrationcontract---constants'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{CONSTANTS} \mathit{Hosts} , \mathit{Checks} , \mathit{Names} , \mathit{MaxRequests} , \mathit{MaxChanges} , \mathit{MaxSessions}
+\end{aligned}
+```
+
+### [IntegrationContract - AllHosts]($heading.id('integrationcontract---allhosts'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{AllHosts} \triangleq \{ \texttt{"claude"} , \texttt{"codex"} , \texttt{"opencode1"} , \texttt{"opencode2"} , \texttt{"pi"} , \texttt{"neovim"} \}
+\end{aligned}
+```
+
+### [IntegrationContract - ASSUME]($heading.id('integrationcontract---assume'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{ASSUME} \mathit{Hosts} \subseteq \mathit{AllHosts} \land \mathit{Hosts} \neq \{ \}
+\end{aligned}
+```
+
+These are host capabilities, not advisory/strict policy modes. A warning    cannot be counted as a denied completion, and an editor has no agent gate.
+
+## [IntegrationContract - Host capabilities]($heading.id('integrationcontract---host-capabilities'))
+
+
+The host determines whether protected requests wait for a running check,
+how guarded completion is handled, and which delivery channels exist.
+These are integration capabilities, not user-selectable enforcement modes.
+
+### [IntegrationContract - Capabilities]($heading.id('integrationcontract---capabilities'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Capabilities} ( \mathit{h} ) \triangleq [ \mathit{agent} \mapsto \mathit{h} \neq \texttt{"neovim"} , \\
+&\quad \hspace{1.67em}\mathit{waitsForCheck} \mapsto \mathit{h} \in \{ \texttt{"codex"} , \texttt{"opencode1"} , \texttt{"opencode2"} , \texttt{"pi"} \} , \\
+&\quad \hspace{1.67em}\mathit{completion} \mapsto \mathit{CASE} \mathit{h} \in \{ \texttt{"claude"} , \texttt{"codex"} \} \to \texttt{"block"} \\
+&\quad \hspace{7.33em}\Box \mathit{h} = \texttt{"opencode1"} \to \texttt{"warn"} \\
+&\quad \hspace{7.33em}\Box \mathit{h} = \texttt{"opencode2"} \to \texttt{"queue"} \\
+&\quad \hspace{7.33em}\Box \mathit{h} = \texttt{"pi"} \to \texttt{"continue"} \\
+&\quad \hspace{7.33em}\Box \mathit{OTHER} \to \texttt{"none"} , \\
+&\quad \hspace{1.67em}\mathit{delivery} \mapsto \mathit{CASE} \mathit{h} = \texttt{"claude"} \to \texttt{"turn"} \\
+&\quad \hspace{6.67em}\Box \mathit{h} = \texttt{"opencode2"} \to \texttt{"context"} \\
+&\quad \hspace{6.67em}\Box \mathit{h} = \texttt{"neovim"} \to \texttt{"quickfix"} \\
+&\quad \hspace{6.67em}\Box \mathit{OTHER} \to \texttt{"event"} , \\
+&\quad \hspace{1.67em}\mathit{idleWake} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"opencode2"} \} , \\
+&\quad \hspace{1.67em}\mathit{status} \mapsto \mathit{h} \in \{ \texttt{"claude"} , \texttt{"pi"} , \texttt{"neovim"} \} ]
+\end{aligned}
+```
+
+### [IntegrationContract - Kinds]($heading.id('integrationcontract---kinds'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Kinds} \triangleq \{ \texttt{"inspect"} , \texttt{"repair"} , \texttt{"publish"} , \texttt{"complete"} \}
+\end{aligned}
+```
+
+### [IntegrationContract - Empty]($heading.id('integrationcontract---empty'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Empty} \triangleq [ \mathit{c} \in \mathit{Checks} \mapsto \{ \} ]
+\end{aligned}
+```
+
+### [IntegrationContract - Snapshots]($heading.id('integrationcontract---snapshots'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Snapshots} \triangleq [ \mathit{Checks} \to \mathit{SUBSET} \mathit{Names} ]
+\end{aligned}
+```
+
+### [IntegrationContract - NoReply]($heading.id('integrationcontract---noreply'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{NoReply} \triangleq [ \mathit{ready} \mapsto \mathit{FALSE} , \mathit{decision} \mapsto \texttt{"none"} ]
+\end{aligned}
+```
+
+## [IntegrationContract - State shape]($heading.id('integrationcontract---state-shape'))
+
+
+Request and reply are separate so that a check can finish or a session can
+close between them. Report visibility, deferred context, corrections, and
+idle wakeups are separate observations.
+
+### [IntegrationContract - VARIABLES]($heading.id('integrationcontract---variables'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{VARIABLES} \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{3.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \\
+&\quad \hspace{3.33em}\mathit{visible} , \mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
+&\quad \hspace{3.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work}
+\end{aligned}
+```
+
+### [IntegrationContract - vars]($heading.id('integrationcontract---vars'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{vars} \triangleq \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{3.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{3.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
+&\quad \hspace{3.33em}\mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+## [IntegrationContract - Guard selection and inherited policy]($heading.id('integrationcontract---guard-selection-and-inherited-policy'))
+
+
+An empty selection means all checks. FailureGuards decides whether each
+selected check guards publication; Notify identifies new failures for delivery.
+
+### [IntegrationContract - Guarded]($heading.id('integrationcontract---guarded'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Guarded} ( \mathit{scope} ) \triangleq \{ \mathit{c} \in \mathit{scope} : \mathit{FailureGuards} ( \mathit{reports} [ \mathit{c} ] , \mathit{baseline} [ \mathit{c} ] , \mathit{inherited} ) \}
+\end{aligned}
+```
+
+### [IntegrationContract - Guard]($heading.id('integrationcontract---guard'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Guard} \triangleq \mathit{Capabilities} ( \mathit{host} ) . \mathit{agent} \land \mathit{Guarded} ( \mathit{Checks} ) \neq \{ \}
+\end{aligned}
+```
+
+### [IntegrationContract - Notify]($heading.id('integrationcontract---notify'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Notify} \triangleq \mathit{Capabilities} ( \mathit{host} ) . \mathit{agent} \land \\
+&\quad \hspace{3.33em}( \exists \mathit{c} \in \mathit{Checks} : \mathit{FailureGuards} ( \mathit{reports} [ \mathit{c} ] , \mathit{baseline} [ \mathit{c} ] , \texttt{"allow"} ) )
+\end{aligned}
+```
+
+### [IntegrationContract - SelectedChecks]($heading.id('integrationcontract---selectedchecks'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{SelectedChecks} \triangleq \mathit{IF} \mathit{selected} = \{ \} \mathit{THEN} \mathit{Checks} \mathit{ELSE} \mathit{selected}
+\end{aligned}
+```
+
+## [IntegrationContract - State domains]($heading.id('integrationcontract---state-domains'))
+
+
+Counters and snapshots are bounded for TLC exploration. These bounds
+do not assert a runtime limit on requests or sessions.
+
+### [IntegrationContract - TypeOK]($heading.id('integrationcontract---typeok'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{TypeOK} \triangleq \land \mathit{host} \in \mathit{Hosts} \land \mathit{active} \in \mathit{BOOLEAN} \land \mathit{busy} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{work} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} ) \\
+&\quad \hspace{1.33em}\land \mathit{inTurn} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{wakes} \in 0 \mathbin{\text{..}} ( \mathit{MaxChanges} + \mathit{MaxSessions} + 1 + ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} ) \\
+&\quad \hspace{1.33em}\land \mathit{reports} \in \mathit{Snapshots} \land \mathit{baseline} \in \mathit{Snapshots} \\
+&\quad \hspace{1.33em}\land \mathit{inherited} \in \{ \texttt{"allow"} , \texttt{"block"} \} \land \mathit{selected} \subseteq \mathit{Checks} \\
+&\quad \hspace{1.33em}\land \mathit{request} \in \mathit{Kinds} \cup \{ \texttt{"none"} \} \\
+&\quad \hspace{1.33em}\land \mathit{reply} \in [ \mathit{ready} : \mathit{BOOLEAN} , \\
+&\quad \hspace{6.33em}\mathit{decision} : \{ \texttt{"none"} , \texttt{"allow"} , \texttt{"deny"} , \texttt{"block"} , \texttt{"warn"} , \texttt{"queue"} , \texttt{"continue"} , \texttt{"cancelled"} \} ] \\
+&\quad \hspace{1.33em}\land \mathit{requests} \in 0 \mathbin{\text{..}} \mathit{MaxRequests} \land \mathit{changes} \in 0 \mathbin{\text{..}} \mathit{MaxChanges} \land \mathit{session} \in 0 \mathbin{\text{..}} \mathit{MaxSessions} \\
+&\quad \hspace{1.33em}\land \mathit{visible} \in [ \mathit{known} : \mathit{BOOLEAN} , \mathit{failures} : \mathit{Snapshots} ] \\
+&\quad \hspace{1.33em}\land \mathit{contextPending} \in \mathit{BOOLEAN} \land \mathit{contextSent} \in \mathit{BOOLEAN} \land \mathit{correctionQueued} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{contexts} \in 0 \mathbin{\text{..}} ( \mathit{MaxChanges} + \mathit{MaxSessions} + 1 ) \\
+&\quad \hspace{1.33em}\land \mathit{warnings} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} ) \\
+&\quad \hspace{1.33em}\land \mathit{corrections} \in 0 \mathbin{\text{..}} ( ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} )
+\end{aligned}
+```
+
+## [IntegrationContract - Initial state]($heading.id('integrationcontract---initial-state'))
+
+
+A host starts active with arbitrary reports, baseline, policy, and check state.
+No reply, visible report, deferred context, or correction has been produced.
+
+### [IntegrationContract - Init]($heading.id('integrationcontract---init'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Init} \triangleq \land \mathit{host} \in \mathit{Hosts} \land \mathit{active} = \mathit{TRUE} \land \mathit{busy} \in \mathit{BOOLEAN} \\
+&\quad \hspace{1.33em}\land \mathit{reports} \in \mathit{Snapshots} \land \mathit{baseline} \in \mathit{Snapshots} \\
+&\quad \hspace{1.33em}\land \mathit{inherited} \in \{ \texttt{"allow"} , \texttt{"block"} \} \land \mathit{selected} \in \mathit{SUBSET} \mathit{Checks} \\
+&\quad \hspace{1.33em}\land \mathit{request} = \texttt{"none"} \land \mathit{reply} = \mathit{NoReply} \\
+&\quad \hspace{1.33em}\land \mathit{requests} = 0 \land \mathit{changes} = 0 \land \mathit{session} = 0 \\
+&\quad \hspace{1.33em}\land \mathit{visible} = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{Empty} ] \\
+&\quad \hspace{1.33em}\land \mathit{contextPending} = \mathit{FALSE} \land \mathit{contextSent} = \mathit{FALSE} \land \mathit{correctionQueued} = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{contexts} = 0 \land \mathit{warnings} = 0 \land \mathit{corrections} = 0 \land \mathit{wakes} = 0 \land \mathit{work} = 0 \land \mathit{inTurn} \in \mathit{BOOLEAN}
+\end{aligned}
+```
+
+## [IntegrationContract - Requests and completion decisions]($heading.id('integrationcontract---requests-and-completion-decisions'))
+
+
+Inspection and repair remain answerable during checks. Protected requests
+follow the host waiting capability and consult the selected reports.
+Respond records the decision and accounts separately for warnings,
+corrections, and wakeups; Acknowledge releases the request slot.
+
+### [IntegrationContract - Request]($heading.id('integrationcontract---request'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Request} ( \mathit{k} ) \triangleq \land \mathit{active} \land \mathit{request} = \texttt{"none"} \land \mathit{requests} < \mathit{MaxRequests} \\
+&\quad \hspace{1.33em}\land \mathit{request} ' = \mathit{k} \land \mathit{reply} ' = \mathit{NoReply} \land \mathit{requests} ' = \mathit{requests} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{changes} , \mathit{session} , \mathit{visible} , \mathit{contextPending} , \mathit{contextSent} , \\
+&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - CanRespond]($heading.id('integrationcontract---canrespond'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{CanRespond} \triangleq \mathit{active} \land \mathit{request} \neq \texttt{"none"} \land \neg \mathit{reply} . \mathit{ready} \land \\
+&\quad \hspace{1.33em}( \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \lor \neg \mathit{Capabilities} ( \mathit{host} ) . \mathit{agent} \lor \\
+&\quad \hspace{1.67em}\neg \mathit{Capabilities} ( \mathit{host} ) . \mathit{waitsForCheck} \lor \neg \mathit{busy} )
+\end{aligned}
+```
+
+### [IntegrationContract - Decision]($heading.id('integrationcontract---decision'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Decision} \triangleq \mathit{CASE} \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \to \texttt{"allow"} \\
+&\quad \hspace{2.0em}\Box \mathit{request} = \texttt{"publish"} \to \\
+&\quad \hspace{3.67em}\mathit{IF} \mathit{Capabilities} ( \mathit{host} ) . \mathit{agent} \land \mathit{Guarded} ( \mathit{SelectedChecks} ) \neq \{ \} \\
+&\quad \hspace{3.67em}\mathit{THEN} \texttt{"deny"} \mathit{ELSE} \texttt{"allow"} \\
+&\quad \hspace{2.0em}\Box \mathit{request} = \texttt{"complete"} \to \mathit{IF} \mathit{Guard} \mathit{THEN} \mathit{Capabilities} ( \mathit{host} ) . \mathit{completion} \mathit{ELSE} \texttt{"allow"}
+\end{aligned}
+```
+
+### [IntegrationContract - QueuesCorrection]($heading.id('integrationcontract---queuescorrection'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{QueuesCorrection} \triangleq \mathit{Decision} = \texttt{"queue"} \lor ( \mathit{host} = \texttt{"claude"} \land \mathit{Decision} = \texttt{"block"} )
+\end{aligned}
+```
+
+### [IntegrationContract - Respond]($heading.id('integrationcontract---respond'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Respond} \triangleq \land \mathit{CanRespond} \\
+&\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{IF} \mathit{request} = \texttt{"complete"} \land \\
+&\quad \hspace{7.67em}( \mathit{Decision} \in \{ \texttt{"allow"} , \texttt{"warn"} , \texttt{"queue"} \} \lor \mathit{host} = \texttt{"claude"} ) \\
+&\quad \hspace{6.0em}\mathit{THEN} \mathit{FALSE} \mathit{ELSE} \mathit{inTurn} \\
+&\quad \hspace{1.33em}\land \mathit{reply} ' = [ \mathit{ready} \mapsto \mathit{TRUE} , \mathit{decision} \mapsto \mathit{Decision} ] \\
+&\quad \hspace{1.33em}\land \mathit{warnings} ' = \mathit{warnings} + \mathit{IF} \mathit{Decision} = \texttt{"warn"} \mathit{THEN} 1 \mathit{ELSE} 0 \\
+&\quad \hspace{1.33em}\land \mathit{corrections} ' = \mathit{corrections} + \mathit{IF} \mathit{QueuesCorrection} \land \neg \mathit{correctionQueued} \mathit{THEN} 1 \mathit{ELSE} 0 \\
+&\quad \hspace{1.33em}\land \mathit{correctionQueued} ' = ( \mathit{correctionQueued} \lor \mathit{QueuesCorrection} ) \\
+&\quad \hspace{1.33em}\land \mathit{wakes} ' = \mathit{wakes} + \mathit{IF} \mathit{QueuesCorrection} \land \neg \mathit{correctionQueued} \land \\
+&\quad \hspace{9.33em}( \mathit{host} = \texttt{"opencode2"} \lor \neg \mathit{inTurn} ) \\
+&\quad \hspace{8.33em}\mathit{THEN} 1 \mathit{ELSE} 0 \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{request} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{contexts} , \mathit{work} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - Acknowledge]($heading.id('integrationcontract---acknowledge'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Acknowledge} \triangleq \land \mathit{request} \neq \texttt{"none"} \land \mathit{reply} . \mathit{ready} \\
+&\quad \hspace{1.33em}\land \mathit{request} ' = \texttt{"none"} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
+&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+## [IntegrationContract - Checks and result delivery]($heading.id('integrationcontract---checks-and-result-delivery'))
+
+
+A completed check replaces the reports. Changed findings invalidate old
+delivery and correction deduplication. Report updates visibility and either
+publishes event context or retains it for Deliver. Recovery clears stale context.
+
+### [IntegrationContract - BeginCheck]($heading.id('integrationcontract---begincheck'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{BeginCheck} \triangleq \land \mathit{active} \land \neg \mathit{busy} \land \mathit{changes} < \mathit{MaxChanges} \\
+&\quad \hspace{1.33em}\land \mathit{busy} ' = \mathit{TRUE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \\
+&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+The result-ordering and baseline rules are specified in Overwatch.tla.    This layer accepts a completed result at that boundary, then constrains    what every host must expose and which requests it may hold behind a check.
+
+### [IntegrationContract - FinishCheck]($heading.id('integrationcontract---finishcheck'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{FinishCheck} ( \mathit{f} ) \triangleq \land \mathit{active} \land \mathit{busy} \land \mathit{changes} < \mathit{MaxChanges} \\
+&\quad \hspace{1.33em}\land \mathit{reports} ' = \mathit{f} \land \mathit{busy} ' = \mathit{FALSE} \land \mathit{changes} ' = \mathit{changes} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{IF} \mathit{f} \neq \mathit{reports} \\
+&\quad \hspace{3.0em}\mathit{THEN} \land \mathit{contextSent} ' = \mathit{FALSE} \land \mathit{correctionQueued} ' = \mathit{FALSE} \\
+&\quad \hspace{4.67em}\land \mathit{contextPending} ' = \mathit{FALSE} \\
+&\quad \hspace{3.0em}\mathit{ELSE} \mathit{UNCHANGED} \langle \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contextPending} \rangle \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \mathit{request} , \\
+&\quad \hspace{6.33em}\mathit{reply} , \mathit{requests} , \mathit{session} , \mathit{visible} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - Report]($heading.id('integrationcontract---report'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Report} \triangleq \land \mathit{active} \land \neg \mathit{busy} \\
+&\quad \hspace{1.33em}\land \mathit{visible} ' = [ \mathit{known} \mapsto \mathit{TRUE} , \mathit{failures} \mapsto \mathit{reports} ] \\
+&\quad \hspace{1.33em}\land \mathit{contextPending} ' = ( \mathit{Notify} \land \neg \mathit{contextSent} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} \in \{ \texttt{"turn"} , \texttt{"context"} \} ) \\
+&\quad \hspace{1.33em}\land \mathit{contextSent} ' = ( \mathit{contextSent} \lor ( \mathit{Notify} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} = \texttt{"event"} ) ) \\
+&\quad \hspace{1.33em}\land \mathit{contexts} ' = \mathit{contexts} + \mathit{IF} \mathit{Notify} \land \neg \mathit{contextSent} \land \mathit{Capabilities} ( \mathit{host} ) . \mathit{delivery} = \texttt{"event"} \mathit{THEN} 1 \mathit{ELSE} 0 \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \\
+&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - Deliver]($heading.id('integrationcontract---deliver'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Deliver} \triangleq \land \mathit{active} \land \mathit{contextPending} \\
+&\quad \hspace{1.33em}\land \mathit{wakes} ' = \mathit{wakes} + \mathit{IF} \mathit{host} = \texttt{"claude"} \land \neg \mathit{inTurn} \mathit{THEN} 1 \mathit{ELSE} 0 \\
+&\quad \hspace{1.33em}\land \mathit{contextSent} ' = \mathit{TRUE} \land \mathit{contextPending} ' = \mathit{FALSE} \land \mathit{contexts} ' = \mathit{contexts} + 1 \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{6.33em}\mathit{correctionQueued} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{work} \rangle
+\end{aligned}
+```
+
+## [IntegrationContract - Shutdown restart and new work]($heading.id('integrationcontract---shutdown-restart-and-new-work'))
+
+
+Stop cancels an outstanding request and clears visible and pending delivery.
+Restart preserves project policy, takes reports as the new baseline, and
+resets delivery state. Completed tool work permits a fresh correction.
+
+### [IntegrationContract - Stop]($heading.id('integrationcontract---stop'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Stop} \triangleq \land \mathit{active} \\
+&\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{active} ' = \mathit{FALSE} \land \mathit{busy} ' = \mathit{FALSE} \land \mathit{request} ' = \texttt{"none"} \\
+&\quad \hspace{1.33em}\land \mathit{reply} ' = [ \mathit{ready} \mapsto \mathit{TRUE} , \mathit{decision} \mapsto \texttt{"cancelled"} ] \\
+&\quad \hspace{1.33em}\land \mathit{visible} ' = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{Empty} ] \\
+&\quad \hspace{1.33em}\land \mathit{contextPending} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \mathit{requests} , \\
+&\quad \hspace{6.33em}\mathit{changes} , \mathit{session} , \mathit{contextSent} , \mathit{correctionQueued} , \\
+&\quad \hspace{6.33em}\mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - Restart]($heading.id('integrationcontract---restart'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Restart} \triangleq \land \neg \mathit{active} \land \mathit{session} < \mathit{MaxSessions} \\
+&\quad \hspace{1.33em}\land \mathit{inTurn} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{active} ' = \mathit{TRUE} \land \mathit{session} ' = \mathit{session} + 1 \land \mathit{busy} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{baseline} ' = \mathit{reports} \\
+&\quad \hspace{1.33em}\land \mathit{request} ' = \texttt{"none"} \land \mathit{reply} ' = \mathit{NoReply} \land \mathit{requests} ' = 0 \\
+&\quad \hspace{1.33em}\land \mathit{visible} ' = [ \mathit{known} \mapsto \mathit{FALSE} , \mathit{failures} \mapsto \mathit{Empty} ] \\
+&\quad \hspace{1.33em}\land \mathit{contextPending} ' = \mathit{FALSE} \land \mathit{contextSent} ' = \mathit{FALSE} \land \mathit{correctionQueued} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{reports} , \mathit{inherited} , \mathit{selected} , \mathit{changes} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - StartTurn]($heading.id('integrationcontract---startturn'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{StartTurn} \triangleq \land \mathit{active} \land \neg \mathit{inTurn} \land \mathit{inTurn} ' = \mathit{TRUE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{correctionQueued} , \mathit{contexts} , \\
+&\quad \hspace{6.33em}\mathit{warnings} , \mathit{corrections} , \mathit{wakes} , \mathit{work} \rangle
+\end{aligned}
+```
+
+### [IntegrationContract - WorkCompleted]($heading.id('integrationcontract---workcompleted'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{WorkCompleted} \triangleq \land \mathit{active} \land \mathit{work} < ( \mathit{MaxSessions} + 1 ) * \mathit{MaxRequests} \\
+&\quad \hspace{1.33em}\land \mathit{work} ' = \mathit{work} + 1 \land \mathit{correctionQueued} ' = \mathit{FALSE} \\
+&\quad \hspace{1.33em}\land \mathit{UNCHANGED} \langle \mathit{host} , \mathit{active} , \mathit{busy} , \mathit{reports} , \mathit{baseline} , \mathit{inherited} , \mathit{selected} , \\
+&\quad \hspace{6.33em}\mathit{request} , \mathit{reply} , \mathit{requests} , \mathit{changes} , \mathit{session} , \mathit{visible} , \\
+&\quad \hspace{6.33em}\mathit{contextPending} , \mathit{contextSent} , \mathit{contexts} , \mathit{warnings} , \mathit{corrections} , \mathit{inTurn} , \mathit{wakes} \rangle
+\end{aligned}
+```
+
+## [IntegrationContract - Allowed executions and fairness]($heading.id('integrationcontract---allowed-executions-and-fairness'))
+
+
+Spec composes check-completion fairness with fair response and report
+servicing. Inspection independence is a safety property: its response
+remains enabled even while a check is held.
+
+### [IntegrationContract - CheckCompletes]($heading.id('integrationcontract---checkcompletes'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{CheckCompletes} \triangleq \exists \mathit{f} \in \mathit{Snapshots} : \mathit{FinishCheck} ( \mathit{f} )
+\end{aligned}
+```
+
+### [IntegrationContract - Next]($heading.id('integrationcontract---next'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Next} \triangleq ( \exists \mathit{k} \in \mathit{Kinds} : \mathit{Request} ( \mathit{k} ) ) \lor \mathit{Respond} \lor \mathit{Acknowledge} \lor \mathit{BeginCheck} \\
+&\quad \hspace{2.67em}\lor \mathit{CheckCompletes} \lor \mathit{Report} \lor \mathit{Deliver} \lor \mathit{Stop} \lor \mathit{Restart} \lor \mathit{StartTurn} \lor \mathit{WorkCompleted} \\
+&\quad \hspace{2.67em}\lor ( \neg \mathit{active} \land \mathit{session} = \mathit{MaxSessions} \land \mathit{UNCHANGED} \mathit{vars} )
+\end{aligned}
+```
+
+Check completion fairness is the RunsEnd guarantee of the result model.    Inspection is independently enabled; it never needs that guarantee to reply.
+
+### [IntegrationContract - Spec]($heading.id('integrationcontract---spec'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{Spec} \triangleq \mathit{Init} \land \Box [ \mathit{Next} ] _ \mathit{vars} \land \mathit{WF\_vars} ( \mathit{CheckCompletes} ) \\
+&\quad \hspace{2.67em}\land \mathit{WF\_vars} ( \mathit{Respond} ) \land \mathit{WF\_vars} ( \mathit{Report} ) \land \mathit{WF\_vars} ( \mathit{Deliver} )
+\end{aligned}
+```
+
+## [IntegrationContract - Safety and progress properties]($heading.id('integrationcontract---safety-and-progress-properties'))
+
+
+Capabilities constrain completion, editors never acquire agent gates,
+closed sessions stay silent, pending context stays current, and corrections
+are deduplicated. Progress properties require the fairness stated in Spec.
+
+### [IntegrationContract - InspectionIndependentOfChecks]($heading.id('integrationcontract---inspectionindependentofchecks'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{InspectionIndependentOfChecks} \triangleq \mathit{active} \land \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \land \neg \mathit{reply} . \mathit{ready} \Rightarrow \mathit{ENABLED} \mathit{Respond}
+\end{aligned}
+```
+
+### [IntegrationContract - InspectionAlwaysAllowed]($heading.id('integrationcontract---inspectionalwaysallowed'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{InspectionAlwaysAllowed} \triangleq \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \land \mathit{reply} . \mathit{ready} \Rightarrow \mathit{reply} . \mathit{decision} = \texttt{"allow"}
+\end{aligned}
+```
+
+### [IntegrationContract - EditorNeverGuards]($heading.id('integrationcontract---editorneverguards'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{EditorNeverGuards} \triangleq \mathit{host} = \texttt{"neovim"} \land \mathit{request} \neq \texttt{"none"} \land \mathit{reply} . \mathit{ready} \Rightarrow \mathit{reply} . \mathit{decision} = \texttt{"allow"}
+\end{aligned}
+```
+
+### [IntegrationContract - StoppedSessionsStaySilent]($heading.id('integrationcontract---stoppedsessionsstaysilent'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{StoppedSessionsStaySilent} \triangleq \neg \mathit{active} \Rightarrow \neg \mathit{contextPending} \land \neg \mathit{visible} . \mathit{known}
+\end{aligned}
+```
+
+### [IntegrationContract - HostsWithoutIdleWakeStayIdle]($heading.id('integrationcontract---hostswithoutidlewakestayidle'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{HostsWithoutIdleWakeStayIdle} \triangleq \neg \mathit{Capabilities} ( \mathit{host} ) . \mathit{idleWake} \Rightarrow \mathit{wakes} = 0
+\end{aligned}
+```
+
+### [IntegrationContract - CorrectionRequestsAreDeduplicated]($heading.id('integrationcontract---correctionrequestsarededuplicated'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{CorrectionRequestsAreDeduplicated} \triangleq \mathit{corrections} \leq \mathit{changes} + \mathit{session} + \mathit{work} + 1
+\end{aligned}
+```
+
+### [IntegrationContract - PendingContextIsCurrent]($heading.id('integrationcontract---pendingcontextiscurrent'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{PendingContextIsCurrent} \triangleq \mathit{contextPending} \Rightarrow \mathit{Notify}
+\end{aligned}
+```
+
+### [IntegrationContract - CompletionUsesHostCapability]($heading.id('integrationcontract---completionuseshostcapability'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{CompletionUsesHostCapability} \triangleq \mathit{request} = \texttt{"complete"} \land \mathit{reply} . \mathit{ready} \Rightarrow \\
+&\quad \hspace{2.33em}\mathit{reply} . \mathit{decision} \in \{ \texttt{"allow"} , \mathit{Capabilities} ( \mathit{host} ) . \mathit{completion} \}
+\end{aligned}
+```
+
+### [IntegrationContract - EditorOnlyReports]($heading.id('integrationcontract---editoronlyreports'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{EditorOnlyReports} \triangleq \mathit{host} = \texttt{"neovim"} \Rightarrow \mathit{contexts} = 0 \land \mathit{warnings} = 0 \land \mathit{corrections} = 0 \land \mathit{wakes} = 0
+\end{aligned}
+```
+
+### [IntegrationContract - PendingReportsEventuallyResolve]($heading.id('integrationcontract---pendingreportseventuallyresolve'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{PendingReportsEventuallyResolve} \triangleq \mathit{contextPending} \leadsto \neg \mathit{contextPending}
+\end{aligned}
+```
+
+### [IntegrationContract - FinishedReportsBecomeVisible]($heading.id('integrationcontract---finishedreportsbecomevisible'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{FinishedReportsBecomeVisible} \triangleq ( \mathit{active} \land \neg \mathit{busy} ) \leadsto ( \mathit{visible} . \mathit{known} \lor \neg \mathit{active} )
+\end{aligned}
+```
+
+### [IntegrationContract - InspectionEventuallyReplies]($heading.id('integrationcontract---inspectioneventuallyreplies'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{InspectionEventuallyReplies} \triangleq ( \mathit{active} \land \mathit{request} \in \{ \texttt{"inspect"} , \texttt{"repair"} \} \land \neg \mathit{reply} . \mathit{ready} ) \\
+&\quad \hspace{2.0em}\leadsto ( \mathit{reply} . \mathit{ready} \lor \neg \mathit{active} )
+\end{aligned}
+```
+
+# [IntegrationLifecycle]($heading.id('integrationlifecycle'))
+
+[Source](https://github.com/benomahony/overwatch/blob/main/spec/IntegrationLifecycle.tla)
+
+## [IntegrationLifecycle - Lifecycle instance]($heading.id('integrationlifecycle---lifecycle-instance'))
+
+
+This module reuses the complete IntegrationContract specification.
+Its TLC configuration explores shutdown and restart with a separate bound.
+
+### [IntegrationLifecycle - EXTENDS]($heading.id('integrationlifecycle---extends'))
+
+```=mathtex
+\begin{aligned}
+&\mathit{EXTENDS} \mathit{IntegrationContract}
+\end{aligned}
+```
+
 
 # [Sources and typeset downloads]($heading.id('sources-and-typeset-downloads'))
 
@@ -302,3 +1148,4 @@ The LaTeX is generated by TLATeX from the TLA+ sources. The PDFs are typeset ver
 | [Overwatch.pdf](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/Overwatch.pdf) | pdf |
 | [Overwatch.tex](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/Overwatch.tex) | tex |
 | [Overwatch.tla](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/Overwatch.tla) | tla |
+| [modules.json](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/modules.json) | json |

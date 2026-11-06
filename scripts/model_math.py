@@ -1,45 +1,61 @@
-"""Generate documentation equations from selected definitions in the authoritative TLA+ modules."""
+"""Render the complete TLA+ sources as documentation, retaining source order and organisation."""
 from pathlib import Path
 import re
+from spec_sources import spec_sources
 
-# Only the reading order and explanations live here. Formula bodies are read from TLA+.
-EQUATIONS = (
-    ('FailurePolicy', 'NewFailure', 'A timeout or a finding outside the baseline counts as a new failure.'),
-    ('FailurePolicy', 'FailureGuards', 'A nonempty finding set guards an action when inherited findings are blocked or the findings include a new failure.'),
-    ('Overwatch', 'ReadsSelectLatestComplete', 'Reading buffered results selects the newest completed result.'),
-    ('Overwatch', 'BaselineNeverAbsorbsEdits', 'The inherited baseline cannot absorb findings introduced by later edits.'),
-    ('Overwatch', 'RunsEnd', 'A running check eventually ends. This is the progress assumption used by the host layer.'),
-    ('Overwatch', 'RegressionsReachAgent', 'A regression eventually reaches the agent, or the check times out.'),
-    ('IntegrationContract', 'SelectedChecks', 'An empty check selection means all checks; otherwise the configured selection applies.'),
-    ('IntegrationContract', 'Guarded', 'Only selected checks whose findings satisfy the shared failure policy guard an action.'),
-    ('IntegrationContract', 'CanRespond', 'Inspection and repair can receive a response during a check. Protected requests follow the host capability.'),
-    ('IntegrationContract', 'InspectionAlwaysAllowed', 'An answered inspection or repair request is always allowed.'),
-    ('IntegrationContract', 'PendingContextIsCurrent', 'Pending failure context must still describe a report that warrants notification.'),
-    ('IntegrationContract', 'CorrectionRequestsAreDeduplicated', 'Report changes, new sessions, and completed work bound the number of fresh correction requests.'),
-    ('IntegrationContract', 'FinishedReportsBecomeVisible', 'Once a check has finished, its report eventually becomes visible unless the session closes.'),
-)
 SYMBOLS = {
     '/\\': r'\land', '\\/': r'\lor', '~>': r'\leadsto', '=>': r'\Rightarrow',
     '==': r'\triangleq', '<=': r'\leq', '>=': r'\geq', '#': r'\neq', '~': r'\neg',
     '[]': r'\Box', '<>': r'\Diamond', '\\A': r'\forall', '\\E': r'\exists',
     '\\in': r'\in', '\\subseteq': r'\subseteq', '\\cup': r'\cup', '\\': r'\setminus',
+    '|->': r'\mapsto', '->': r'\to', '..': r'\mathbin{\text{..}}', '\\notin': r'\notin', '_': '_',
     '{': r'\{', '}': r'\}', '<<': r'\langle', '>>': r'\rangle',
 }
 TOKEN = re.compile(r'\\[A-Za-z]+|' + '|'.join(re.escape(key) for key in sorted(SYMBOLS, key=len, reverse=True)) +
-                   r'|"(?:\\.|[^"\\])*"|[A-Za-z][A-Za-z0-9_]*|[0-9]+|[()\[\],.:=+*/<>\x27]')
+                   r'|"(?:\\.|[^"\\])*"|[A-Za-z][A-Za-z0-9_]*|[0-9]+|[()\[\],.:=+*/<>_\x27-]')
 DEFINITION = re.compile(r'^([A-Za-z][A-Za-z0-9_]*(?:\([^\n)]*\))?)\s*==', re.MULTILINE)
 
 
+DECLARATION = re.compile(r'^(EXTENDS|CONSTANTS|ASSUME|VARIABLES)\b')
+
+
+def source_blocks(source: str) -> list[dict]:
+    """Read source sections, comments, declarations, and every definition in source order."""
+    lines, blocks, index = source.splitlines(), [], 0
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip() or re.match(r'^[-=]{4,}', line):
+            index += 1
+            continue
+        start = index
+        if line.startswith('(*'):
+            while '*)' not in lines[index]:
+                index += 1
+            text = '\n'.join(lines[start:index + 1])[2:].rsplit('*)', 1)[0].strip()
+            assert '(*' not in text, f'Nested documentation comments need explicit handling: {text}'
+            kind, name = ('section', text.splitlines()[0][9:]) if text.startswith('Section: ') else ('comment', '')
+            blocks.append(dict(kind=kind, name=name, text=text, line=start + 1))
+            index += 1
+            continue
+        match = DEFINITION.match(line) or DECLARATION.match(line)
+        if match is None:
+            raise ValueError(f'Unrecognised top-level TLA+ source at line {index + 1}: {line!r}')
+        kind = 'definition' if DEFINITION.match(line) else 'declaration'
+        index += 1
+        while index < len(lines) and not (DEFINITION.match(lines[index]) or DECLARATION.match(lines[index]) or
+                                          lines[index].startswith('(*') or re.match(r'^={4,}', lines[index])):
+            index += 1
+        blocks.append(dict(kind=kind, name=match[1].split('(')[0], text='\n'.join(lines[start:index]).strip(), line=start + 1))
+    assert blocks, 'A specification module must contain declarations or definitions'
+    return blocks
+
+
 def definition_text(source: str, name: str) -> str:
-    """Extract exactly one complete definition, stopping at the next declaration or comment."""
-    matches = list(DEFINITION.finditer(source))
-    selected = [index for index, match in enumerate(matches) if match[1].split('(')[0] == name]
-    assert len(selected) == 1, f'Expected one definition for {name}, found {len(selected)}'
-    index = selected[0]
-    end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
-    text = re.split(r'^\(\*|^={4,}', source[matches[index].start():end], maxsplit=1, flags=re.MULTILINE)[0].strip()
-    assert text.startswith(name), f'Extracted definition lost {name}: {text}'
-    return text
+    """Look up a definition in the complete source inventory used to render the docs."""
+    found = [block['text'] for block in source_blocks(source) if block['kind'] == 'definition' and block['name'] == name]
+    assert len(found) == 1, f'Expected one definition for {name}, found {len(found)}'
+    assert found[0].startswith(name), f'Extracted definition lost {name}: {found[0]}'
+    return found[0]
 
 
 def latex_line(line: str) -> str:
@@ -66,26 +82,51 @@ def latex_line(line: str) -> str:
     return ' '.join(output)
 
 
-def equation_latex(source: str, name: str) -> str:
-    """Keep the definition's line structure and expose it as standard LaTeX math."""
-    lines = definition_text(source, name).splitlines()
-    lhs, _, first = lines[0].partition('==')
-    body = [line.strip() for line in [first, *lines[1:]] if line.strip()]
-    assert body, f'{name} has no defining expression'
-    rows = [latex_line(lhs.strip()) + r' &\triangleq']
-    rows.extend(r'&\quad ' + latex_line(line) for line in body)
-    assert len(rows) == len(body) + 1, f'{name} lost a source line during typesetting'
+def block_latex(text: str) -> str:
+    """Render a source block without omitting declarations, guards, or frame conditions."""
+    lines = text.splitlines()
+    lhs, separator, first = lines[0].partition('==')
+    body = [line for line in ([first, *lines[1:]] if separator else lines) if line.strip()]
+    assert body, f'Empty mathematical source block: {text!r}'
+    first = r'&' + (latex_line(lhs.strip()) + r' \triangleq ' if separator else '') + latex_line(body[0].strip())
+    rows = [first]
+    rows.extend(r'&\quad ' + r'\hspace{' + str(round((len(line) - len(line.lstrip())) / 3, 2)) + 'em}' + latex_line(line.strip()) for line in body[1:])
+    assert len(rows) == len(body), f'A source line was lost while typesetting {text!r}'
     return '\\begin{aligned}\n' + ' \\\\\n'.join(rows) + '\n\\end{aligned}'
 
 
+def specification_blocks(repo: Path) -> list[tuple[str, list[dict]]]:
+    """Discover all modules; there is no separate documentation definition catalog."""
+    modules = [(source.stem, source_blocks(source.read_text())) for source in spec_sources(repo)]
+    assert modules, f'No specification modules in {repo / "spec"}'
+    assert len({name for name, _ in modules}) == len(modules), f'Duplicate modules: {modules}'
+    return modules
+
+
+def model_formulas(repo: Path) -> list[str]:
+    """The complete mathematical inventory, shared by generation and HTML validation."""
+    modules = specification_blocks(repo)
+    assert all(any(block['kind'] in {'definition', 'declaration'} for block in blocks) for _, blocks in modules), f'A module has no mathematical content: {modules}'
+    formulas = [block_latex(block['text']) for _, blocks in modules for block in blocks if block['kind'] in {'definition', 'declaration'}]
+    assert all(formula.strip() for formula in formulas), f'Empty rendered expressions in {formulas}'
+    return formulas
+
+
 def model_equations(repo: Path) -> list[str]:
-    """Interleave source-derived mathematics with the guide's explanations."""
-    lines = ['## Model equations', '',
-             'These equations are generated from the named TLA+ definitions. The notation is rendered as mathematics in this page; the complete modules remain available below.', '']
-    assert len({(module, name) for module, name, _ in EQUATIONS}) == len(EQUATIONS), 'Equation selections must be unique'
-    for module, name, explanation in EQUATIONS:
-        source = (repo / 'spec' / f'{module}.tla').read_text()
-        lines.extend([f'### {name}', '', explanation, '', '```=mathtex', *equation_latex(source, name).splitlines(), '```', '',
-                      f'[Definition in {module}.tla](https://github.com/benomahony/overwatch/blob/main/spec/{module}.tla)', ''])
-    assert lines.count('```=mathtex') == len(EQUATIONS), 'Every selected definition needs a rendered equation'
+    """Publish the specification's own sections and comments in its own order."""
+    lines = ["# Overwatch's behavioral specification", '',
+             'Generated from every module in `spec/`. Sections, comments, declarations, and definitions follow the source.', '']
+    for module, blocks in specification_blocks(repo):
+        lines.extend([f'## {module}', '', f'[Source](https://github.com/benomahony/overwatch/blob/main/spec/{module}.tla)', ''])
+        for block in blocks:
+            text = block['text']
+            if block['kind'] == 'section':
+                lines.extend([f"### {module} - {block['name']}", '', *text.splitlines()[1:], ''])
+            elif block['kind'] == 'comment':
+                lines.extend([text.replace('\n', ' '), ''])
+            else:
+                lines.extend([f"#### {module} - {block['name']}", '', '```=mathtex',
+                              *block_latex(text).splitlines(), '```', ''])
+    assert sum(line.startswith('## ') for line in lines) == len(specification_blocks(repo)), 'A specification module was omitted from the documentation'
+    assert lines.count('```=mathtex') == len(model_formulas(repo)), 'Source blocks were lost during documentation generation'
     return lines

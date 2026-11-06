@@ -941,7 +941,19 @@
 \tlatex
  \@x{\makebox[0pt][r]{\scriptsize 1\hspace{1em}}}\moduleLeftDash\@xx{
  {\MODULE} IntegrationLifecycle}\moduleRightDash\@xx{}%
- \@x{\makebox[0pt][r]{\scriptsize 2\hspace{1em}} {\EXTENDS}
+\begin{lcom}{0}%
+\begin{cpar}{0}{T}{F}{7.5}{0}{}%
+Section: \ensuremath{Lifecycle} instance
+\end{cpar}%
+\vshade{5.0}%
+\begin{cpar}{1}{F}{F}{0}{0}{}%
+ This module reuses the complete \ensuremath{IntegrationContract}
+ specification.
+ Its \ensuremath{TLC} configuration explores shutdown and restart with a
+ separate bound.
+\end{cpar}%
+\end{lcom}%
+ \@x{\makebox[0pt][r]{\scriptsize 7\hspace{1em}} {\EXTENDS}
  IntegrationContract}%
-\@x{\makebox[0pt][r]{\scriptsize 3\hspace{1em}}}\bottombar\@xx{}%
+\@x{\makebox[0pt][r]{\scriptsize 8\hspace{1em}}}\bottombar\@xx{}%
 \end{document}

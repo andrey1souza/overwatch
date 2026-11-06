@@ -1,6 +1,15 @@
 ---------------------------- MODULE Overwatch ----------------------------
+(* Section: Imports
+
+Shared operators used by this module are imported below.
+*)
 EXTENDS Naturals, FiniteSets, Sequences, FailurePolicy
 
+(* Section: State and result domains
+
+Workspace versions, completed outcomes, and message records form the result layer.
+Finite bounds are supplied by the TLC configuration, not by the runtime.
+*)
 CONSTANTS Names, MaxEdits, Timeout
 ASSUME "timeout" \notin Names
 
@@ -11,6 +20,11 @@ Outcomes == SUBSET (Names \cup {TimedOut})
 NoMessage == [held |-> FALSE, waking |-> FALSE, failures |-> {}]
 NotTold == [kind |-> "none", fresh |-> {}]
 
+(* Section: State shape
+
+The checked version, unread results, inherited baseline, and delivery state are
+separate. TypeOK constrains their domains without advancing an execution.
+*)
 VARIABLES
     truth, head, based, busy, from, quiet, installed,
     produced, consumed, pending, report, baseline, wasFailing,
@@ -37,10 +51,20 @@ TypeOK ==
     /\ toldThisTurn \in BOOLEAN /\ promptQueued \in BOOLEAN
     /\ knows \in Outcomes /\ elapsed \in 0..Timeout
 
+(* Section: Failure gating
+
+A failure report becomes a gate only when it is a regression against the
+session baseline, or when the check times out.
+*)
 Failing == report.known /\ report.failures # {}
 Regressed(f) == TimedOut \in f \/ (baseline.known /\ NewFailure(f, baseline.failures))
 Guard == Failing /\ Regressed(report.failures)
 
+(* Section: Initial state
+
+The first check starts at the inherited workspace version. No result or
+baseline is known and no notification has been sent.
+*)
 Init ==
     /\ truth \in [Versions -> Results]
     /\ head = 0 /\ based = 0
@@ -53,6 +77,12 @@ Init ==
     /\ turn = "idle" /\ toldThisTurn = FALSE /\ promptQueued = FALSE
     /\ knows = {} /\ elapsed = 0
 
+(* Section: Result delivery and baseline isolation
+
+Queue deduplicates notification signatures. Deliver consumes a completed
+snapshot, establishes the inherited baseline, and queues a regression or recovery.
+A recovery can cancel a failure message that has not yet been delivered.
+*)
 Queue(signature, message) ==
     IF told = signature /\ ~outbox.held
     THEN UNCHANGED <<outbox, told, flush>>
@@ -72,6 +102,12 @@ Deliver(v, id, f) ==
             THEN /\ outbox' = NoMessage /\ told' = NotTold /\ UNCHANGED flush
           ELSE Queue([kind |-> "recovered", fresh |-> {}], [held |-> TRUE, waking |-> FALSE, failures |-> f])
 
+(* Section: Workspace changes and scheduling
+
+An agent edit advances head without moving based. An external head change
+moves both and invalidates the baseline and unread results. QuietElapses
+starts the next check; Tick advances its timeout clock.
+*)
 Edit ==
     /\ turn = "running" /\ head < MaxEdits
     /\ head' = head + 1 /\ quiet' = TRUE
@@ -104,6 +140,12 @@ Tick ==
 
 (* Completion appends a result; it does not deliver it. Partial output is a
    stuttering step at this abstraction: only a complete build enters pending. *)
+(* Section: Buffered completion and consumption
+
+Run completion appends a snapshot to pending without publishing it.
+ReadResults consumes the newest completed snapshot and clears the buffer.
+A later incomplete build does not replace an earlier complete result.
+*)
 Buffer(v, f) ==
     /\ produced' = produced + 1
     /\ pending' = Append(pending, [id |-> produced + 1, at |-> v, failures |-> f])
@@ -122,6 +164,12 @@ ReadResults ==
     /\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced,
                    turn, toldThisTurn, promptQueued, knows, elapsed>>
 
+(* Section: Notification delivery and turn completion
+
+A running turn receives at most one notification before another turn starts.
+An idle agent can receive one queued wakeup. Flush publishes eligible messages;
+TurnCompletes keeps a guarded turn running and permits a clean turn to settle.
+*)
 Held == IF turn = "running" THEN toldThisTurn ELSE promptQueued \/ ~outbox.waking
 
 Flush ==
@@ -151,6 +199,11 @@ TurnCompletes ==
     /\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,
                    pending, report, baseline, wasFailing, outbox, told, promptQueued, elapsed>>
 
+(* Section: Allowed executions and fairness
+
+Next chooses an enabled transition. Spec permits stuttering and requires
+weak fairness for the listed progress actions; this does not impose deadlines.
+*)
 Next == Edit \/ HeadMoves \/ QuietElapses \/ Tick \/ RunEnds \/ TimesOut
         \/ ReadResults \/ Flush \/ TurnStarts \/ TurnCompletes
 
@@ -160,6 +213,12 @@ Spec ==
     /\ WF_vars(ReadResults) /\ WF_vars(Flush)
     /\ WF_vars(WokenTurnStarts) /\ WF_vars(TurnCompletes)
 
+(* Section: Safety and progress properties
+
+Results retain their ordering and checked version. The baseline cannot
+absorb later edits. Under Spec fairness, checks end and regressions reach the agent.
+These properties are model-checked within the committed configuration bounds.
+*)
 BufferedResultsAreOrdered ==
     /\ \A i \in 1..Len(pending) : pending[i].id > consumed /\ pending[i].id <= produced
     /\ \A i \in 1..(Len(pending) - 1) : pending[i].id < pending[i+1].id

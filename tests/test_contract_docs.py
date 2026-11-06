@@ -4,7 +4,7 @@ import json
 import unittest
 
 from paths import ROOT
-from contract_docs import HOST_NAMES, render_capabilities, render_contract, render_contracts
+from contract_docs import HOST_NAMES, render_contract, render_contracts
 
 
 class ContractDocumentationTests(unittest.TestCase):
@@ -37,21 +37,6 @@ class ContractDocumentationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing TLC observations'):
             render_contract(row)
 
-    def test_capability_table_uses_model_values(self) -> None:
-        original = render_capabilities(self.rows)
-        changed = deepcopy(self.rows)
-        for row in changed:
-            if row['host'] == 'pi':
-                for state in row['expected']:
-                    state['completion'] = 'changed-by-model'
-        table = render_capabilities(changed)
-        self.assertNotEqual(original, table)
-        self.assertIn('`changed-by-model`', '\n'.join(table))
-
-    def test_inconsistent_capabilities_cannot_be_published(self) -> None:
-        self.rows[0]['expected'][0]['completion'] = 'inconsistent'
-        with self.assertRaisesRegex(AssertionError, 'Capabilities change'):
-            render_capabilities(self.rows)
 
 
 if __name__ == '__main__':

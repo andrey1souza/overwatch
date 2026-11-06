@@ -1,6 +1,7 @@
 <extend template="base.shtml">
 <head id="head">
     <ctx :if="$site.page('model').isCurrent()">
+        <link rel="stylesheet" href="$site.asset('vendor/katex.min.css').link()">
         <script defer src="$site.asset('vendor/katex.min.js').link()"></script>
         <script defer src="$site.asset('math.js').link()"></script>
     </ctx>
@@ -15,10 +16,10 @@
 			<a href="$site.page('watchers').link()" class="$site.page('watchers').isCurrent().then('active', '')">Watchers</a>
 			<a href="$site.page('configuration').link()" class="$site.page('configuration').isCurrent().then('active', '')">Configuration</a>
 			<a href="$site.page('behavior').link()" class="$site.page('behavior').isCurrent().then('active', '')">Behavior</a>
+			<a href="$site.page('model').link()" class="$site.page('model').isCurrent().then('active', '')">Spec</a>
 			<p class="sidebar-group">Integrations</p>
 			<a href="$site.page('neovim').link()" class="$site.page('neovim').isCurrent().then('active', '')">Neovim</a>
 			<p class="sidebar-group">Project</p>
-			<a href="$site.page('model').link()" class="$site.page('model').isCurrent().then('active', '')">Formal model</a>
 			<a href="$site.page('develop').link()" class="$site.page('develop').isCurrent().then('active', '')">Develop</a>
 		</nav>
 		<main class="doc">

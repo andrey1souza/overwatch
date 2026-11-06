@@ -307,8 +307,8 @@ code, pre { font-family: var(--mono); }
 .prose .verified h4::after { content: "✓ Verified"; background: var(--success-soft); color: var(--success); }
 .prose .proposed h4::after { content: "Proposed"; border: 1px dashed var(--line-strong); color: var(--muted); }
 .prose .verified > p, .prose .proposed > p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 16px; }
-.prose .tag { padding: 1px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); cursor: pointer; font: 600 11px/1.9 var(--mono); transition: background 140ms ease, color 140ms ease; }
-.prose .tag:hover { background: var(--accent); color: #fff; }
+.prose :is(.tag, .agent) { padding: 1px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); cursor: pointer; font: 600 11px/1.9 var(--mono); transition: background 140ms ease, color 140ms ease; }
+.prose :is(.tag, .agent):hover { background: var(--accent); color: #fff; }
 .prose .verified > p a, .prose .proposed > p a { margin-left: auto; padding: 3px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); color: var(--ink-soft); font-size: 12px; font-weight: 650; text-decoration: none; transition: border-color 140ms ease, color 140ms ease; }
 .prose .verified > p a::after, .prose .proposed > p a::after { content: " ↗"; }
 .prose .verified:hover > p a, .prose .proposed:hover > p a { border-color: var(--accent); color: var(--accent-ink); }
@@ -384,7 +384,8 @@ pre:hover button.copy.floating, button.copy.floating:focus { opacity: 1; }
   *, *::before, *::after { transition-duration: .01ms !important; }
 }
 
-/* Mathematical expressions remain part of the article and scroll on narrow screens. */
-.prose .katex { display: inline-block; max-width: 100%; overflow-x: auto; vertical-align: middle; }
-.prose .katex-display { display: block; overflow-x: auto; margin: 18px 0 24px; padding: 12px 2px; }
-.prose .katex-display math { margin: 0; text-align: left; }
+/* Render equations as text, with accessible MathML and scrolling for long source lines. */
+.prose .katex-display { display: block; overflow-x: auto; overflow-y: hidden; margin: 18px 0 24px; padding: 8px 2px; text-align: left; }
+.prose .katex-display > .katex { text-align: left; }
+
+.scenario-search select { margin-top: 10px; max-width: 100%; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); color: var(--ink); font: inherit; }

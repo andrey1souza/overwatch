@@ -15,7 +15,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [Claude stops repeating corrections when no work occurs]($section.id('claude-stops-repeating-corrections-when-no-work-occurs').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [retry-loop]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [retry-loop]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L7)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -24,7 +24,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [Denied publication does not restart Claude corrections]($section.id('denied-publication-does-not-restart-claude-corrections').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [protected-actions]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [protected-actions]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L12)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -35,7 +35,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [Claude requests a fresh correction after work resumes]($section.id('claude-requests-a-fresh-correction-after-work-resumes').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [repair]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [repair]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L17)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -44,7 +44,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [Changed findings give Claude one fresh correction]($section.id('changed-findings-give-claude-one-fresh-correction').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [new-findings]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [new-findings]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L22)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -53,7 +53,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [Passing checks release a queued Claude correction]($section.id('passing-checks-release-a-queued-claude-correction').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [recovery]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [recovery]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L27)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -62,7 +62,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [A recovered Claude failure can request correction again]($section.id('a-recovered-claude-failure-can-request-correction-again').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [failure-cycle]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [failure-cycle]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L32)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -73,7 +73,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [An interrupted Claude turn settles without a correction]($section.id('an-interrupted-claude-turn-settles-without-a-correction').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [interruption]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [interruption]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L37)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -82,7 +82,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [An interrupted Claude correction stays stopped]($section.id('an-interrupted-claude-correction-stays-stopped').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [interruption]($text.attrs('tag')) [retry-loop]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [interruption]($text.attrs('tag')) [retry-loop]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L42)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -91,7 +91,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [Claude API-error completion does not queue a correction]($section.id('claude-api-error-completion-does-not-queue-a-correction').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [api-error]($text.attrs('tag')) [rate-limit]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [api-error]($text.attrs('tag')) [rate-limit]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L47)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -100,7 +100,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [A user turn restores Claude reporting after interruption]($section.id('a-user-turn-restores-claude-reporting-after-interruption').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [user-resume]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [user-resume]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L52)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -111,7 +111,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [Claude gates follow each watcher's recovery]($section.id('claude-gates-follow-each-watchers-recovery').attrs('verified'))
 
-[claude]($text.attrs('tag')) [completion]($text.attrs('tag')) [check-scope]($text.attrs('tag')) [recovery]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [completion]($text.attrs('tag')) [check-scope]($text.attrs('tag')) [recovery]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L57)
 
 - [Given]($text.attrs('given')) [Claude has failing Zig and Zanity watchers and publication requires only Zanity](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L416).
@@ -122,7 +122,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [A restarted Claude session resets correction suppression]($section.id('a-restarted-claude-session-resets-correction-suppression').attrs('verified'))
 
-[claude]($text.attrs('tag')) [session]($text.attrs('tag')) [restart]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [session]($text.attrs('tag')) [restart]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L62)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -131,7 +131,7 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 ### [A resumed Claude session resets correction suppression]($section.id('a-resumed-claude-session-resets-correction-suppression').attrs('verified'))
 
-[claude]($text.attrs('tag')) [session]($text.attrs('tag')) [resume]($text.attrs('tag'))
+[Claude Code]($text.attrs('agent')) [session]($text.attrs('tag')) [resume]($text.attrs('tag'))
 [View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L67)
 
 - [Given]($text.attrs('given')) [A previously passing Claude watcher now reports warnings](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L236).
@@ -223,13 +223,13 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 These 114 cases are generated from the same TLC expectations replayed against all six integrations. Each event is followed by the model observation asserted by the replay. Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
 
-[Read the formal model guide](https://benomahony.github.io/overwatch/model/) for event definitions, host differences, and verification limits.
+[Read the spec](https://benomahony.github.io/overwatch/model/) for the complete state machines, host capabilities, and checked properties.
 
 ## [Claude Code]($section.id('claude-code'))
 
 ### [Claude Code - inspect during check]($section.id('claude-code---inspect-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -242,7 +242,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - repair during check]($section.id('claude-code---repair-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -255,7 +255,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - latest result decides protected action]($section.id('claude-code---latest-result-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -272,7 +272,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - recovery decides protected action]($section.id('claude-code---recovery-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -289,7 +289,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - completion does not queue duplicates]($section.id('claude-code---completion-does-not-queue-duplicates').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -308,7 +308,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - work permits a fresh correction]($section.id('claude-code---work-permits-a-fresh-correction').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -331,7 +331,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - idle result delivery]($section.id('claude-code---idle-result-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -344,7 +344,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - delivery survives deduplication]($section.id('claude-code---delivery-survives-deduplication').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -361,7 +361,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - pending recovery cancels stale delivery]($section.id('claude-code---pending-recovery-cancels-stale-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -380,7 +380,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - shutdown discards pending delivery]($section.id('claude-code---shutdown-discards-pending-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -395,7 +395,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - restart clears previous session]($section.id('claude-code---restart-clears-previous-session').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -414,7 +414,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - restart restores new-failure guards]($section.id('claude-code---restart-restores-new-failure-guards').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -441,7 +441,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - shutdown during a held completion]($section.id('claude-code---shutdown-during-a-held-completion').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -460,7 +460,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - inherited allow, selected ]($section.id('claude-code---inherited-allow-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -479,7 +479,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - inherited allow, selected primary]($section.id('claude-code---inherited-allow-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -498,7 +498,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - inherited allow, selected secondary]($section.id('claude-code---inherited-allow-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [allow]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -517,7 +517,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - inherited block, selected ]($section.id('claude-code---inherited-block-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [block]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [block]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -536,7 +536,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - inherited block, selected primary]($section.id('claude-code---inherited-block-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [block]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [block]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -555,7 +555,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Claude Code - inherited block, selected secondary]($section.id('claude-code---inherited-block-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [claude]($text.attrs('tag')) [block]($text.attrs('tag')) [turn]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Claude Code]($text.attrs('agent')) [block]($text.attrs('tag')) [turn]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/contracts.test.ts)
 
@@ -576,7 +576,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - inspect during check]($section.id('codex---inspect-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -589,7 +589,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - repair during check]($section.id('codex---repair-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -602,7 +602,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - latest result decides protected action]($section.id('codex---latest-result-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -619,7 +619,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - recovery decides protected action]($section.id('codex---recovery-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -636,7 +636,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - completion does not queue duplicates]($section.id('codex---completion-does-not-queue-duplicates').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -655,7 +655,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - work permits a fresh correction]($section.id('codex---work-permits-a-fresh-correction').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -678,7 +678,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - idle result delivery]($section.id('codex---idle-result-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -691,7 +691,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - delivery survives deduplication]($section.id('codex---delivery-survives-deduplication').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -708,7 +708,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - pending recovery cancels stale delivery]($section.id('codex---pending-recovery-cancels-stale-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -727,7 +727,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - shutdown discards pending delivery]($section.id('codex---shutdown-discards-pending-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -742,7 +742,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - restart clears previous session]($section.id('codex---restart-clears-previous-session').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -761,7 +761,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - restart restores new-failure guards]($section.id('codex---restart-restores-new-failure-guards').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -788,7 +788,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - shutdown during a held completion]($section.id('codex---shutdown-during-a-held-completion').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -807,7 +807,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - inherited allow, selected ]($section.id('codex---inherited-allow-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -826,7 +826,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - inherited allow, selected primary]($section.id('codex---inherited-allow-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -845,7 +845,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - inherited allow, selected secondary]($section.id('codex---inherited-allow-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -864,7 +864,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - inherited block, selected ]($section.id('codex---inherited-block-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -883,7 +883,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - inherited block, selected primary]($section.id('codex---inherited-block-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -902,7 +902,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Codex - inherited block, selected secondary]($section.id('codex---inherited-block-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [codex]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Codex]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -923,7 +923,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - inspect during check]($section.id('opencode-1---inspect-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -936,7 +936,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - repair during check]($section.id('opencode-1---repair-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -949,7 +949,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - latest result decides protected action]($section.id('opencode-1---latest-result-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -966,7 +966,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - recovery decides protected action]($section.id('opencode-1---recovery-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -983,7 +983,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - completion does not queue duplicates]($section.id('opencode-1---completion-does-not-queue-duplicates').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1002,7 +1002,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - work permits a fresh correction]($section.id('opencode-1---work-permits-a-fresh-correction').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1025,7 +1025,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - idle result delivery]($section.id('opencode-1---idle-result-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1038,7 +1038,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - delivery survives deduplication]($section.id('opencode-1---delivery-survives-deduplication').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1055,7 +1055,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - pending recovery cancels stale delivery]($section.id('opencode-1---pending-recovery-cancels-stale-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1074,7 +1074,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - shutdown discards pending delivery]($section.id('opencode-1---shutdown-discards-pending-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1089,7 +1089,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - restart clears previous session]($section.id('opencode-1---restart-clears-previous-session').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1108,7 +1108,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - restart restores new-failure guards]($section.id('opencode-1---restart-restores-new-failure-guards').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1135,7 +1135,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - shutdown during a held completion]($section.id('opencode-1---shutdown-during-a-held-completion').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1154,7 +1154,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - inherited allow, selected ]($section.id('opencode-1---inherited-allow-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1173,7 +1173,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - inherited allow, selected primary]($section.id('opencode-1---inherited-allow-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1192,7 +1192,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - inherited allow, selected secondary]($section.id('opencode-1---inherited-allow-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1211,7 +1211,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - inherited block, selected ]($section.id('opencode-1---inherited-block-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1230,7 +1230,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - inherited block, selected primary]($section.id('opencode-1---inherited-block-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1249,7 +1249,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 1 - inherited block, selected secondary]($section.id('opencode-1---inherited-block-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode1]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 1]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1270,7 +1270,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - inspect during check]($section.id('opencode-2---inspect-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1283,7 +1283,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - repair during check]($section.id('opencode-2---repair-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1296,7 +1296,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - latest result decides protected action]($section.id('opencode-2---latest-result-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1313,7 +1313,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - recovery decides protected action]($section.id('opencode-2---recovery-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1330,7 +1330,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - completion does not queue duplicates]($section.id('opencode-2---completion-does-not-queue-duplicates').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1349,7 +1349,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - work permits a fresh correction]($section.id('opencode-2---work-permits-a-fresh-correction').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1372,7 +1372,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - idle result delivery]($section.id('opencode-2---idle-result-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1385,7 +1385,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - delivery survives deduplication]($section.id('opencode-2---delivery-survives-deduplication').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1402,7 +1402,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - pending recovery cancels stale delivery]($section.id('opencode-2---pending-recovery-cancels-stale-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1421,7 +1421,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - shutdown discards pending delivery]($section.id('opencode-2---shutdown-discards-pending-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1436,7 +1436,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - restart clears previous session]($section.id('opencode-2---restart-clears-previous-session').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1455,7 +1455,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - restart restores new-failure guards]($section.id('opencode-2---restart-restores-new-failure-guards').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1482,7 +1482,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - shutdown during a held completion]($section.id('opencode-2---shutdown-during-a-held-completion').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1501,7 +1501,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - inherited allow, selected ]($section.id('opencode-2---inherited-allow-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1520,7 +1520,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - inherited allow, selected primary]($section.id('opencode-2---inherited-allow-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1539,7 +1539,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - inherited allow, selected secondary]($section.id('opencode-2---inherited-allow-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [allow]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1558,7 +1558,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - inherited block, selected ]($section.id('opencode-2---inherited-block-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [block]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [block]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1577,7 +1577,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - inherited block, selected primary]($section.id('opencode-2---inherited-block-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [block]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [block]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1596,7 +1596,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [OpenCode 2 - inherited block, selected secondary]($section.id('opencode-2---inherited-block-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [opencode2]($text.attrs('tag')) [block]($text.attrs('tag')) [context]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [OpenCode 2]($text.attrs('agent')) [block]($text.attrs('tag')) [context]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1617,7 +1617,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - inspect during check]($section.id('pi---inspect-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1630,7 +1630,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - repair during check]($section.id('pi---repair-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1643,7 +1643,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - latest result decides protected action]($section.id('pi---latest-result-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1660,7 +1660,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - recovery decides protected action]($section.id('pi---recovery-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1677,7 +1677,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - completion does not queue duplicates]($section.id('pi---completion-does-not-queue-duplicates').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1696,7 +1696,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - work permits a fresh correction]($section.id('pi---work-permits-a-fresh-correction').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1719,7 +1719,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - idle result delivery]($section.id('pi---idle-result-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1732,7 +1732,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - delivery survives deduplication]($section.id('pi---delivery-survives-deduplication').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1749,7 +1749,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - pending recovery cancels stale delivery]($section.id('pi---pending-recovery-cancels-stale-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1768,7 +1768,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - shutdown discards pending delivery]($section.id('pi---shutdown-discards-pending-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1783,7 +1783,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - restart clears previous session]($section.id('pi---restart-clears-previous-session').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1802,7 +1802,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - restart restores new-failure guards]($section.id('pi---restart-restores-new-failure-guards').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1829,7 +1829,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - shutdown during a held completion]($section.id('pi---shutdown-during-a-held-completion').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1848,7 +1848,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - inherited allow, selected ]($section.id('pi---inherited-allow-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1867,7 +1867,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - inherited allow, selected primary]($section.id('pi---inherited-allow-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1886,7 +1886,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - inherited allow, selected secondary]($section.id('pi---inherited-allow-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [allow]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1905,7 +1905,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - inherited block, selected ]($section.id('pi---inherited-block-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1924,7 +1924,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - inherited block, selected primary]($section.id('pi---inherited-block-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1943,7 +1943,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Pi - inherited block, selected secondary]($section.id('pi---inherited-block-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [pi]($text.attrs('tag')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Pi]($text.attrs('agent')) [block]($text.attrs('tag')) [event]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/test_integration_contract.mjs)
 
@@ -1964,7 +1964,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - inspect during check]($section.id('neovim---inspect-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -1977,7 +1977,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - repair during check]($section.id('neovim---repair-during-check').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -1990,7 +1990,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - latest result decides protected action]($section.id('neovim---latest-result-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2007,7 +2007,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - recovery decides protected action]($section.id('neovim---recovery-decides-protected-action').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2024,7 +2024,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - completion does not queue duplicates]($section.id('neovim---completion-does-not-queue-duplicates').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2043,7 +2043,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - work permits a fresh correction]($section.id('neovim---work-permits-a-fresh-correction').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2066,7 +2066,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - idle result delivery]($section.id('neovim---idle-result-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2079,7 +2079,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - delivery survives deduplication]($section.id('neovim---delivery-survives-deduplication').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2096,7 +2096,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - pending recovery cancels stale delivery]($section.id('neovim---pending-recovery-cancels-stale-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2115,7 +2115,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - shutdown discards pending delivery]($section.id('neovim---shutdown-discards-pending-delivery').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2130,7 +2130,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - restart clears previous session]($section.id('neovim---restart-clears-previous-session').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2149,7 +2149,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - restart restores new-failure guards]($section.id('neovim---restart-restores-new-failure-guards').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2176,7 +2176,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - shutdown during a held completion]($section.id('neovim---shutdown-during-a-held-completion').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2195,7 +2195,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - inherited allow, selected ]($section.id('neovim---inherited-allow-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2214,7 +2214,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - inherited allow, selected primary]($section.id('neovim---inherited-allow-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2233,7 +2233,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - inherited allow, selected secondary]($section.id('neovim---inherited-allow-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [allow]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2252,7 +2252,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - inherited block, selected ]($section.id('neovim---inherited-block-selected-').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [block]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [block]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2271,7 +2271,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - inherited block, selected primary]($section.id('neovim---inherited-block-selected-primary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [block]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [block]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 
@@ -2290,7 +2290,7 @@ These 114 cases are generated from the same TLC expectations replayed against al
 
 ### [Neovim - inherited block, selected secondary]($section.id('neovim---inherited-block-selected-secondary').attrs('verified'))
 
-[model-derived]($text.attrs('tag')) [neovim]($text.attrs('tag')) [block]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
+[model-derived]($text.attrs('tag')) [Neovim]($text.attrs('agent')) [block]($text.attrs('tag')) [quickfix]($text.attrs('tag'))
 
 [Executable replay](https://github.com/benomahony/overwatch/blob/main/tests/integration_contract_spec.lua)
 

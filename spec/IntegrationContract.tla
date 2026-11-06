@@ -1,6 +1,16 @@
 ---------------------- MODULE IntegrationContract ----------------------
+(* Section: Imports
+
+Shared operators used by this module are imported below.
+*)
 EXTENDS Naturals, FiniteSets, FailurePolicy
 
+(* Section: Integration boundary
+
+This layer receives completed per-check snapshots from Overwatch.
+It specifies requests, responses, delivery channels, and session lifecycle
+for every host. Both layers use the same FailurePolicy definitions.
+*)
 CONSTANTS Hosts, Checks, Names, MaxRequests, MaxChanges, MaxSessions
 
 AllHosts == {"claude", "codex", "opencode1", "opencode2", "pi", "neovim"}
@@ -8,6 +18,12 @@ ASSUME Hosts \subseteq AllHosts /\ Hosts # {}
 
 (* These are host capabilities, not advisory/strict policy modes. A warning
    cannot be counted as a denied completion, and an editor has no agent gate. *)
+(* Section: Host capabilities
+
+The host determines whether protected requests wait for a running check,
+how guarded completion is handled, and which delivery channels exist.
+These are integration capabilities, not user-selectable enforcement modes.
+*)
 Capabilities(h) ==
     [agent |-> h # "neovim",
      waitsForCheck |-> h \in {"codex", "opencode1", "opencode2", "pi"},
@@ -28,6 +44,12 @@ Empty == [c \in Checks |-> {}]
 Snapshots == [Checks -> SUBSET Names]
 NoReply == [ready |-> FALSE, decision |-> "none"]
 
+(* Section: State shape
+
+Request and reply are separate so that a check can finish or a session can
+close between them. Report visibility, deferred context, corrections, and
+idle wakeups are separate observations.
+*)
 VARIABLES host, active, busy, reports, baseline, inherited, selected,
           request, reply, requests, changes, session,
           visible, contextPending, contextSent, correctionQueued,
@@ -38,6 +60,11 @@ vars == <<host, active, busy, reports, baseline, inherited, selected,
           contextPending, contextSent, correctionQueued, contexts,
           warnings, corrections, inTurn, wakes, work>>
 
+(* Section: Guard selection and inherited policy
+
+An empty selection means all checks. FailureGuards decides whether each
+selected check guards publication; Notify identifies new failures for delivery.
+*)
 Guarded(scope) ==
     {c \in scope : FailureGuards(reports[c], baseline[c], inherited)}
 Guard == Capabilities(host).agent /\ Guarded(Checks) # {}
@@ -45,6 +72,11 @@ Notify == Capabilities(host).agent /\
           (\E c \in Checks : FailureGuards(reports[c], baseline[c], "allow"))
 SelectedChecks == IF selected = {} THEN Checks ELSE selected
 
+(* Section: State domains
+
+Counters and snapshots are bounded for TLC exploration. These bounds
+do not assert a runtime limit on requests or sessions.
+*)
 TypeOK ==
     /\ host \in Hosts /\ active \in BOOLEAN /\ busy \in BOOLEAN
     /\ work \in 0..((MaxSessions + 1) * MaxRequests)
@@ -62,6 +94,11 @@ TypeOK ==
     /\ warnings \in 0..((MaxSessions + 1) * MaxRequests)
     /\ corrections \in 0..((MaxSessions + 1) * MaxRequests)
 
+(* Section: Initial state
+
+A host starts active with arbitrary reports, baseline, policy, and check state.
+No reply, visible report, deferred context, or correction has been produced.
+*)
 Init ==
     /\ host \in Hosts /\ active = TRUE /\ busy \in BOOLEAN
     /\ reports \in Snapshots /\ baseline \in Snapshots
@@ -72,6 +109,13 @@ Init ==
     /\ contextPending = FALSE /\ contextSent = FALSE /\ correctionQueued = FALSE
     /\ contexts = 0 /\ warnings = 0 /\ corrections = 0 /\ wakes = 0 /\ work = 0 /\ inTurn \in BOOLEAN
 
+(* Section: Requests and completion decisions
+
+Inspection and repair remain answerable during checks. Protected requests
+follow the host waiting capability and consult the selected reports.
+Respond records the decision and accounts separately for warnings,
+corrections, and wakeups; Acknowledge releases the request slot.
+*)
 Request(k) ==
     /\ active /\ request = "none" /\ requests < MaxRequests
     /\ request' = k /\ reply' = NoReply /\ requests' = requests + 1
@@ -117,6 +161,12 @@ Acknowledge ==
                    contextPending, contextSent, correctionQueued,
                    contexts, warnings, corrections, inTurn, wakes, work>>
 
+(* Section: Checks and result delivery
+
+A completed check replaces the reports. Changed findings invalidate old
+delivery and correction deduplication. Report updates visibility and either
+publishes event context or retains it for Deliver. Recovery clears stale context.
+*)
 BeginCheck ==
     /\ active /\ ~busy /\ changes < MaxChanges
     /\ busy' = TRUE
@@ -156,6 +206,12 @@ Deliver ==
                    request, reply, requests, changes, session, visible,
                    correctionQueued, warnings, corrections, inTurn, work>>
 
+(* Section: Shutdown restart and new work
+
+Stop cancels an outstanding request and clears visible and pending delivery.
+Restart preserves project policy, takes reports as the new baseline, and
+resets delivery state. Completed tool work permits a fresh correction.
+*)
 Stop ==
     /\ active
     /\ inTurn' = FALSE
@@ -191,6 +247,12 @@ WorkCompleted ==
                    request, reply, requests, changes, session, visible,
                    contextPending, contextSent, contexts, warnings, corrections, inTurn, wakes>>
 
+(* Section: Allowed executions and fairness
+
+Spec composes check-completion fairness with fair response and report
+servicing. Inspection independence is a safety property: its response
+remains enabled even while a check is held.
+*)
 CheckCompletes == \E f \in Snapshots : FinishCheck(f)
 Next == (\E k \in Kinds : Request(k)) \/ Respond \/ Acknowledge \/ BeginCheck
         \/ CheckCompletes \/ Report \/ Deliver \/ Stop \/ Restart \/ StartTurn \/ WorkCompleted
@@ -200,6 +262,12 @@ Next == (\E k \in Kinds : Request(k)) \/ Respond \/ Acknowledge \/ BeginCheck
 Spec == Init /\ [][Next]_vars /\ WF_vars(CheckCompletes)
         /\ WF_vars(Respond) /\ WF_vars(Report) /\ WF_vars(Deliver)
 
+(* Section: Safety and progress properties
+
+Capabilities constrain completion, editors never acquire agent gates,
+closed sessions stay silent, pending context stays current, and corrections
+are deduplicated. Progress properties require the fairness stated in Spec.
+*)
 InspectionIndependentOfChecks ==
     active /\ request \in {"inspect", "repair"} /\ ~reply.ready => ENABLED Respond
 InspectionAlwaysAllowed ==

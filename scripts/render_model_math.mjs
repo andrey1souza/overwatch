@@ -10,7 +10,7 @@ const html = readFileSync(target, 'utf8')
 let count = 0
 const rendered = html.replace(/<script type="math\/tex(?:; mode=display)?">([\s\S]*?)<\/script>/g, (script, tex) => {
   assert(tex.trim(), 'The model guide contains an empty mathematical expression')
-  const math = katex.renderToString(tex, { displayMode: script.includes('mode=display'), output: 'mathml', throwOnError: true, trust: false, strict: 'error' })
+  const math = katex.renderToString(tex, { displayMode: true, output: 'htmlAndMathml', throwOnError: true, trust: false, strict: 'error' })
   assert(math.includes('<math'), `KaTeX produced no mathematical markup for ${tex}`)
   count++
   return math

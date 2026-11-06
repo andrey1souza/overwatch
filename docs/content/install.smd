@@ -1,7 +1,7 @@
 ---
 .title = "Install",
 .description = "Adding overwatch to Claude Code, Codex, OpenCode, Pi, or Neovim.",
-.date = .date("2026-10-21T00:00:04"),
+.date = .date("2026-10-21T00:00:03"),
 .layout = "page.shtml",
 ---
 

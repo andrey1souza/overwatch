@@ -24,6 +24,8 @@ for (const asset of ['vendor/katex.min.js', 'math.js']) {
 }
 window.document.dispatchEvent(new window.Event('DOMContentLoaded'))
 const rendered = [...window.document.querySelectorAll('math annotation[encoding="application/x-tex"]')].map(element => element.textContent.trim())
+assert.equal(window.document.querySelectorAll('.katex-html').length, expressions.length, 'Every equation needs a visible HTML layout')
+assert(html.includes('/vendor/katex.min.css'), 'Local preview must load the equation stylesheet')
 assert.deepEqual(rendered, expressions, 'Local preview must render exactly the same TeX expressions as the release build')
 assert.equal(window.document.querySelectorAll('script[type^="math/tex"]').length, 0, 'Preview left invisible TeX expressions behind')
 assert.deepEqual(errors, [], 'Local preview logged rendering errors')

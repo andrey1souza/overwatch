@@ -66,6 +66,7 @@ jobs:
         working-directory: docs
         run: |
           zine release
+          MODEL_DOM_MODULE="$RUNNER_TEMP/model-math/node_modules/jsdom" node ../scripts/check_behavior_filters.mjs
           MODEL_DOM_MODULE="$RUNNER_TEMP/model-math/node_modules/jsdom" node ../scripts/check_live_model_math.mjs
           KATEX_MODULE="$RUNNER_TEMP/model-math/node_modules/katex" node ../scripts/render_model_math.mjs
           python3 ../scripts/check_model_html.py

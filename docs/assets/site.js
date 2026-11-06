@@ -77,16 +77,19 @@ function buildToc() {
 }
 
 /** Shows the scenarios whose title, tags and steps hold every word of query, and how many that is, in count. */
-function filterScenarios(query, scenarios, sections, count) {
+function filterScenarios(filters, scenarios, sections, count) {
+  const { query, agent } = filters
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   for (const scenario of scenarios) {
-    const text = [...scenario.querySelectorAll("h4, .tag, li")].map((part) => part.textContent).join(" ").toLowerCase()
-    scenario.hidden = !words.every((word) => text.includes(word))
+    const text = [...scenario.querySelectorAll("h4, .tag, .agent, li")].map((part) => part.textContent).join(" ").toLowerCase()
+    const agents = [...scenario.querySelectorAll('.agent')].map(tag => tag.textContent)
+    const agentMatches = !agent || (agent === 'general' ? agents.length === 0 : agents.includes(agent))
+    scenario.hidden = !agentMatches || !words.every((word) => text.includes(word))
   }
   hideEmptySections(sections, scenarios)
   const shown = scenarios.filter((scenario) => !scenario.hidden).length
-  console.assert(words.length > 0 || shown === scenarios.length, `an empty search shows ${shown} of ${scenarios.length} scenarios; show them all`)
-  count.textContent = countText(words.length > 0, shown, scenarios.length)
+  console.assert(agent || words.length > 0 || shown === scenarios.length, `an empty search shows ${shown} of ${scenarios.length} scenarios; show them all`)
+  count.textContent = countText(Boolean(agent) || words.length > 0, shown, scenarios.length)
   console.assert(count.textContent.includes(String(shown)) || shown === 0, `count "${count.textContent}" does not say ${shown} scenarios are shown`)
 }
 
@@ -122,6 +125,19 @@ function countText(isSearching, shown, total) {
   return text
 }
 
+/** Build agent options from generated scenario metadata, including untagged scenarios. */
+function createAgentFilter(scenarios) {
+  const agents = [...new Set(scenarios.flatMap(scenario => [...scenario.querySelectorAll('.agent')].map(tag => tag.textContent)))].sort()
+  console.assert(agents.length > 0, `No agent tags found in ${scenarios.length} scenarios`)
+  const select = document.createElement('select')
+  select.setAttribute('aria-label', 'Filter by coding agent')
+  select.append(new Option('All agents and integrations', ''))
+  for (const agent of agents) select.append(new Option(agent, agent))
+  if (scenarios.some(scenario => !scenario.querySelector('.agent'))) select.append(new Option('General / untagged', 'general'))
+  console.assert(select.options.length > agents.length, `Agent filter lost its default option for ${agents}`)
+  return select
+}
+
 /** Adds a box that filters the behavior guide's scenarios, hiding features and statuses left empty. */
 function buildSearch() {
   const prose = document.querySelector(".prose")
@@ -136,15 +152,17 @@ function buildSearch() {
   const count = document.createElement("p")
   count.className = "scenario-count"
   count.setAttribute("aria-live", "polite")
-  search.append(input, count)
+  const agent = createAgentFilter(scenarios)
+  search.append(input, agent, count)
   prose.prepend(search)
   const sections = [...prose.querySelectorAll(":scope > div[id]")].toReversed()
   const filter = () => {
     console.assert(typeof input.value === "string" && input.isConnected, "the search box is not on the page; prepend it to .prose before filtering")
-    filterScenarios(input.value, scenarios, sections, count)
+    filterScenarios({ query: input.value, agent: agent.value }, scenarios, sections, count)
     console.assert(count.textContent !== "", `filtering "${input.value}" left the count empty; filterScenarios must set it`)
   }
   input.addEventListener("input", filter)
+  agent.addEventListener("change", filter)
   input.addEventListener("keydown", (event) => {
     if (event.key === "Escape") { input.value = ""; filter() }
   })
@@ -153,14 +171,14 @@ function buildSearch() {
     event.preventDefault()
     input.focus()
   })
-  for (const tag of prose.querySelectorAll(".tag")) {
+  for (const tag of prose.querySelectorAll(".tag, .agent")) {
     tag.addEventListener("click", () => { input.value = tag.textContent; filter(); input.focus() })
   }
   for (const scenario of scenarios) {
     const source = scenario.querySelector(":scope > p a")
     if (!source) continue
     scenario.addEventListener("click", (event) => {
-      if (event.target.closest("a, .tag") || getSelection()?.toString()) return
+      if (event.target.closest("a, .tag, .agent") || getSelection()?.toString()) return
       if (event.metaKey || event.ctrlKey) window.open(source.href, "_blank", "noopener")
       else location.href = source.href
     })

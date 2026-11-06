@@ -9,7 +9,7 @@ function renderModelMath() {
     try {
       const container = document.createElement('span')
       container.innerHTML = globalThis.katex.renderToString(tex, {
-        displayMode: expression.type.includes('mode=display'), output: 'mathml',
+        displayMode: true, output: 'htmlAndMathml',
         throwOnError: true, trust: false, strict: 'error',
       })
       console.assert(container.querySelector('math'), `KaTeX produced no mathematics for ${tex}`)

@@ -30,7 +30,7 @@ def render_contracts(rows: list[dict]) -> list[str]:
              f"These {len(rows)} cases are generated from the same TLC expectations replayed against all six integrations. "
              'Each event is followed by the model observation asserted by the replay. '
              'Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.', '',
-             '[Read the formal model guide](https://benomahony.github.io/overwatch/model/) for event definitions, host differences, and verification limits.', '']
+             '[Read the spec](https://benomahony.github.io/overwatch/model/) for the complete state machines, host capabilities, and checked properties.', '']
     for host in dict.fromkeys(row['host'] for row in rows):
         lines.extend([f'### {HOST_NAMES[host]}', ''])
         for row in (row for row in rows if row['host'] == host):
@@ -61,22 +61,4 @@ def render_contract(row: dict) -> list[str]:
         detail = f" with result `{json.dumps(row['next'], sort_keys=True)}`" if event in ('Finish', 'LateFinish') else ''
         lines.extend([f'- **When** `{event}` occurs{detail}.', '- **Then** ' + observation(expected)])
     lines.append('')
-    return lines
-
-
-def render_capabilities(rows: list[dict]) -> list[str]:
-    """Show capabilities exported by TLC, rejecting inconsistent host snapshots."""
-    fields = ('agent', 'waitsForCheck', 'completion', 'delivery', 'persistentStatus', 'idleWake')
-    hosts = {}
-    for row in rows:
-        for state in row['expected']:
-            values = tuple(state[key] for key in fields)
-            previous = hosts.setdefault(row['host'], values)
-            assert previous == values, f"Capabilities change within {row['host']}: {previous} / {values}"
-    assert set(hosts) == set(HOST_NAMES), f'Capabilities missing hosts: {set(HOST_NAMES) - set(hosts)}'
-    lines = ['| Host | Agent gates | Waits for check on protected calls | Completion feedback | Delivery | Persistent status | Idle wake |',
-             '| --- | --- | --- | --- | --- | --- | --- |']
-    for host, values in hosts.items():
-        cells = [('Yes' if value else 'No') if isinstance(value, bool) else f'`{value}`' for value in values]
-        lines.append('| ' + ' | '.join([HOST_NAMES[host], *cells]) + ' |')
     return lines
