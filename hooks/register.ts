@@ -9,6 +9,7 @@ import {
   WATCHERS,
   applyOverride,
   commandLine,
+  configure,
   environmentIn,
   environmentLine,
   environmentMessage,
@@ -250,12 +251,20 @@ async function deliver($: EngineInterface, run: Run, report: Report) {
   queue($, run, 'recovered', { text: recoveryMessage(watcher, report), isWaking: false, kind: 'report' })
 }
 
+/** The spawn option that sets a watcher's env over overwatch's own; none when it sets none. */
+function envOf(watcher: Watcher): { env?: Record<string, string> } {
+  assert(watcher.env === undefined || Object.values(watcher.env).every(value => typeof value === 'string'), `${watcher.name}'s env ${JSON.stringify(watcher.env)} holds a value that is not a string; give each variable a string`)
+  const option = watcher.env === undefined ? {} : { env: { ...watcher.env } }
+  assert(option.env === undefined || Object.keys(option.env).length === Object.keys(watcher.env ?? {}).length, `the env option for ${watcher.name} lost variables of ${JSON.stringify(watcher.env)}; copy each`)
+  return option
+}
+
 /** Runs a command to its end and reports what it printed, unless it was stopped for a newer run first. */
 async function runOnce($: EngineInterface, run: Run, argv: readonly string[], isStale = () => false) {
   const { state, slot, watcher, cwd } = run
   assert(argv.length > 0, `${watcher.name} was asked to run an empty command; give it argv or baseline`)
   assert(slot.kill === undefined, `${slot.key} starts ${commandLine(watcher, argv)} while another run is still killable; stop it first`)
-  const child = $.process.spawn({ argv, cwd })
+  const child = $.process.spawn({ argv, cwd, ...envOf(watcher) })
   slot.kill = () => child.return({ code: null, signal: null })
   let output = ''
   let code: number | null
@@ -331,7 +340,7 @@ async function watch($: EngineInterface, run: Run): Promise<Ending | undefined> 
   }
   const startedAt = await $.clock.now()
   if (!slot.isWatching) return undefined
-  const child = $.process.spawn({ argv: watcher.argv, cwd })
+  const child = $.process.spawn({ argv: watcher.argv, cwd, ...envOf(watcher) })
   slot.kill = () => child.return({ code: null, signal: null })
   setStatus($, state, slot, `overwatch ${watcher.name}: starting ${commandLine(watcher)}`)
   let output = ''
@@ -499,6 +508,7 @@ async function findWatchers($: EngineInterface, cwd: string, override: Override)
   let subprojects: Subproject[] | undefined
   for (const language of LANGUAGES) {
     const alternatives = WATCHERS.filter(watcher => languageOf(watcher) === language)
+      .flatMap(watcher => configure(watcher, watcher.name, override) ?? [])
     const atRoot = await firstPresent($, alternatives, marker => $.fs.exists(`${cwd}/${marker}`))
     if (atRoot !== undefined) {
       found.push(atRoot)
@@ -539,9 +549,12 @@ async function findAll($: EngineInterface, cwd: string): Promise<Watcher[]> {
   const override = await readOverride($, cwd)
   if (override.enabled === false) return []
   const checkers: Watcher[] = []
-  for (const checker of CHECKERS) if (await isOnPath($, checker.marker)) checkers.push(checker)
+  for (const checker of CHECKERS) {
+    const configured = configure(checker, checker.name, override)
+    if (configured !== undefined && (await isOnPath($, checker.marker))) checkers.push(configured)
+  }
   const watchers = await findWatchers($, cwd, override)
-  assert(checkers.every(checker => CHECKERS.includes(checker)), `checkers ${checkers.map(({ name }) => name)} are not all from CHECKERS`)
+  assert(checkers.every(checker => CHECKERS.some(({ name }) => name === checker.name)), `checkers ${checkers.map(({ name }) => name)} are not all from CHECKERS`)
   assert(checkers.length <= CHECKERS.length, `found ${checkers.length} of ${CHECKERS.length} checkers; add each once`)
   return [...watchers, ...checkers]
 }

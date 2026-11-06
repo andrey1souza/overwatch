@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 import os
+import re
 import shlex
 from pathlib import Path
 import subprocess
@@ -440,6 +441,44 @@ class CodexHookTests(unittest.TestCase):
         self.start_passing_session()
         started, _ = self.call("PostToolUse")
         self.assertEqual(started["systemMessage"], "Overwatch: go ✗ 2 tests, 1 failure in 0.184s: . TestAdd")
+
+    def test_watchers_settings_configure_each_entry_by_name(self) -> None:
+        write(self.cwd / "Cargo.toml", "[package]\n")
+        settings = {"rust": {"baseline": ["cargo", "test", "--lib"], "env": {"RUST_BACKTRACE": "1"}},
+                    "zanity": {"enabled": False}, "git": {"env": {"OVERWATCH_GIT_INTERVAL": "300"}}}
+        write(self.cwd / ".overwatch.json", json.dumps({"watchers": settings}))
+        watchers = {watcher["name"]: watcher for watcher in codex.find_watchers(self.cwd)}
+        self.assertEqual(watchers["rust"]["baseline"], ["cargo", "test", "--lib"])
+        self.assertEqual(watchers["rust"]["env"], {"RUST_BACKTRACE": "1"})
+        self.assertNotIn("zanity", watchers)
+        if "git" in watchers:
+            self.assertEqual(watchers["git"]["env"], {"OVERWATCH_GIT_INTERVAL": "300"})
+
+    def test_a_watchers_env_reaches_its_command(self) -> None:
+        write(self.cwd / "Cargo.toml", "[package]\n")
+        write(self.cwd / ".overwatch.json", json.dumps({"watchers": {"rust": {"env": {"OVERWATCH_FIXTURE": "set"}}}}))
+        self.tool("cargo", "test tests::adds ... FAILED", 101)
+        original = tool_script("test tests::adds ... FAILED", 101)
+        guarded = original.replace("#!/bin/sh\n", '#!/bin/sh\n[ "$OVERWATCH_FIXTURE" = set ] || exit 0\n', 1)
+        self.assertNotEqual(guarded, original, "the fake cargo does not read the variable; check tool_script's shebang")
+        write(self.bin / "cargo", guarded, original)
+
+        self.start_passing_session()
+        started, _ = self.call("PostToolUse")
+        self.assertEqual(started["systemMessage"], "Overwatch: rust ✗ 1 failed: tests::adds")
+
+    def test_invalid_watchers_settings_name_the_field(self) -> None:
+        write(self.cwd / "Cargo.toml", "[package]\n")
+        previous = None
+        for settings, field in (({"rust": {"enabled": "no"}}, "watchers.rust.enabled"),
+                                ({"rust": {"interval": 5}}, "unknown fields ['interval']"),
+                                ({"rust": {"env": {"A": 1}}}, "watchers.rust.env"),
+                                ([], "'watchers'")):
+            text = json.dumps({"watchers": settings})
+            write(self.cwd / ".overwatch.json", text, previous)
+            previous = text
+            with self.subTest(settings=settings), self.assertRaisesRegex(codex.ConfigurationError, re.escape(field)):
+                codex.find_watchers(self.cwd)
 
     def test_the_typescript_table_is_generated_from_watchers_json(self) -> None:
         self.assertEqual(read(table.TARGET), table.render(), "run python3 scripts/table.py")

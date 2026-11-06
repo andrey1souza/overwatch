@@ -133,10 +133,11 @@
     {
       "name": "git",
       "marker": "git",
-      "argv": ["sh", "-c", "while :; do if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then GIT_TERMINAL_PROMPT=0 git fetch --quiet; git log --format='new upstream commit %h %s' 'HEAD..@{upstream}'; count=$(git rev-list --count 'HEAD..@{upstream}'); if [ \"$count\" = 0 ]; then echo \"up to date with $upstream\"; elif [ \"$count\" = 1 ]; then echo \"$upstream has 1 new commit; pull and rebase\"; else echo \"$upstream has $count new commits; pull and rebase\"; fi; else echo 'no upstream to track'; fi; sleep 60 </dev/null >/dev/null 2>&1; done"],
+      "argv": ["sh", "-c", "while :; do if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then GIT_TERMINAL_PROMPT=0 git fetch --quiet; git log --format='new upstream commit %h %s' 'HEAD..@{upstream}'; count=$(git rev-list --count 'HEAD..@{upstream}'); if [ \"$count\" = 0 ]; then echo \"up to date with $upstream\"; elif [ \"$count\" = 1 ]; then echo \"$upstream has 1 new commit; pull and rebase\"; else echo \"$upstream has $count new commits; pull and rebase\"; fi; else echo 'no upstream to track'; fi; sleep \"${OVERWATCH_GIT_INTERVAL:-60}\" </dev/null >/dev/null 2>&1; done"],
       "summary": "^(?:\\S+ has \\d+ new commits?; pull and rebase|up to date with \\S+|no upstream to track)$",
       "failed": "\\bnew commits?\\b",
-      "failure": "^new upstream commit (\\S+ .*)$"
+      "failure": "^new upstream commit (\\S+ .*)$",
+      "env": { "OVERWATCH_GIT_INTERVAL": "60" }
     }
   ]
 }

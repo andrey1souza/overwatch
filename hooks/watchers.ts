@@ -39,6 +39,18 @@ export type Watcher = {
   failure?: RegExp
   /** The sub-project the watcher runs in, relative to the project's root; absent, the root. */
   dir?: string
+  /** Variables set over overwatch's own environment for its commands. */
+  env?: Readonly<Record<string, string>>
+}
+
+/** One watchers.json entry's settings in `.overwatch.json`, under `watchers` and its name; `env` is merged over the entry's. */
+export type WatcherSettings = {
+  enabled?: boolean
+  argv?: string[]
+  baseline?: string[]
+  summary?: string
+  failed?: string
+  env?: Record<string, string>
 }
 
 /** The project's own `.overwatch.json`, shared with the Neovim plugin, every field optional. */
@@ -50,6 +62,7 @@ export type Override = {
   baseline?: string[]
   summary?: string
   failed?: string
+  watchers?: Record<string, WatcherSettings>
 }
 
 export const OVERRIDE_PATH = '.overwatch.json'
@@ -66,6 +79,7 @@ type Entry = {
   failed?: string
   result?: string
   failure?: string
+  env?: Record<string, string>
 }
 
 const table: {
@@ -166,6 +180,28 @@ export function applyOverride(watcher: Watcher, override: Override): Watcher {
   }
   assert(result.language === languageOf(watcher), `override changed ${watcher.name}'s language to ${result.language}; overrides may not set it`)
   assert(result.marker === watcher.marker, `override changed ${watcher.name}'s marker to ${result.marker}; keep the watcher's`)
+  return result
+}
+
+/**
+ * The watcher with the settings `.overwatch.json` gives its watchers.json name, its `env` merged over the entry's;
+ * undefined when they turn it off. A sub-project's watcher is named after its entry, so it takes that entry's settings.
+ */
+export function configure(watcher: Watcher, entry: string, override: Override): Watcher | undefined {
+  const settings = override.watchers?.[entry]
+  if (settings === undefined) return watcher
+  if (settings.enabled === false) return undefined
+  const env = settings.env === undefined ? watcher.env : { ...watcher.env, ...settings.env }
+  const result: Watcher = {
+    ...watcher,
+    argv: settings.argv ?? watcher.argv,
+    baseline: settings.baseline ?? watcher.baseline,
+    summary: settings.summary === undefined ? watcher.summary : new RegExp(settings.summary, 'm'),
+    failed: settings.failed === undefined ? watcher.failed : new RegExp(settings.failed),
+    ...(env === undefined ? {} : { env }),
+  }
+  assert(result.name === watcher.name && result.marker === watcher.marker, `settings for ${entry} renamed ${watcher.name} or moved its marker ${watcher.marker}; keep both`)
+  assert(Object.entries(settings.env ?? {}).every(([name, value]) => result.env?.[name] === value), `${entry}'s env ${JSON.stringify(result.env)} lost the project's ${JSON.stringify(settings.env)}; merge it over the entry's`)
   return result
 }
 

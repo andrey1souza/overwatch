@@ -54,6 +54,24 @@ test('.overwatch.json can turn a marked project off', function()
   eq(overwatch.find_watchers(dir), {})
 end)
 
+test('watchers settings configure an entry by name, and one turned off gives way to the next', function()
+  local dir = project({ watchers = {
+    vitest = { enabled = false },
+    rust = { baseline = { 'cargo', 'test', '--lib' }, env = { RUST_BACKTRACE = '1' } },
+  } })
+  vim.fn.writefile({}, dir .. '/Cargo.toml')
+  vim.fn.writefile({}, dir .. '/bun.lock')
+  vim.fn.mkdir(dir .. '/node_modules/.bin', 'p')
+  vim.fn.writefile({}, dir .. '/node_modules/.bin/vitest')
+  local found = {}
+  for _, watcher in ipairs(overwatch.find_watchers(dir)) do found[watcher.name] = watcher end
+  local names = vim.tbl_keys(found)
+  table.sort(names)
+  eq(names, { 'bun', 'rust' })
+  eq(found.rust.baseline, { 'cargo', 'test', '--lib' })
+  eq(found.rust.env, { RUST_BACKTRACE = '1' })
+end)
+
 test('a project with no marker and no command has no watcher', function()
   eq(overwatch.find_watchers(project({ summary = 'x', failed = 'y' })), {})
   eq(overwatch.find_watchers(project()), {})

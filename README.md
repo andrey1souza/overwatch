@@ -47,7 +47,7 @@ When a build fails, overwatch names the failing tests (or compile errors, where 
 
 In every project, whatever its marker, zanity runs beside the test watcher whenever `zanity` is on `PATH`, as `zanity check . --watch --no-color` (zanity 0.1.12 or later). Any error or warning it reports counts as a failure, handed to the agent like a failing build, and the status line shows both results, for example `overwatch zig ✓ 4/4 steps succeeded; 48/48 tests passed · overwatch zanity ✓ checked 12 files, no issues found.`. Codex, OpenCode, and Pi run the same command after a change, at the same time as each language's suite, and stop it after its first report. Add another checker to `checkers` in `watchers.json`, its `marker` naming the executable to look for on `PATH`.
 
-In a project whose branch tracks an upstream, the git checker runs beside them whenever `git` is on `PATH`. Every 60 seconds it fetches and lists the upstream commits the branch lacks, so on trunk the agent hears as soon as `main` moves, for example `overwatch git ✗ origin/main has 2 new commits; pull and rebase: 1084b40 Add the jest runner +1 more`. Each new commit is a failure of its own, so commits already upstream when the session starts are inherited and only those that land during it ask for a correction; pulling or rebasing moves HEAD, which takes a fresh baseline. A branch with no upstream, or a detached HEAD, passes with `no upstream to track`. Codex, OpenCode, and Pi fetch once after each change, like zanity.
+In a project whose branch tracks an upstream, the git checker runs beside them whenever `git` is on `PATH`. Every 60 seconds it fetches and lists the upstream commits the branch lacks, so on trunk the agent hears as soon as `main` moves, for example `overwatch git ✗ origin/main has 2 new commits; pull and rebase: 1084b40 Add the jest runner +1 more`. Each new commit is a failure of its own, so commits already upstream when the session starts are inherited and only those that land during it ask for a correction; pulling or rebasing moves HEAD, which takes a fresh baseline. A branch with no upstream, or a detached HEAD, passes with `no upstream to track`. Codex, OpenCode, and Pi fetch once after each change, like zanity. Set `OVERWATCH_GIT_INTERVAL` in its `env` to poll at another interval in seconds.
 
 Add a language by adding an entry to `watchers` in `watchers.json`, the one table every integration reads, then run `python3 scripts/table.py`, which copies it into `hooks/table.ts` for Claude Code (whose plugins cannot import JSON); the tests fail while the two differ. An entry names its marker file, its command, optionally a command that runs the whole suite once first, the line that closes one build's report, and the pattern on that line that means it failed. Optionally: `language`, to make it an alternative to the entries before it with the same one; `requires`, an executable that must be on `PATH`; `result`, the line to show when the build's result comes before the line that closes its report; and `failure`, a pattern matching each failing test, named by its first group that matched. An entry with no watch command may leave out the summary and be read by its exit code. Patterns are JavaScript regexes, written as JSON strings. When no baseline is configured, the short-lived agent integrations run the watch command through its first complete report and then stop it.
 
@@ -66,6 +66,18 @@ Add a language by adding an entry to `watchers` in `watchers.json`, the one tabl
 ```
 
 `"enabled": false` turns overwatch off for that project, zanity included; `"baseline": []` skips the full run first. The other fields apply to one test watcher alone: in a polyglot project or a monorepo, the first language in the table above that the project has, at its root or in a sub-project. The override is read only at the project's root.
+
+`watchers` configures any entry of `watchers.json` by its name, test watchers and checkers alike, in a polyglot project or a monorepo too, where a sub-project's watcher takes its entry's settings. Each takes `enabled`, `argv`, `baseline`, `summary`, `failed` and `env`, variables set for its commands over overwatch's own and merged over the entry's. An entry turned off gives way to the next of its language, so turning off `vitest` runs `jest` or `bun` when the project has one. The top-level fields above apply after these. Codex, OpenCode, and Pi refuse a setting of the wrong type, or a field it does not take, and name it.
+
+```json
+{
+  "watchers": {
+    "git": { "env": { "OVERWATCH_GIT_INTERVAL": "300" } },
+    "zanity": { "enabled": false },
+    "python": { "baseline": ["uv", "run", "pytest", "-m", "not slow"] }
+  }
+}
+```
 
 A project with no marker file is watched when its override names `summary`, `failed`, and `argv` or `baseline`; `name` labels it in the status line. With no `argv`, overwatch needs no watch tool: it reruns `baseline` itself after the agent's edits (Edit, Write, MultiEdit, NotebookEdit or Bash calls) go quiet. An edit made while the suite runs stops that run and starts another, so the agent never hears a result its later edits have already overtaken. Edits made outside the session are picked up at the agent's next edit. This repository watches its own tests that way:
 

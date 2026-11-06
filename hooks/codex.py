@@ -72,6 +72,7 @@ class Watcher(TypedDict, total=False):
     result: str
     failure: str
     dir: str
+    env: dict[str, str]
 
 
 WATCHERS: tuple[Watcher, ...] = tuple(TABLE["watchers"])
@@ -166,6 +167,48 @@ def apply_override(watcher: Watcher, override: dict[str, Any]) -> Watcher:
     return result
 
 
+SETTINGS = ("enabled", "argv", "baseline", "summary", "failed", "env")
+
+
+def settings_of(name: str, override: dict[str, Any]) -> dict[str, Any]:
+    """The settings .overwatch.json gives the watchers.json entry called name under "watchers", each field checked
+    for its type; empty when it gives none."""
+    assert name in {entry["name"] for entry in (*WATCHERS, *CHECKERS)}, f"settings_of was asked for {name!r}; pass a watchers.json entry's name"
+    assert isinstance(override, dict), f"settings_of was given {override!r}; pass what read_override returned"
+    entries = override.get("watchers", {})
+    if not isinstance(entries, dict):
+        raise ConfigurationError(f"{OVERRIDE_PATH} field 'watchers' is {entries!r}, not an object; key it by watchers.json names")
+    settings = entries.get(name, {})
+    if not isinstance(settings, dict):
+        raise ConfigurationError(f"{OVERRIDE_PATH} watchers.{name} is {settings!r}, not an object; give it {', '.join(SETTINGS)}")
+    unknown = sorted(set(settings) - set(SETTINGS))
+    if unknown:
+        raise ConfigurationError(f"{OVERRIDE_PATH} watchers.{name} has unknown fields {unknown}; use {', '.join(SETTINGS)}")
+    if not isinstance(settings.get("enabled", True), bool):
+        raise ConfigurationError(f"{OVERRIDE_PATH} watchers.{name}.enabled is {settings['enabled']!r}, not a boolean; set it to true or false")
+    env = settings.get("env", {})
+    if not isinstance(env, dict) or not all(isinstance(value, str) for value in env.values()):
+        raise ConfigurationError(f"{OVERRIDE_PATH} watchers.{name}.env is {env!r}; make it an object of string values")
+    assert set(settings) <= set(SETTINGS), f"settings_of accepted {sorted(settings)} for {name}; refuse fields outside SETTINGS"
+    return settings
+
+
+def configure(watcher: Watcher, override: dict[str, Any]) -> Watcher | None:
+    """The watcher with the settings .overwatch.json gives its watchers.json name under "watchers", its env merged
+    over the entry's; None when they turn it off. A sub-project's watcher takes its entry's settings."""
+    name = watcher["name"]
+    settings = settings_of(name, override)
+    if settings.get("enabled") is False:
+        return None
+    env = settings.get("env", {})
+    result = apply_override(watcher, {field: settings[field] for field in ("argv", "baseline", "summary", "failed") if field in settings})
+    if env or "env" in watcher:
+        result["env"] = {**watcher.get("env", {}), **env}
+    assert result["name"] == name, f"settings for {name} renamed it {result['name']}; keep the entry's name"
+    assert all(result["env"][key] == value for key, value in env.items()), f"{name}'s env {result.get('env')} lost the project's {env}; merge it over the entry's"
+    return result
+
+
 def language_of(watcher: Watcher) -> str:
     """The language a watcher checks: its language field, else its name. Watchers come from watchers.json, whose
     entries scripts/table.py checks, or through apply_override, which checks each field it takes from .overwatch.json;
@@ -232,6 +275,16 @@ def find_subprojects(cwd: Path) -> list[str]:
     return found
 
 
+def alternatives_of(language: str, override: dict[str, Any]) -> list[Watcher]:
+    """The language's watchers.json entries in order, configured by .overwatch.json, leaving out those it turns off."""
+    assert any(language_of(watcher) == language for watcher in WATCHERS), f"alternatives_of was asked for {language!r}, which no watchers.json entry checks"
+    assert isinstance(override, dict), f"alternatives_of was given {override!r}; pass what read_override returned"
+    configured = [configure(watcher, override) for watcher in WATCHERS if language_of(watcher) == language]
+    kept = [watcher for watcher in configured if watcher is not None]
+    assert all(language_of(watcher) == language for watcher in kept), f"alternatives of {language} include {[watcher['name'] for watcher in kept]}; keep one language's"
+    return kept
+
+
 def find_project_watchers(cwd: Path, override: dict[str, Any]) -> list[Watcher]:
     # One watcher for each language the project has, or else for each sub-project that has it, one not inside
     # another that does; the override applies to the first. Sub-projects are POSIX paths relative to cwd, joined
@@ -239,7 +292,7 @@ def find_project_watchers(cwd: Path, override: dict[str, Any]) -> list[Watcher]:
     found: list[Watcher] = []
     subprojects: list[str] | None = None
     for language in dict.fromkeys(language_of(watcher) for watcher in WATCHERS):
-        alternatives = [watcher for watcher in WATCHERS if language_of(watcher) == language]
+        alternatives = alternatives_of(language, override)
         at_root = first_present(alternatives, cwd)
         if at_root is not None:
             found.append(apply_override(at_root, override if not found else {}))
@@ -283,8 +336,9 @@ def find_watchers(cwd: Path) -> list[Watcher]:
 
     # A checker runs wherever its executable is on PATH.
     for checker in CHECKERS:
-        if on_path(checker["marker"]):
-            found.append(dict(checker))
+        configured = configure(checker, override)
+        if configured is not None and on_path(checker["marker"]):
+            found.append(dict(configured))
     assert all("name" in watcher for watcher in found), f"found {found} with an unnamed watcher; give every watcher a name in watchers.json"
     keys = [key_of(watcher["name"], watcher.get("dir")) for watcher in found]
     assert len(set(keys)) == len(found), f"found {keys} in {cwd}; add each checker only when no watcher has its name"
@@ -360,6 +414,7 @@ def _run_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
+            env={**os.environ, **watcher["env"]} if "env" in watcher else None,
         )
     except OSError as error:
         raise ConfigurationError(f"could not start {command}: {error}") from error

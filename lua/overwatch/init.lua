@@ -85,7 +85,24 @@ local function apply_override(watcher, override)
     result = watcher.result,
     failure = watcher.failure,
     dir = watcher.dir,
+    env = watcher.env,
   }
+end
+
+--- The watcher with the settings .overwatch.json gives its watchers.json name under `watchers`, its env merged over
+--- the entry's; nil when they turn it off. A sub-project's watcher takes its entry's settings.
+local function configure(watcher, override)
+  local settings = type(override.watchers) == 'table' and override.watchers[watcher.name] or nil
+  if type(settings) ~= 'table' then return watcher end
+  if settings.enabled == false then return nil end
+  local configured = vim.tbl_extend('force', watcher, {
+    argv = settings.argv or watcher.argv,
+    baseline = settings.baseline or watcher.baseline,
+    summary = settings.summary or watcher.summary,
+    failed = settings.failed or watcher.failed,
+  })
+  if type(settings.env) == 'table' then configured.env = vim.tbl_extend('force', watcher.env or {}, settings.env) end
+  return configured
 end
 
 --- The first of a language's alternatives whose marker is in dir and whose tool, if it needs one, is on PATH.
@@ -134,7 +151,11 @@ function M.find_watchers(cwd)
     local language = language_of(watcher)
     if not languages[language] then
       languages[language] = true
-      local alternatives = vim.tbl_filter(function(each) return language_of(each) == language end, M.WATCHERS)
+      local alternatives = {}
+      for _, each in ipairs(M.WATCHERS) do
+        local configured = language_of(each) == language and configure(each, override) or nil
+        if configured then alternatives[#alternatives + 1] = configured end
+      end
       local at_root = first_present(alternatives, cwd)
       if at_root then
         found[#found + 1] = apply_override(at_root, #found == 0 and override or {})
@@ -308,7 +329,7 @@ local function spawn(run, argv, on_output, on_exit)
     if data then vim.schedule(function() on_output(data) end) end
   end
   local cwd = run.watcher.dir and (state.cwd .. '/' .. run.watcher.dir) or state.cwd
-  local ok, process = pcall(vim.system, argv, { cwd = cwd, stdout = read, stderr = read }, function(result)
+  local ok, process = pcall(vim.system, argv, { cwd = cwd, env = run.watcher.env, stdout = read, stderr = read }, function(result)
     vim.schedule(function() on_exit(result) end)
   end)
   if not ok then
