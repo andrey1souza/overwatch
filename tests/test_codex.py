@@ -21,6 +21,7 @@ from paths import ROOT
 import codex
 import gating
 import table
+import git_commands
 import triage
 
 
@@ -458,11 +459,42 @@ class CodexHookTests(unittest.TestCase):
         self.assertIn("failed after the latest change", answer["hookSpecificOutput"]["additionalContext"])
 
     def test_commands_that_bring_in_files_are_told_from_commits(self) -> None:
-        for command in ("git merge --squash x", "git -C app pull", "cd app && git cherry-pick -n abc", "sh -c 'git merge x'",
-                        "/usr/bin/git checkout main", "git -c core.x=1 rebase main"):
+        corpus = json.loads(read(git_commands.SOURCE))
+        self.assertEqual(read(git_commands.TARGET), git_commands.render_commands(), "run python3 scripts/git_commands.py after editing git-commands.json")
+        assert set(corpus) == {"bringing", "commits", "unseen"}, f"the corpus has {set(corpus)}; keep bringing, commits and unseen"
+        for command in corpus["bringing"]:
             self.assertTrue(gating.brings_in_files(command), command)
-        for command in ("git commit -qam break", 'git commit -m "merge fix"', "echo merge && git status", "make test", ""):
+        for command in corpus["commits"] + corpus["unseen"]:
             self.assertFalse(gating.brings_in_files(command), command)
+
+    def edit_and_commit_in_one_step(self, command: str) -> dict[str, object]:
+        """A green project, then one step that breaks the check and commits it, reported to the hook as the shell
+        command given. Returns the hook's answer to that step."""
+        result, _ = self.configure()
+        write(result, "RESULT: PASS")
+        self.commit("start green")
+        self.call("SessionStart")
+        write(result, "RESULT: FAIL", "RESULT: PASS")
+        self.commit("break the check")
+        answer, _ = self.call("PostToolUse", tool_name="Bash", tool_input={"command": command})
+        assert read(result) == "RESULT: FAIL", f"{result} reads {read(result)!r}; the step should break the check"
+        assert codex.commit_of(self.cwd) is not None, f"{self.cwd} has no commit after the step"
+        return answer
+
+    def test_a_commit_message_naming_a_git_operation_is_still_a_commit(self) -> None:
+        answer = self.edit_and_commit_in_one_step('git commit -qam "Fix git pull handling"')
+        self.assertIn("failed after the latest change", answer["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(self.call("Stop")[0]["decision"], "block")
+
+    def test_a_squash_merge_inside_bash_dash_c_takes_a_fresh_baseline(self) -> None:
+        answer = self.squash_upstream_and_commit('bash -lc "git merge --squash upstream && git commit -m squash"')
+        self.assertNotIn("failed after the latest change", json.dumps(answer))
+        self.assertEqual(self.call("Stop")[0], {})
+
+    def test_a_squash_merge_in_a_subshell_takes_a_fresh_baseline(self) -> None:
+        answer = self.squash_upstream_and_commit("(git merge --squash upstream && git commit -m squash)")
+        self.assertNotIn("failed after the latest change", json.dumps(answer))
+        self.assertEqual(self.call("Stop")[0], {})
 
     def test_a_pull_that_moves_head_takes_a_fresh_baseline(self) -> None:
         result, _ = self.configure()

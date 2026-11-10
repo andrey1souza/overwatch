@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { assert } from '../hooks/assert'
 import { bringsInFiles } from '../hooks/gating'
+import { COMMANDS as commands } from './fixtures/git-commands'
 
 const start = { cwd: '/repo', surface: 'terminal' as const, isInteractive: true }
 
@@ -77,10 +78,24 @@ test('a commit message that names a merge is still only a commit', async ($, on)
 })
 
 test('git commands that bring in files are told from commits', () => {
-  for (const command of ['git merge --squash x', 'git -C app pull', 'cd app && git cherry-pick -n abc', "sh -c 'git merge x'", '/usr/bin/git checkout main', 'git -c core.x=1 rebase main']) {
-    expect(bringsInFiles(command)).toBe(true)
-  }
-  for (const command of ['git commit -qam break', 'git commit -m "merge fix"', 'echo merge && git status', 'make test', '']) {
-    expect(bringsInFiles(command)).toBe(false)
-  }
+  const groups = Object.keys(commands)
+  assert(groups.length === 3 && ['bringing', 'commits', 'unseen'].every(group => groups.includes(group)), `the corpus has ${groups}; keep bringing, commits and unseen`)
+  for (const command of commands.bringing) expect(bringsInFiles(command)).toBe(true)
+  for (const command of [...commands.commits, ...commands.unseen]) expect(bringsInFiles(command)).toBe(false)
+})
+
+test('a commit message that names a git operation is still only a commit', async ($, on) => {
+  const prompts = await breakInOneStep($, on, 'commit: Fix git pull handling', 'git commit -qam "Fix git pull handling"')
+  expect(prompts.length).toBe(1)
+  expect(prompts[0]).toContain('TestBroken')
+})
+
+test('a squash merge inside bash -c takes a fresh baseline', async ($, on) => {
+  const prompts = await breakInOneStep($, on, 'commit: squash upstream', 'bash -lc "git merge --squash upstream && git commit -m squash"')
+  expect(prompts).toEqual([])
+})
+
+test('a squash merge in a subshell takes a fresh baseline', async ($, on) => {
+  const prompts = await breakInOneStep($, on, 'commit: squash upstream', '(git merge --squash upstream && git commit -m squash)')
+  expect(prompts).toEqual([])
 })
