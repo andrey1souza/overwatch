@@ -47,6 +47,8 @@ TERMINATE_GRACE = 3
 GIT_TIMEOUT = 5
 # The size, in bytes, of a workspace fingerprint's digest.
 FINGERPRINT_BYTES = 20
+REFLOG_DEPTH = 100
+COMMIT_ENTRY = re.compile(r"commit(?: \(amend\))?: ")
 FAILURE_LIMIT = 10
 # Colour codes, which some tools (deno) print even into a pipe.
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -1053,12 +1055,32 @@ def process_event(event: Event, root: Path) -> dict[str, Any]:
     return output
 
 
+def moved_by_commits(cwd: Path, before: str, after: str) -> bool:
+    """Whether HEAD went from before to after only by commits made here. A commit records the files the workspace
+    already holds and brings in none, so what it leaves failing was the session's own. False when any other
+    operation moved it, or when the reflog does not reach before within REFLOG_DEPTH entries."""
+    assert before != after, f"HEAD is still {after}; ask only after it moved"
+    try:
+        result = subprocess.run(["git", "reflog", "show", "HEAD", f"--max-count={REFLOG_DEPTH}", "--format=%H %gs"],
+                                cwd=cwd, capture_output=True, text=True, timeout=GIT_TIMEOUT, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    for line in result.stdout.splitlines():
+        commit, _, subject = line.partition(" ")
+        if commit == before:
+            return True
+        if not COMMIT_ENTRY.match(subject):
+            return False
+    assert len(result.stdout.splitlines()) <= REFLOG_DEPTH, f"git listed more than {REFLOG_DEPTH} reflog entries; pass --max-count"
+    return False
+
+
 def checked_state(session: Session, cwd: Path) -> tuple[State, State]:
-    """Recheck changed workspaces and rebaseline moved commits. Keep the starting fingerprint so edits during a
-    run demand another check instead of marking their newer workspace as already verified."""
+    """Recheck changed workspaces and rebaseline moved commits, except those moved only by commits. Keep the starting
+    fingerprint so edits during a run demand another check instead of marking their newer workspace as already verified."""
     old = load_state(session)
     head = commit_of(cwd)
-    if old.head is not None and head is not None and old.head != head:
+    if old.head is not None and head is not None and old.head != head and not moved_by_commits(cwd, old.head, head):
         old = replace(old, baseline={}, fingerprint=None, told=None, failed=False, signatures=())
     gate = read_gate(read_override(cwd))
     before = fingerprint(cwd)

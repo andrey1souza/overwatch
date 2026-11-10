@@ -451,6 +451,12 @@ async function repositoryOf($: EngineInterface, dir: string): Promise<string | u
 /** A commit id as git writes it in .git: forty hex digits, or sixty-four in a SHA-256 repository. */
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
+/** How many of the newest HEAD reflog entries are read to find what moved HEAD. */
+const REFLOG_DEPTH = 100
+
+/** The reflog subject of a commit made here, or an amended one, as git writes it. */
+const COMMIT_ENTRY = /^commit(?: \(amend\))?: /
+
 /**
  * The commit checked out in the repository at root, read from its .git directory: HEAD itself when detached, else
  * the branch it names, loose or packed. Undefined when none can be read, as in a worktree whose .git is a file.
@@ -842,9 +848,28 @@ async function completeTurn($: EngineInterface, state: State, isAnswered: boolea
 }
 
 /**
+ * Whether HEAD went from `before` to `after` only by commits made here. A commit records the files the workspace
+ * already holds and brings in none, so what it leaves failing was the session's own. False when any other operation
+ * moved it, or when the repository's HEAD reflog is unreadable or does not reach `before` within REFLOG_DEPTH entries.
+ */
+async function movedByCommits($: EngineInterface, root: string, before: string, after: string): Promise<boolean> {
+  assert(COMMIT.test(before) && COMMIT.test(after) && before !== after, `${before} to ${after} is not a move between two commits; ask only after HEAD moved`)
+  const log = await $.fs.read(`${root}/.git/logs/HEAD`).catch(() => '')
+  const entries = log.split('\n').filter(line => line !== '').slice(-REFLOG_DEPTH).reverse()
+  for (const entry of entries) {
+    const [fields = '', subject = ''] = entry.split('\t')
+    if (fields.split(' ')[1] === before) return true
+    if (!COMMIT_ENTRY.test(subject)) return false
+  }
+  assert(entries.length <= REFLOG_DEPTH, `read ${entries.length} reflog entries, over the ${REFLOG_DEPTH} allowed; slice the log`)
+  return false
+}
+
+/**
  * Notes the commit the session's baselines belong to, and takes fresh ones once it moves under the session, as a
  * pull or checkout brings in failures the agent did not make. Each check reruns, stopping a run still reading the
- * old commit, and its next result is its baseline unless the agent edits first.
+ * old commit, and its next result is its baseline unless the agent edits first. A move made only by commits keeps the
+ * baselines, since commits bring in no files.
  */
 async function rebaselineOnMove($: EngineInterface, state: State) {
   const { cwd, epoch } = state
@@ -853,9 +878,9 @@ async function rebaselineOnMove($: EngineInterface, state: State) {
   const root = await repositoryOf($, cwd)
   const head = root === undefined ? undefined : await commitOf($, root)
   if (state.epoch !== epoch || head === undefined || head === state.head) return
-  const isMoved = state.head !== undefined
+  const previous = state.head
   state.head = head
-  if (!isMoved) return
+  if (previous === undefined || (root !== undefined && await movedByCommits($, root, previous, head))) return
   for (const each of state.slots) {
     each.baseline = undefined
     each.isEdited = false
