@@ -26,6 +26,8 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
 const SHELLS = new Set(['bash', 'dash', 'ksh', 'sh', 'zsh'])
 /** Words that run the command after them, so the command after them is the one that matters. */
 const WRAPPERS = new Set(['command', 'env', 'exec', 'nohup', 'sudo', 'time'])
+/** Shell control words, which can stand before a command: if git merge x; then git commit; fi */
+const CONTROL_WORDS = new Set(['!', '{', '}', 'case', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'if', 'in', 'then', 'until', 'while'])
 /** Git subcommands that can bring files into the workspace from somewhere other than the agent's own edits. */
 const FILE_BRINGING = new Set(['am', 'apply', 'checkout', 'cherry-pick', 'merge', 'pull', 'read-tree', 'rebase', 'reset', 'restore', 'revert', 'stash', 'submodule', 'switch'])
 /** The same for the GitHub CLI, whose subcommands come in pairs. */
@@ -68,12 +70,27 @@ function shellCommands(text: string): string[][] {
   return kept
 }
 
-/** The index in `words` of the command that runs: past leading VAR=value assignments and wrappers such as env or sudo. */
+/**
+ * Whether `word` stands before the command that runs: a VAR=value assignment, a wrapper such as env or sudo, or a shell
+ * control word such as if, then, do or !.
+ */
+function isPrefix(word: string): boolean {
+  const prefix = ASSIGNMENT.test(word) || WRAPPERS.has(word) || CONTROL_WORDS.has(word)
+  assert(!prefix || word !== '', `the empty word ${JSON.stringify(word)} counted as a prefix (${prefix}); skip empty words before asking`)
+  assert(!prefix || ASSIGNMENT.test(word) || WRAPPERS.has(word) || CONTROL_WORDS.has(word), `${JSON.stringify(word)} counted as a prefix of no kind`)
+  return prefix
+}
+
+/**
+ * The index in `words` of the command that runs: past leading VAR=value assignments, wrappers such as env or sudo, and
+ * shell control words such as if, then, do or !.
+ */
 function commandStart(words: readonly string[]): number {
   let index = 0
-  while (index < words.length && (ASSIGNMENT.test(words[index]!) || WRAPPERS.has(words[index]!))) index++
+  while (index < words.length && isPrefix(words[index]!)) index++
+  const rest = words.slice(index)
   assert(index >= 0 && index <= words.length, `index ${index} is outside the ${words.length} words; stop at the end`)
-  assert(index === words.length || !(ASSIGNMENT.test(words[index]!) || WRAPPERS.has(words[index]!)), `${words[index]} is a prefix, not the command`)
+  assert(rest.length === 0 || !isPrefix(rest[0]!), `${JSON.stringify(rest.slice(0, 1))} is a prefix, not the command`)
   return index
 }
 

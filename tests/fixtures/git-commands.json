@@ -21,7 +21,14 @@
     "gh pr checkout 12",
     "gh pr merge 12",
     "git submodule update --init",
-    "git stash pop"
+    "git stash pop",
+    "if git merge --squash x; then git commit -m y; fi",
+    "git commit -m y && if true; then git merge --squash x; fi",
+    "for b in a b; do git merge --squash $b; done",
+    "{ git merge --squash x; git commit -m y; }",
+    "! git merge --squash x",
+    "while true; do git merge x; done",
+    "until git merge x; do break; done"
   ],
   "commits": [
     "git commit -qam break",
@@ -37,7 +44,8 @@
     "make test",
     "",
     "git status",
-    "git add -A && git commit -m x"
+    "git add -A && git commit -m x",
+    "while read l; do git commit -am x; done"
   ],
   "unseen": [
     "echo \"$(git merge x)\"",

@@ -89,6 +89,8 @@ ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 SHELLS = frozenset({"bash", "dash", "ksh", "sh", "zsh"})
 # Words that run the command after them, so the command after them is the one that matters.
 WRAPPERS = frozenset({"command", "env", "exec", "nohup", "sudo", "time"})
+# Shell control words, which can stand before a command: if git merge x; then git commit; fi
+CONTROL_WORDS = frozenset({"!", "{", "}", "case", "do", "done", "elif", "else", "esac", "fi", "for", "if", "in", "then", "until", "while"})
 # Git subcommands that can bring files into the workspace from somewhere other than the agent's own edits.
 FILE_BRINGING = frozenset({"am", "apply", "checkout", "cherry-pick", "merge", "pull", "read-tree", "rebase", "reset",
                            "restore", "revert", "stash", "submodule", "switch"})
@@ -124,13 +126,24 @@ def shell_commands(text: str) -> list[list[str]]:
     return kept
 
 
+def is_prefix(word: str) -> bool:
+    """Whether word stands before the command that runs: a VAR=value assignment, a wrapper such as env or sudo, or a
+    shell control word such as if, then, do or !."""
+    prefix = bool(ASSIGNMENT.match(word)) or word in WRAPPERS or word in CONTROL_WORDS
+    assert not prefix or word != "", f"the empty word {word!r} counted as a prefix ({prefix}); skip empty words before asking"
+    assert not prefix or bool(ASSIGNMENT.match(word)) or word in WRAPPERS | CONTROL_WORDS, f"{word!r} counted as a prefix of no kind"
+    return prefix
+
+
 def command_start(words: list[str]) -> int:
-    """The index in words of the command that runs: past leading VAR=value assignments and wrappers such as env or sudo."""
+    """The index in words of the command that runs: past leading VAR=value assignments, wrappers such as env or sudo,
+    and shell control words such as if, then, do or !."""
     index = 0
-    while index < len(words) and (ASSIGNMENT.match(words[index]) or words[index] in WRAPPERS):
+    while index < len(words) and is_prefix(words[index]):
         index += 1
+    rest = words[index:]
     assert 0 <= index <= len(words), f"index {index} is outside the {len(words)} words; stop at the end"
-    assert index == len(words) or not (ASSIGNMENT.match(words[index]) or words[index] in WRAPPERS), f"{words[index]!r} is a prefix, not the command"
+    assert not rest or not is_prefix(rest[0]), f"{rest[:1]} is a prefix, not the command"
     return index
 
 
