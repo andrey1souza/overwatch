@@ -19,6 +19,7 @@ import unittest
 
 from paths import ROOT
 import codex
+import gating
 import table
 import triage
 
@@ -431,6 +432,37 @@ class CodexHookTests(unittest.TestCase):
         write(result, "RESULT: FAIL", "RESULT: PASS again")
         failed, _ = self.call("PostToolUse", tool_name="Edit")
         self.assertIn("failed after the latest change", failed["hookSpecificOutput"]["additionalContext"])
+
+    def squash_upstream_and_commit(self, command: str) -> dict[str, object]:
+        """A project whose upstream branch breaks the check, then one step that squash-merges it and commits,
+        reported to the hook as the shell command given. Returns the hook's answer to that step."""
+        result, _ = self.configure()
+        write(result, "RESULT: PASS")
+        self.commit("start green")
+        self.diverge_upstream(result, "RESULT: PASS")
+        self.call("SessionStart")
+        subprocess.run(["git", "-C", str(self.cwd), "merge", "-q", "--squash", "upstream"], check=True, capture_output=True)
+        self.commit("squash upstream")
+        answer, _ = self.call("PostToolUse", tool_name="Bash", tool_input={"command": command})
+        assert codex.commit_of(self.cwd) is not None, f"{self.cwd} has no commit after the squash step"
+        assert read(result) == "RESULT: FAIL", f"{result} reads {read(result)!r}; the squash should bring in the failure"
+        return answer
+
+    def test_a_squash_merge_committed_in_the_same_step_takes_a_fresh_baseline(self) -> None:
+        answer = self.squash_upstream_and_commit("git merge --squash upstream && git commit -m squash")
+        self.assertNotIn("failed after the latest change", json.dumps(answer))
+        self.assertEqual(self.call("Stop")[0], {})
+
+    def test_a_commit_message_that_names_a_merge_is_still_a_commit(self) -> None:
+        answer = self.squash_upstream_and_commit('git commit -m "merge fix"')
+        self.assertIn("failed after the latest change", answer["hookSpecificOutput"]["additionalContext"])
+
+    def test_commands_that_bring_in_files_are_told_from_commits(self) -> None:
+        for command in ("git merge --squash x", "git -C app pull", "cd app && git cherry-pick -n abc", "sh -c 'git merge x'",
+                        "/usr/bin/git checkout main", "git -c core.x=1 rebase main"):
+            self.assertTrue(gating.brings_in_files(command), command)
+        for command in ("git commit -qam break", 'git commit -m "merge fix"', "echo merge && git status", "make test", ""):
+            self.assertFalse(gating.brings_in_files(command), command)
 
     def test_a_pull_that_moves_head_takes_a_fresh_baseline(self) -> None:
         result, _ = self.configure()

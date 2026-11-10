@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from typing import Any, Required, TypedDict
 
-from gating import PolicyError, protected_checks, read_gate, tool_command
+from gating import PolicyError, brings_in_files, protected_checks, read_gate, tool_command
 from triage import InventoryError, parse_check, parse_inventory
 from records import REBUILT, Event, First, Report, Session, State, StateError, digest_of, state_from, state_json
 from unix import exclusive, is_private, on_path, output_selector, read_available
@@ -1047,7 +1047,8 @@ def process_event(event: Event, root: Path) -> dict[str, Any]:
     with locked(state_path(event, cwd, root), root) as session:
         if event.hook_event_name == "PreToolUse":
             return protected_output(event, cwd, session)
-        old, current = checked_state(session, cwd)
+        command = tool_command(event.tool_input) if event.hook_event_name == "PostToolUse" else ""
+        old, current = checked_state(session, cwd, command)
         output = report_output(event, old, current, session)
         save_state(session, current)
     assert current.fingerprint is not None, f"state for {cwd} has no fingerprint; checked_state must record one"
@@ -1075,12 +1076,14 @@ def moved_by_commits(cwd: Path, before: str, after: str) -> bool:
     return False
 
 
-def checked_state(session: Session, cwd: Path) -> tuple[State, State]:
-    """Recheck changed workspaces and rebaseline moved commits, except those moved only by commits. Keep the starting
-    fingerprint so edits during a run demand another check instead of marking their newer workspace as already verified."""
+def checked_state(session: Session, cwd: Path, command: str = "") -> tuple[State, State]:
+    """Recheck changed workspaces and rebaseline moved commits, except those moved only by commits in a step that ran
+    no git operation bringing in files, as command, the step's shell command, tells. Keep the starting fingerprint so
+    edits during a run demand another check instead of marking their newer workspace as already verified."""
     old = load_state(session)
     head = commit_of(cwd)
-    if old.head is not None and head is not None and old.head != head and not moved_by_commits(cwd, old.head, head):
+    own_commits = old.head is not None and head is not None and old.head != head and not brings_in_files(command) and moved_by_commits(cwd, old.head, head)
+    if old.head is not None and head is not None and old.head != head and not own_commits:
         old = replace(old, baseline={}, fingerprint=None, told=None, failed=False, signatures=())
     gate = read_gate(read_override(cwd))
     before = fingerprint(cwd)

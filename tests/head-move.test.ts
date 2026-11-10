@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { assert } from '../hooks/assert'
+import { bringsInFiles } from '../hooks/gating'
 
 const start = { cwd: '/repo', surface: 'terminal' as const, isInteractive: true }
 
@@ -23,7 +24,9 @@ function moveHead(git: Map<string, string>, subject: string) {
   assert(git.get(HEAD_LOG)!.endsWith(`\t${subject}\n`), `the reflog does not end with ${subject}; write one entry per move`)
 }
 
-async function breakInOneStep($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], subject: string) {
+const COMMIT_STEP = 'echo fail > result && git commit -qam break'
+
+async function breakInOneStep($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], subject: string, command = COMMIT_STEP) {
   const clock = mock.clock(on)
   const prompts: string[] = []
   const git = new Map([['/repo/.git/HEAD', 'ref: refs/heads/main\n'], ['/repo/.git/packed-refs', `${BEFORE} refs/heads/main\n`]])
@@ -44,7 +47,7 @@ async function breakInOneStep($: Parameters<Parameters<typeof test>[1]>[0], on: 
   on('prompt.submit', ($, e) => { prompts.push(e.text); return { text: e.text } })
   await $.session.start(start)
   await clock.advance(SETTLE_MS)
-  await $.tool.call({ tool: 'Bash', command: 'echo fail > result && git commit -qam break' })
+  await $.tool.call({ tool: 'Bash', command })
   await clock.advance(SETTLE_MS)
   assert(git.get(HEAD_LOG)?.endsWith(`\t${subject}\n`), `the step left no ${subject} entry in the reflog; moveHead must run in the tool call`)
   assert(prompts.length <= 1, `${prompts.length} prompts for one step; the guard asks at most once`)
@@ -60,4 +63,24 @@ test('an edit committed in the same step as the check breaks is a new failure th
 test('a move that is no commit still takes a fresh baseline in the same step', async ($, on) => {
   const prompts = await breakInOneStep($, on, 'pull: Fast-forward')
   expect(prompts).toEqual([])
+})
+
+test('a squash merge committed in the same step takes a fresh baseline, since it brings in files', async ($, on) => {
+  const prompts = await breakInOneStep($, on, 'commit: squash upstream', 'git merge --squash upstream && git commit -m squash')
+  expect(prompts).toEqual([])
+})
+
+test('a commit message that names a merge is still only a commit', async ($, on) => {
+  const prompts = await breakInOneStep($, on, 'commit: merge fix', 'git commit -qam "merge fix"')
+  expect(prompts.length).toBe(1)
+  expect(prompts[0]).toContain('TestBroken')
+})
+
+test('git commands that bring in files are told from commits', () => {
+  for (const command of ['git merge --squash x', 'git -C app pull', 'cd app && git cherry-pick -n abc', "sh -c 'git merge x'", '/usr/bin/git checkout main', 'git -c core.x=1 rebase main']) {
+    expect(bringsInFiles(command)).toBe(true)
+  }
+  for (const command of ['git commit -qam break', 'git commit -m "merge fix"', 'echo merge && git status', 'make test', '']) {
+    expect(bringsInFiles(command)).toBe(false)
+  }
 })

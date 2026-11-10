@@ -80,6 +80,67 @@ def tool_command(arguments: object) -> str:
     return text
 
 
+COMMAND_BREAK = re.compile(r"&&|\|\||[;|\n]")
+# Git subcommands that can bring files into the workspace from somewhere other than the agent's own edits.
+FILE_BRINGING = frozenset({"am", "apply", "checkout", "cherry-pick", "merge", "pull", "read-tree", "rebase", "reset",
+                           "restore", "revert", "stash", "switch"})
+# Git options that take the next word as their value, so it is not the subcommand.
+GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
+# How many levels of quoting, as in sh -c 'sh -c "git merge x"', are read for a git command.
+QUOTE_DEPTH = 3
+
+
+def git_subcommand(words: list[str]) -> str | None:
+    """The git subcommand among words: the first word after git that is no option and no option's value. None when
+    words do not run git, or run it with no subcommand."""
+    at = next((index for index, word in enumerate(words) if word.rsplit("/", 1)[-1] == "git"), None)
+    found: str | None = None
+    if at is not None:
+        rest = iter(words[at + 1:])
+        for word in rest:
+            if word in GIT_VALUE_OPTIONS:
+                next(rest, None)
+            elif word and not word.startswith("-"):
+                found = word
+                break
+    assert found is None or at is not None, f"found {found!r} in {words} with no git before it; look only after git"
+    assert found is None or not found.startswith("-"), f"{found!r} is an option, not a subcommand; skip options"
+    return found
+
+
+def git_subcommands(command: str) -> list[str]:
+    """The git subcommand of each part of command that runs git, in order: parts split at &&, ||, ;, | and new
+    lines, global options such as -C dir skipped, and a quoted word holding a command, as in sh -c '...', read too."""
+    names: list[str] = []
+    texts = [command]
+    for _ in range(QUOTE_DEPTH):
+        nested: list[str] = []
+        for text in texts:
+            for part in COMMAND_BREAK.split(text):
+                try:
+                    words = shlex.split(part)
+                except ValueError:
+                    words = part.split()
+                nested.extend(word for word in words if " " in word)
+                name = git_subcommand(words)
+                if name is not None:
+                    names.append(name)
+        texts = nested
+    assert all(name != "" and not name.startswith("-") for name in names), f"subcommands {names} include an option or nothing; keep only words"
+    assert len(names) <= len(command), f"{len(names)} subcommands from a command of {len(command)} characters; read each part once"
+    return names
+
+
+def brings_in_files(command: str) -> bool:
+    """Whether command runs a git operation that can bring in files the agent did not write, as a merge, pull or
+    cherry-pick can. Such a command may leave a plain commit in the reflog while the workspace holds another's changes."""
+    names = git_subcommands(command)
+    found = any(name in FILE_BRINGING for name in names)
+    assert found == bool(FILE_BRINGING.intersection(names)), f"{names} gave {found}; test names against FILE_BRINGING"
+    assert not found or names, f"{command!r} brings in files but names no git subcommand; read the subcommands first"
+    return found
+
+
 def protected_checks(tool: str, command: str, gate: Gate) -> list[str] | None:
     """The checks guarding a call of tool running command: None when no action protects it, an empty list when a
     protecting action names no checks and so means all of them. gate is a Gate, which only read_gate builds, so the
