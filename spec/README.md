@@ -48,7 +48,7 @@ The committed model-checking configurations use finite bounds: two checks, a sma
 - OpenCode and Pi run native callbacks through the real shared checker. Held-check requests, deferred context, persistent status, and correction counts are observed at their public callbacks.
 - Neovim runs the real watcher callbacks with controlled process I/O, checking status, editor actions, and late callbacks after shutdown.
 
-CI model-checks both layers and the lifecycle instance, verifies generated expectations, and runs all six adapters. Changes should fix code against the contracts. A spec change requires an intentional behavior or capability change, not a workaround for a failing implementation.
+CI asks TLC for the expected observations and rejects a fixture that no longer matches them (`model_traces.py --check` and `integration_traces.py --check`), rejects LaTeX that is stale against the sources (`spec_latex.py --check`), and runs all six adapters against those fixtures. CI does not run TLC on every configuration. After a change to a module, run each `.cfg` that names it with TLC, for example `java -cp tla2tools.jar tlc2.TLC -config OverwatchTcr.cfg Overwatch.tla`; the large `IntegrationContract.cfg` needs about 10 minutes and a 10 GB heap. Changes should fix code against the contracts. A spec change requires an intentional behavior or capability change, not a workaround for a failing implementation.
 
 ## Reading the models
 
