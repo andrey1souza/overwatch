@@ -7,9 +7,12 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import sys
 from pathlib import Path
+from typing import Callable
 
 # How long a git command may take, in seconds. A commit runs the repository's own hooks, which can be slow.
 GIT_TIMEOUT = 120
@@ -227,3 +230,56 @@ def revert(cwd: Path) -> None:
         raise CheckpointError(f"the revert in {root} left {left}; restore them by hand")
     assert not left, f"{root} still differs from HEAD in {left} after the revert"
     assert has_commit(root), f"{root} lost its commit during the revert"
+
+
+def fingerprint_of(cwd: Path) -> dict[str, object]:
+    """The workspace fingerprint of the repository holding cwd, as the Codex hook computes it."""
+    from workspace import fingerprint
+    root = repository_root(cwd)
+    value = fingerprint(root)
+    assert value and value == value.strip(), f"the fingerprint of {root} is {value!r}; it must be text without spaces around it"
+    assert root.is_dir(), f"{root} is not a directory to fingerprint"
+    return {"fingerprint": value}
+
+
+def revert_listing(cwd: Path) -> dict[str, object]:
+    """Reverts, and names what it restored; a tree that already matches the latest commit is left alone and restores nothing."""
+    restored = uncommitted(repository_root(cwd))
+    if restored:
+        revert(cwd)
+    assert all(isinstance(name, str) and name for name in restored), f"restored {restored!r} holds something that is no file name"
+    assert not restored or not uncommitted(repository_root(cwd)), f"{restored} are restored but something still differs from the commit"
+    return {"restored": restored}
+
+
+COMMANDS: dict[str, Callable[[Path], dict[str, object]]] = {
+    "reason": lambda cwd: {"reason": unavailable_reason(cwd)},
+    "fingerprint": fingerprint_of,
+    "checkpoint": lambda cwd: {"commit": checkpoint(cwd)},
+    "revert": revert_listing,
+}
+USAGE_ERROR = 2
+FAILURE = 1
+
+
+def main(argv: list[str]) -> int:
+    """Runs one command of COMMANDS on the repository holding the directory argv names, for callers that are not
+    Python, and prints its answer as one JSON line. A refusal prints its error as JSON and exits FAILURE."""
+    if len(argv) != 2 or argv[0] not in COMMANDS:
+        print(f"usage: checkpoint.py {{{'|'.join(COMMANDS)}}} DIRECTORY", file=sys.stderr)
+        return USAGE_ERROR
+    from records import ConfigurationError
+    assert len(argv) == 2 and argv[0] in COMMANDS, f"command {argv} was not checked before it ran; give a command and a directory"
+    try:
+        answer = COMMANDS[argv[0]](Path(argv[1]))
+    except (CheckpointError, ConfigurationError) as error:
+        print(json.dumps({"error": str(error)}))
+        return FAILURE
+    print(json.dumps(answer))
+    assert "\n" not in json.dumps(answer), f"the answer to {argv[0]} spans lines; print it as one JSON line"
+    assert isinstance(answer, dict), f"the answer to {argv[0]} is {answer!r}, not a JSON object"
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

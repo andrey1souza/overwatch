@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,7 @@ GIT_ENVIRONMENT = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/
                    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
 PACKAGE_FILE = "hooks/checkpoint.py"
+CLI_TIMEOUT = 60
 
 
 def set_environment(values: dict[str, str]) -> dict[str, str | None]:
@@ -420,6 +422,71 @@ class CheckpointTests(unittest.TestCase):
         git(self.repo, ["commit", "-q", "-m", "a name that is not UTF-8"])
         self.assertIn(name, checkpoint.uncommitted(self.repo))
         self.assertIsInstance(checkpoint.unavailable_reason(self.repo), str)
+
+    def run_cli(self, command: str, directory: Path | None = None) -> subprocess.CompletedProcess[str]:
+        """Runs hooks/checkpoint.py as the Claude Code plugin does, in a process of its own."""
+        done = subprocess.run([sys.executable, str(ROOT / "hooks" / "checkpoint.py"), command, str(directory or self.repo)],
+                              capture_output=True, text=True, timeout=CLI_TIMEOUT)
+        assert isinstance(done.stdout, str), f"the command {command} printed {type(done.stdout)}, not text"
+        assert done.returncode in (0, 1, 2), f"the command {command} exited {done.returncode}, which it never does"
+        return done
+
+    def cli(self, command: str, directory: Path | None = None) -> tuple[int, dict[str, object]]:
+        """What hooks/checkpoint.py exits with and the JSON it prints."""
+        done = self.run_cli(command, directory)
+        printed = json.loads(done.stdout)
+        assert isinstance(printed, dict), f"the command {command} printed {done.stdout!r}, not a JSON object"
+        assert "\n" not in done.stdout.strip(), f"the command {command} printed more than one line: {done.stdout!r}"
+        return done.returncode, printed
+
+    def test_the_command_line_tells_why_tcr_cannot_start_or_that_it_can(self) -> None:
+        self.assertEqual(self.cli("reason"), (0, {"reason": None}))
+        put(self.repo / "new.txt", "new\n")
+        code, printed = self.cli("reason")
+        self.assertEqual(code, 0)
+        self.assertEqual(printed, {"reason": checkpoint.unavailable_reason(self.repo)})
+        self.assertIn("uncommitted", str(printed["reason"]))
+
+    def test_the_command_line_fingerprint_changes_with_the_files_and_not_with_ignored_ones(self) -> None:
+        first = self.cli("fingerprint")[1]["fingerprint"]
+        put(self.repo / "later.log", "ignored\n")
+        self.assertEqual(self.cli("fingerprint")[1]["fingerprint"], first)
+        put(self.repo / "a.txt", "edited\n")
+        self.assertNotEqual(self.cli("fingerprint")[1]["fingerprint"], first)
+
+    def test_the_command_line_checkpoint_commits_and_names_the_commit(self) -> None:
+        put(self.repo / "a.txt", "edited\n")
+        self.assertEqual(self.cli("checkpoint"), (0, {"commit": git(self.repo, ["rev-parse", "HEAD"])}))
+        self.assertEqual(git(self.repo, ["log", "-1", "--format=%s"]), "tcr: a.txt")
+        self.assertEqual(self.cli("checkpoint"), (0, {"commit": None}))
+
+    def test_the_command_line_reports_a_failed_commit_with_an_exit_code_and_keeps_the_changes_staged(self) -> None:
+        install_hook(self.repo, "pre-commit", "echo refused >&2\nexit 1")
+        put(self.repo / "a.txt", "edited\n")
+        code, printed = self.cli("checkpoint")
+        self.assertEqual(code, 1)
+        self.assertIn("checkpoint commit failed", str(printed["error"]))
+        self.assertEqual(git(self.repo, ["diff", "--cached", "--name-only"]), "a.txt")
+
+    def test_the_command_line_revert_names_the_files_it_restores_and_leaves_a_clean_tree_alone(self) -> None:
+        self.assertEqual(self.cli("revert"), (0, {"restored": []}))
+        put(self.repo / "a.txt", "edited\n")
+        put(self.repo / "new.txt", "new\n")
+        code, printed = self.cli("revert")
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(printed["restored"]), ["a.txt", "new.txt"])
+        self.assertEqual(read(self.repo / "a.txt"), "base\n")
+        self.assertFalse(present(self.repo / "new.txt"))
+
+    def test_the_command_line_names_a_directory_outside_a_repository_as_an_error(self) -> None:
+        code, printed = self.cli("reason", Path(self.outside.name))
+        self.assertEqual(code, 1)
+        self.assertIn("error", printed)
+
+    def test_the_command_line_refuses_a_command_it_does_not_know(self) -> None:
+        done = self.run_cli("explode")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("reason", done.stderr)
 
     def test_a_directory_outside_a_git_tree_is_refused(self) -> None:
         with self.assertRaises(checkpoint.CheckpointError):
