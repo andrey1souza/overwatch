@@ -10,11 +10,14 @@ import unittest
 from paths import ROOT
 
 SPEC = ROOT / "spec"
-MODULE_OF = {"Overwatch": "Overwatch", "OverwatchTcr": "Overwatch", "IntegrationContract": "IntegrationContract",
+MODULE_OF = {"Overwatch": "Overwatch", "OverwatchTcr": "Overwatch", "OverwatchTcrReverts": "Overwatch", "IntegrationContract": "IntegrationContract",
              "IntegrationLifecycle": "IntegrationContract", "IntegrationNotices": "IntegrationContract"}
 DEFINITION = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*==", re.MULTILINE)
 CHECK_KEYWORDS = ("INVARIANTS", "PROPERTIES")
 TCR_PROPERTIES_HEADING = "(* Section: TCR properties"
+TCR_VARIABLES = ("tcr", "ck", "person", "settleDue", "noticePending", "noticeCause", "noticeTold")
+TCR_CONFIGS = ("OverwatchTcr", "OverwatchTcrReverts")
+MIN_VERSIONS_TO_REVERT_SEEN_WORK = 3
 NOTICE_PROPERTIES = ("NoticesAreDeliveredOnce", "OnlyTcrHostsRaiseNotices", "NoticesOutliveRecovery", "PendingNoticesEventuallyResolve")
 
 
@@ -53,12 +56,22 @@ class ModelConfigTests(unittest.TestCase):
             for name in checked_names(self.configs[config]):
                 self.assertIn(name, defined, f"{config}.cfg checks {name}, which {module}.tla does not define")
 
-    def test_every_tcr_property_of_the_system_model_is_checked(self) -> None:
+    def test_a_revert_that_discards_seen_work_needs_three_versions_and_is_checked_with_them(self) -> None:
+        deepest = max(int(constant(config, "MaxEdits")) for name, config in self.configs.items()
+                      if "RevertNeverDiscardsSeenWork" in checked_names(config))
+        self.assertGreaterEqual(deepest, MIN_VERSIONS_TO_REVERT_SEEN_WORK)
+
+    def test_every_tcr_variable_is_read_by_a_property(self) -> None:
         source = self.modules["Overwatch"]
-        section = source[source.index(TCR_PROPERTIES_HEADING):]
-        properties = DEFINITION.findall(section)
-        self.assertGreaterEqual(len(properties), 10, f"the TCR properties section defines only {properties}")
-        self.assertEqual(sorted(set(properties) - set(checked_names(self.configs["OverwatchTcr"]))), [])
+        properties = source[source.index(TCR_PROPERTIES_HEADING):]
+        unread = [name for name in TCR_VARIABLES if not re.search(rf"\b{name}\b", properties)]
+        self.assertEqual(unread, [], f"no TCR property reads {unread}; add one that does or drop the variable")
+
+    def test_every_tcr_property_is_checked_by_some_tcr_configuration(self) -> None:
+        source = self.modules["Overwatch"]
+        defined = set(DEFINITION.findall(source[source.index(TCR_PROPERTIES_HEADING):]))
+        checked = {name for config in TCR_CONFIGS for name in checked_names(self.configs[config])}
+        self.assertEqual(sorted(defined - checked), [])
 
     def test_every_notice_property_of_the_contract_is_checked(self) -> None:
         defined = set(DEFINITION.findall(self.modules["IntegrationContract"]))
@@ -67,7 +80,8 @@ class ModelConfigTests(unittest.TestCase):
 
     def test_only_the_tcr_configurations_turn_tcr_on(self) -> None:
         self.assertEqual(constant(self.configs["Overwatch"], "TcrMode"), "FALSE")
-        self.assertEqual(constant(self.configs["OverwatchTcr"], "TcrMode"), "TRUE")
+        for name in TCR_CONFIGS:
+            self.assertEqual(constant(self.configs[name], "TcrMode"), "TRUE")
         for name in ("IntegrationContract", "IntegrationLifecycle"):
             self.assertEqual(constant(self.configs[name], "MaxNotices"), "0", f"{name}.cfg must keep its state space without notices")
         self.assertGreater(int(constant(self.configs["IntegrationNotices"], "MaxNotices")), 0)

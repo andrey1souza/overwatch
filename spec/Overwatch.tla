@@ -372,6 +372,8 @@ FailedCommitLosesNothing ==
 RestorePointMovesWithCommits ==
     [][ck' # ck => (Checkpoint \/ Revert \/ HeadMoves \/ PersonCommits)]_vars
 RevertRaisesNotice == [][Revert => noticePending']_vars
+RevertNoticeTellsTheCause ==
+    [][TellRevert => noticeTold' = noticeCause /\ noticeTold' # {}]_vars
 RevertNoticeIsNeverDropped == [][(noticePending /\ ~noticePending') => TellRevert]_vars
 RevertNoticeReachesAgent == noticePending ~> ~noticePending
 =============================================================================

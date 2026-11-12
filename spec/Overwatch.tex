@@ -1739,10 +1739,15 @@ A revert never discards work of a person that was there at the start or that
  \.{\lor} PersonCommits ) ]_{ vars}}%
  \@x{\makebox[0pt][r]{\scriptsize 374\hspace{1em}} RevertRaisesNotice
  \.{\defeq} {\Box} [ Revert \.{\implies} noticePending \.{'} ]_{ vars}}%
- \@x{\makebox[0pt][r]{\scriptsize 375\hspace{1em}} RevertNoticeIsNeverDropped
+ \@x{\makebox[0pt][r]{\scriptsize 375\hspace{1em}} RevertNoticeTellsTheCause
+ \.{\defeq}}%
+ \@x{\makebox[0pt][r]{\scriptsize 376\hspace{1em}}\@s{16.4} {\Box} [
+ TellRevert \.{\implies} noticeTold \.{'} \.{=} noticeCause \.{\land}
+ noticeTold \.{'} \.{\neq} \{ \} ]_{ vars}}%
+ \@x{\makebox[0pt][r]{\scriptsize 377\hspace{1em}} RevertNoticeIsNeverDropped
  \.{\defeq} {\Box} [ ( noticePending \.{\land} {\lnot} noticePending \.{'} )
  \.{\implies} TellRevert ]_{ vars}}%
- \@x{\makebox[0pt][r]{\scriptsize 376\hspace{1em}} RevertNoticeReachesAgent
+ \@x{\makebox[0pt][r]{\scriptsize 378\hspace{1em}} RevertNoticeReachesAgent
  \.{\defeq} noticePending \.{\leadsto} {\lnot} noticePending}%
-\@x{\makebox[0pt][r]{\scriptsize 377\hspace{1em}}}\bottombar\@xx{}%
+\@x{\makebox[0pt][r]{\scriptsize 379\hspace{1em}}}\bottombar\@xx{}%
 \end{document}
