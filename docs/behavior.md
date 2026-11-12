@@ -297,6 +297,61 @@ Tags: modes, tcr, commit-failure.
 - **When** [The agent makes an edit that keeps the checks green](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L224).
 - **Then** [Overwatch reports that TCR is unavailable and the change stays staged](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L277).
 
+#### Claude Code commits an edit that keeps the checks green
+
+Tags: modes, tcr, checkpoint, claude.
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L189)
+
+- **Given** [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- **When** [The agent makes an edit and the checks on that edit pass](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- **Then** [The change is committed as a checkpoint](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+#### Claude Code reverts an edit that introduces a new failure
+
+Tags: modes, tcr, revert, claude.
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L194)
+
+- **Given** [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- **When** [The agent makes an edit and the checks on that edit report a new failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- **Then** [The working tree is restored to the latest checkpoint and the agent is told which failure caused the revert](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+#### Claude Code leaves inherited failures alone in TCR mode
+
+Tags: modes, tcr, inherited, claude.
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L199)
+
+- **Given** [The project runs overwatch in TCR mode in Claude Code and the session baseline has inherited failures](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- **When** [The checks on an edit report only those inherited failures](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- **Then** [The change is committed as a checkpoint](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+#### Claude Code never acts on an overtaken result in TCR mode
+
+Tags: modes, tcr, overtaken, claude.
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L204)
+
+- **Given** [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- **When** [The files change again before the checks on an earlier edit report](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- **Then** [The earlier result neither commits nor reverts](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+#### Claude Code does not start TCR on a dirty working tree
+
+Tags: modes, tcr, dirty-tree, claude.
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L209)
+
+- **Given** [The project runs overwatch in TCR mode in Claude Code and the working tree has uncommitted changes when the session starts](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- **When** [The agent makes an edit that adds a failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- **Then** [Overwatch reports that TCR is unavailable and no revert discards those changes](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+#### Claude Code pauses TCR when a checkpoint commit fails
+
+Tags: modes, tcr, commit-failure, claude.
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L214)
+
+- **Given** [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- **And** [A commit hook refuses commits](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L707).
+- **When** [The agent makes an edit that keeps the checks green](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- **Then** [Overwatch reports that TCR is unavailable and the change is not committed](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
 ## Proposed behavior (not implemented)
 
 ### Changed-code cleanup
@@ -354,7 +409,7 @@ Tags: age, deadlines.
 #### Advisory mode reports failures without guarding
 
 Tags: modes, advisory.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L189)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L220)
 
 - **Given** The project runs overwatch in advisory mode.
 - **And** A change introduces a new failure.
@@ -365,7 +420,7 @@ Tags: modes, advisory.
 #### Strict mode waits for a result of the latest edit
 
 Tags: modes, strict.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L196)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L227)
 
 - **Given** The project runs overwatch in strict mode.
 - **When** The agent edits and tries to finish before the checks have run on that edit.
@@ -374,7 +429,7 @@ Tags: modes, strict.
 #### Edits wait while the agent is too far ahead of its checks
 
 Tags: limits, max-ahead.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L201)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L232)
 
 - **Given** The project allows the agent three edits ahead of its latest result.
 - **And** Checks are still running on an earlier edit.
@@ -385,7 +440,7 @@ Tags: limits, max-ahead.
 #### Strict mode hands a lingering failure to a person
 
 Tags: limits, red-budget.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L208)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L239)
 
 - **Given** The project runs overwatch in strict mode with a budget of edits while red.
 - **And** A new failure has been reported.
@@ -395,7 +450,7 @@ Tags: limits, red-budget.
 #### A check that exceeds its time limit fails
 
 Tags: limits, timeout.
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L214)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L245)
 
 - **Given** The project sets a time limit on checks.
 - **When** A run exceeds it.

@@ -303,6 +303,61 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 - [When]($text.attrs('when')) [The agent makes an edit that keeps the checks green](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L224).
 - [Then]($text.attrs('then')) [Overwatch reports that TCR is unavailable and the change stays staged](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L277).
 
+### [Claude Code commits an edit that keeps the checks green]($section.id('claude-code-commits-an-edit-that-keeps-the-checks-green').attrs('verified'))
+
+[modes]($text.attrs('tag')) [tcr]($text.attrs('tag')) [checkpoint]($text.attrs('tag')) [Claude Code]($text.attrs('agent'))
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L189)
+
+- [Given]($text.attrs('given')) [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- [When]($text.attrs('when')) [The agent makes an edit and the checks on that edit pass](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- [Then]($text.attrs('then')) [The change is committed as a checkpoint](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+### [Claude Code reverts an edit that introduces a new failure]($section.id('claude-code-reverts-an-edit-that-introduces-a-new-failure').attrs('verified'))
+
+[modes]($text.attrs('tag')) [tcr]($text.attrs('tag')) [revert]($text.attrs('tag')) [Claude Code]($text.attrs('agent'))
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L194)
+
+- [Given]($text.attrs('given')) [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- [When]($text.attrs('when')) [The agent makes an edit and the checks on that edit report a new failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- [Then]($text.attrs('then')) [The working tree is restored to the latest checkpoint and the agent is told which failure caused the revert](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+### [Claude Code leaves inherited failures alone in TCR mode]($section.id('claude-code-leaves-inherited-failures-alone-in-tcr-mode').attrs('verified'))
+
+[modes]($text.attrs('tag')) [tcr]($text.attrs('tag')) [inherited]($text.attrs('tag')) [Claude Code]($text.attrs('agent'))
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L199)
+
+- [Given]($text.attrs('given')) [The project runs overwatch in TCR mode in Claude Code and the session baseline has inherited failures](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- [When]($text.attrs('when')) [The checks on an edit report only those inherited failures](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- [Then]($text.attrs('then')) [The change is committed as a checkpoint](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+### [Claude Code never acts on an overtaken result in TCR mode]($section.id('claude-code-never-acts-on-an-overtaken-result-in-tcr-mode').attrs('verified'))
+
+[modes]($text.attrs('tag')) [tcr]($text.attrs('tag')) [overtaken]($text.attrs('tag')) [Claude Code]($text.attrs('agent'))
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L204)
+
+- [Given]($text.attrs('given')) [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- [When]($text.attrs('when')) [The files change again before the checks on an earlier edit report](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- [Then]($text.attrs('then')) [The earlier result neither commits nor reverts](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+### [Claude Code does not start TCR on a dirty working tree]($section.id('claude-code-does-not-start-tcr-on-a-dirty-working-tree').attrs('verified'))
+
+[modes]($text.attrs('tag')) [tcr]($text.attrs('tag')) [dirty-tree]($text.attrs('tag')) [Claude Code]($text.attrs('agent'))
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L209)
+
+- [Given]($text.attrs('given')) [The project runs overwatch in TCR mode in Claude Code and the working tree has uncommitted changes when the session starts](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- [When]($text.attrs('when')) [The agent makes an edit that adds a failure](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- [Then]($text.attrs('then')) [Overwatch reports that TCR is unavailable and no revert discards those changes](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
+### [Claude Code pauses TCR when a checkpoint commit fails]($section.id('claude-code-pauses-tcr-when-a-checkpoint-commit-fails').attrs('verified'))
+
+[modes]($text.attrs('tag')) [tcr]($text.attrs('tag')) [commit-failure]($text.attrs('tag')) [Claude Code]($text.attrs('agent'))
+[View test](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L214)
+
+- [Given]($text.attrs('given')) [The project runs overwatch in TCR mode in Claude Code with green checks](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L667).
+- [And]($text.attrs('given')) [A commit hook refuses commits](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L707).
+- [When]($text.attrs('when')) [The agent makes an edit that keeps the checks green](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L378).
+- [Then]($text.attrs('then')) [Overwatch reports that TCR is unavailable and the change is not committed](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L385).
+
 # [Model-derived integration contracts]($section.id('model-derived-integration-contracts'))
 
 These 134 cases are generated from the same TLC expectations replayed against all six integrations. Each event is followed by the model observation asserted by the replay. Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
@@ -2972,7 +3027,7 @@ These 134 cases are generated from the same TLC expectations replayed against al
 ### [Advisory mode reports failures without guarding]($section.id('advisory-mode-reports-failures-without-guarding').attrs('proposed'))
 
 [modes]($text.attrs('tag')) [advisory]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L189)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L220)
 
 - [Given]($text.attrs('given')) The project runs overwatch in advisory mode.
 - [And]($text.attrs('given')) A change introduces a new failure.
@@ -2983,7 +3038,7 @@ These 134 cases are generated from the same TLC expectations replayed against al
 ### [Strict mode waits for a result of the latest edit]($section.id('strict-mode-waits-for-a-result-of-the-latest-edit').attrs('proposed'))
 
 [modes]($text.attrs('tag')) [strict]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L196)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L227)
 
 - [Given]($text.attrs('given')) The project runs overwatch in strict mode.
 - [When]($text.attrs('when')) The agent edits and tries to finish before the checks have run on that edit.
@@ -2992,7 +3047,7 @@ These 134 cases are generated from the same TLC expectations replayed against al
 ### [Edits wait while the agent is too far ahead of its checks]($section.id('edits-wait-while-the-agent-is-too-far-ahead-of-its-checks').attrs('proposed'))
 
 [limits]($text.attrs('tag')) [max-ahead]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L201)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L232)
 
 - [Given]($text.attrs('given')) The project allows the agent three edits ahead of its latest result.
 - [And]($text.attrs('given')) Checks are still running on an earlier edit.
@@ -3003,7 +3058,7 @@ These 134 cases are generated from the same TLC expectations replayed against al
 ### [Strict mode hands a lingering failure to a person]($section.id('strict-mode-hands-a-lingering-failure-to-a-person').attrs('proposed'))
 
 [limits]($text.attrs('tag')) [red-budget]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L208)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L239)
 
 - [Given]($text.attrs('given')) The project runs overwatch in strict mode with a budget of edits while red.
 - [And]($text.attrs('given')) A new failure has been reported.
@@ -3013,7 +3068,7 @@ These 134 cases are generated from the same TLC expectations replayed against al
 ### [A check that exceeds its time limit fails]($section.id('a-check-that-exceeds-its-time-limit-fails').attrs('proposed'))
 
 [limits]($text.attrs('tag')) [timeout]($text.attrs('tag'))
-[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L214)
+[View proposal](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/catalog.py#L245)
 
 - [Given]($text.attrs('given')) The project sets a time limit on checks.
 - [When]($text.attrs('when')) A run exceeds it.
