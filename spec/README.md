@@ -6,8 +6,8 @@ The package reading order is declared once in `modules.json`: shared failure pol
 
 There are two layers:
 
-- `Overwatch.tla` models workspace versions, inherited baselines, runs, buffered results, and notification ordering. A read consumes the newest completed result, preserves unfinished output, and never makes the agent's edits inherited debt.
-- `IntegrationContract.tla` models requests and responses, check contention, selected checks, inherited-finding policy, report delivery, completion feedback, shutdown, and restart. `IntegrationLifecycle.cfg` checks another bounded instance of this same contract with a restart. Both layers use `FailurePolicy.tla`; they do not maintain independent definitions of a regression.
+- `Overwatch.tla` models workspace versions, inherited baselines, runs, buffered results, and notification ordering. A read consumes the newest completed result, preserves unfinished output, and never makes the agent's edits inherited debt. With `TcrMode` it also models TCR: the restore point, a person's uncommitted work, the checkpoint and revert of a settled edit, and the notice of a revert.
+- `IntegrationContract.tla` models requests and responses, check contention, selected checks, inherited-finding policy, report delivery, completion feedback, the notice of a TCR revert, shutdown, and restart. `IntegrationLifecycle.cfg` checks another bounded instance of this same contract with a restart. Both layers use `FailurePolicy.tla`; they do not maintain independent definitions of a regression.
 
 Failure atoms represent what a runner exposes: named identities or count slots for summary-only checkers. The model cannot recover identities that the runner does not emit.
 
@@ -33,7 +33,11 @@ The interface layer checks that inspection and repair responses are enabled whil
 
 Delivery liveness assumes check completion fairness, corresponding to the result layer's `RunsEnd` guarantee, and fair host servicing of report/context callbacks. Inspection does not require that assumption: the responder remains enabled even if a check is still held. The runtime contention tests hold a real command-hook session lock until after inspection returns. The model does not specify a universal wall-clock response deadline.
 
-The committed model-checking configurations use finite bounds: two checks, a small failure alphabet, up to two requests, and up to one report change or session restart. These bounds exercise concurrency and policy combinations; passing them is not proof for every unbounded program execution or every external host version.
+The TCR properties of `Overwatch.tla` are checked by `OverwatchTcr.cfg`, with `TcrMode` on. They state that a revert is a new workspace version, so `head` only grows, and restores the content of the restore point; that a checkpoint follows a green result and a revert a new failure of the latest edit, never an overtaken result, a timeout, or a result read while TCR is unavailable; that a pull replaces the restore point; that a person's work seen at the start, or after a tool that does not edit, pauses TCR and is never reverted; that a failed commit changes nothing; and that the notice of every revert is kept and reaches the agent. They also state a limit: work that a person did just before the agent's edit, with no tool that does not edit between them, is unseen, and a revert discards it. The model-checker finds that trace when a probe asks for it. `Overwatch.cfg` runs the same module with `TcrMode` off and checks exactly the states it checked before TCR existed.
+
+The notice of a revert is a separate delivery path in `IntegrationContract.tla`. A host that delivers by event tells the agent at once. OpenCode 2 queues the notice for the next model request. A check that finds nothing guarded clears a queued failure, never a queued notice, so a pending notice leaves the queue only by delivery or shutdown, and no notice is delivered twice.
+
+The committed model-checking configurations use finite bounds: two checks, a small failure alphabet, up to two requests, and up to one report change or session restart. The TCR configuration uses one failure name, two workspace edits and one tick of the timeout clock. These bounds exercise concurrency and policy combinations; passing them is not proof for every unbounded program execution or every external host version.
 
 ## Model-derived conformance tests
 
@@ -51,6 +55,8 @@ CI model-checks both layers and the lifecycle instance, verifies generated expec
 TLA+ describes states and the actions allowed to change them. TLC explores all reachable states within a configuration's finite bounds, including different orders of concurrent events. A failing invariant or temporal property produces a counterexample sequence to investigate before changing the implementation.
 
 In `Overwatch.tla`, `truth` maps workspace versions to findings, `head` is the current version, and `based` identifies the inherited baseline. `pending` holds completed, unread results. `ReadResults` consumes the latest complete result; unfinished process output is outside that action. `outbox` and the turn state constrain when a report becomes visible and whether it can wake an idle agent.
+
+With `TcrMode`, `Overwatch.tla` adds `tcr` (off, active, or unavailable), `ck` (the version the latest commit holds, which a revert restores), `person` (none, unseen, or seen uncommitted work of a person), `settleDue` (an edit of the agent has no settled result yet), and `noticePending`, `noticeCause` and `noticeTold` (the notice of a revert and the failures it names). `Checkpoint` and `Revert` settle an edit once `report` is a result for the current `head`; `Observe` is the first tool that does not edit after an outside edit.
 
 In `IntegrationContract.tla`, `reports` and `baseline` contain per-check finding sets. `busy` represents an unfinished check. `request` and `reply` separate asking for an action from receiving its decision, so TLC can explore a request arriving during a check. `visible`, `contextPending`, and the delivery counters represent the host's observable channels. `active` and `session` distinguish shutdown from restart. `Capabilities` declares the host differences; it does not offer user-selectable enforcement modes.
 
