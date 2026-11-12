@@ -130,6 +130,18 @@ Tool names match without case sensitivity; use the tool name your agent sends, s
 
 Command hooks use `PreToolUse` only for protected-action permission decisions and `Stop` for completion. Ordinary pre-tool hooks return an empty response without rerunning checks. Claude Code's in-process plugin denies protected tools before execution and replaces guarded completion with a correction request. It requests another correction for the same findings only after a tool call completes. Repeated completion attempts remain guarded without queuing duplicate corrections. Aborted or unsuccessful turns may settle. After interruption, automatic wakeups wait until another turn starts. Protected tools remain guarded. OpenCode and Pi use their before-tool hooks for protected actions. Reload the plugin after updating hook definitions; Codex may require renewed hook trust.
 
+### TCR mode
+
+Set `"mode": "tcr"` in `.overwatch.json` to run test && commit || revert. After each edit of the agent that changes files, Overwatch reads the check results. If no check has a new failure, it commits every file that `.gitignore` does not ignore, on the current branch, as `tcr: <files>`. If a check has a new failure, it restores the files to the latest commit, removes the files the agent added, and tells the agent which failure caused the revert and which files came back. Failures that the session baseline already had never cause a revert. With `gate.inherited` set to `"block"`, a failing inherited check prevents the commit and the revert. A result is ignored when the files changed again while the checks ran. The `git` upstream check never causes a revert, because a new upstream commit is not an edit of the agent.
+
+```json
+{
+  "mode": "tcr"
+}
+```
+
+TCR starts only on a clean tree, on a branch that has a commit, with no merge, rebase, cherry-pick, revert or bisect in progress and no untracked nested repository. Otherwise Overwatch tells the agent that TCR is unavailable and changes nothing. Overwatch checks again at the start of each turn in Codex and OpenCode 2; Pi and OpenCode 1 report only the start of a session, so there TCR does not start again after it became unavailable. TCR assumes the agent is the only writer: a revert discards every change that is not committed. When Overwatch sees files change at a tool that does not edit, it makes TCR unavailable until the next turn start, so a revert cannot discard those files. It cannot tell a person's edit from the agent's when both come before the same edit tool, so do not edit the working tree, or run a second agent in it, while TCR runs. The repository's commit hooks and signing run. If a checkpoint commit fails, the changes stay staged, nothing is reverted, and TCR is unavailable until it can start again. A check that fails while no file differs from the latest commit is reported, and nothing is reverted. With `gate.inherited` set to `"block"`, an edit that leaves an inherited check failing is neither committed nor reverted, so the working tree is dirty at the next turn start and TCR becomes unavailable until you commit. TCR works in Codex, OpenCode and Pi, and each of them commits and reverts as described and tells the agent why a revert happened. OpenCode 1 shows the "TCR is on" notice to you but not to the agent. Claude Code does not read the setting yet. A revert removes empty directories, and a rename that only changes letter case is invisible to it on a case-insensitive filesystem.
+
 ## Install
 
 ### Claude Code
