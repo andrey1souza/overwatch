@@ -1,6 +1,6 @@
 import type { EngineInterface } from 'claude-code'
 import { assert } from './assert'
-import { OVERRIDE_PATH, type Override } from './watchers'
+import { OVERRIDE_PATH, commandLine, hasRegression, readReport, type Override, type Report, type Watcher } from './watchers'
 
 export const TCR_MODE = 'tcr'
 export const TCR_ACTIVE = 'active'
@@ -12,15 +12,16 @@ const CHECKPOINT_COMMAND = decodeURIComponent(new URL('./checkpoint.py', import.
 
 /**
  * What TCR knows between events. `status` is undefined before it is decided, TCR_ACTIVE, or the reason it cannot run.
- * `settled` is the fingerprint of the files at the latest checkpoint or revert. `pending` is the fingerprint after the
- * agent's latest edit that no result has settled yet, and `editedAt` is when that edit ended, which a result must follow.
+ * `settled` is the fingerprint of the files at the latest checkpoint or revert, and `seen` the fingerprint after the
+ * agent's latest editing tool, which files seen at any other tool must match. `unjudged` is whether an edit waits for
+ * the project's checks to judge it.
  */
-export type Tcr = { status: string | undefined; settled: string | undefined; pending: string | undefined; editedAt: number | undefined }
+export type Tcr = { status: string | undefined; settled: string | undefined; seen: string | undefined; unjudged: boolean }
 
 export function initialTcr(): Tcr {
-  const tcr: Tcr = { status: undefined, settled: undefined, pending: undefined, editedAt: undefined }
-  assert(tcr.status === undefined && tcr.pending === undefined, 'a new session starts with TCR undecided and nothing pending')
-  assert(Object.keys(tcr).length === 4, `TCR starts with ${Object.keys(tcr)}; give it status, settled, pending and editedAt`)
+  const tcr: Tcr = { status: undefined, settled: undefined, seen: undefined, unjudged: false }
+  assert(tcr.status === undefined && !tcr.unjudged, 'a new session starts with TCR undecided and no edit to judge')
+  assert(Object.keys(tcr).length === 4, `TCR starts with ${Object.keys(tcr)}; give it status, settled, seen and unjudged`)
   return tcr
 }
 
@@ -98,4 +99,76 @@ export function shortCommit(commit: string): string {
   const short = commit.slice(0, SHORT_COMMIT)
   assert(short.length === SHORT_COMMIT && commit.startsWith(short), `the short name ${short} does not start ${commit}`)
   return short
+}
+
+/** A message about TCR, waiting to go to the agent; `isWaking` starts a turn for it when none runs. */
+export function tcrMessage(text: string, isWaking: boolean): { text: string; isWaking: boolean; kind: 'tcr' } {
+  assert(text.startsWith('overwatch: TCR '), `the TCR message ${JSON.stringify(text)} does not say it is about TCR`)
+  const message = { text, isWaking, kind: 'tcr' as const }
+  assert(message.kind === 'tcr' && message.text === text, `the TCR message was made as ${JSON.stringify(message)}`)
+  return message
+}
+
+/** Whether a check's one-shot result is a failure its baseline did not have; undefined when it has no baseline to tell by. */
+export function isNewFailure(baseline: Report | undefined, report: Report): boolean | undefined {
+  assert(report.summary !== undefined, `a result without a summary cannot be compared with ${baseline?.summary}`)
+  const isNew = !report.isFailed ? false : baseline === undefined ? undefined : hasRegression(report, baseline)
+  assert(isNew !== true || report.isFailed, `${report.summary} passed but counts as a new failure`)
+  return isNew
+}
+
+/** How long a one-shot run of a check may take before it is stopped, in milliseconds. */
+const CHECK_TIMEOUT_MS = 540_000
+
+/**
+ * Runs a check once, as the Codex hook does: its baseline command to the end, or else its watch command until its first
+ * complete report. Undefined when it has no command, cannot start, times out or prints no summary. `stops` holds what
+ * stops the run, for as long as it runs, so that a newer edit can end it.
+ */
+export async function runCheck($: EngineInterface, watcher: Watcher, spawn: { cwd: string; env?: Record<string, string> }, stops: Set<() => Promise<unknown>>): Promise<Report | undefined> {
+  const isBaseline = watcher.baseline !== undefined && watcher.baseline.length > 0
+  const argv = isBaseline ? watcher.baseline : watcher.argv
+  assert(spawn.cwd.startsWith('/'), `${watcher.name} would run once in ${spawn.cwd}, which is no absolute directory`)
+  if (argv === undefined || argv.length === 0) return undefined
+  const child = $.process.spawn({ argv, ...spawn })
+  const stop = child.return.bind(child, { code: null, signal: null })
+  const limit = { isTimedOut: false, timer: $.clock.after(CHECK_TIMEOUT_MS, () => { limit.isTimedOut = true; void stop() }) }
+  stops.add(stop)
+  try {
+    let output = ''
+    for await (const { text } of child) {
+      output += text
+      const report = isBaseline ? undefined : readReport(watcher, output.slice(0, output.lastIndexOf('\n') + 1))
+      if (report !== undefined) {
+        await stop()
+        return report
+      }
+    }
+    if (limit.isTimedOut) return undefined
+    const { code } = await child.result
+    return readReport(watcher, output, code)
+  } catch (error) {
+    $.ui.log(`overwatch: ${commandLine(watcher, argv)} could not be judged: ${String(error)}`, { to: 'debug' })
+    return undefined
+  } finally {
+    limit.timer.cancel()
+    stops.delete(stop)
+    assert(!stops.has(stop), `the run of ${commandLine(watcher, argv)} is still waiting to be stopped after it ended`)
+  }
+}
+
+/** Whether TCR runs, so that it, not the watchers' own results, tells the agent of a failure: by a revert, or by why it held the edit. */
+export function isToldByTcr(tcr: Tcr): boolean {
+  const is = tcr.status === TCR_ACTIVE
+  assert(!is || tcr.settled !== undefined, `TCR is ${tcr.status} with ${tcr.settled} settled; an active TCR has a checkpoint to restore`)
+  assert(!tcr.unjudged || is, `TCR judges an edit while it is ${tcr.status}`)
+  return is
+}
+
+/** Whether the judgement of `ticket` is still the one that counts: the session, the TCR state and the edit are those it started with. */
+export function isJudging(state: { epoch: number; tcr: Tcr; tcrTicket: number }, started: { epoch: number; tcr: Tcr; ticket: number }): boolean {
+  assert(started.ticket <= state.tcrTicket, `the judgement ${started.ticket} is from the future; the latest is ${state.tcrTicket}`)
+  const is = state.epoch === started.epoch && state.tcr === started.tcr && state.tcrTicket === started.ticket
+  assert(!is || state.tcr.status === started.tcr.status, `the same TCR state changed from ${started.tcr.status} to ${state.tcr.status} unseen`)
+  return is
 }
