@@ -6,6 +6,7 @@ EXTENDS Overwatch
 NeverReverts == [][~Revert]_vars
 NeverCheckpoints == [][~Checkpoint]_vars
 NeverCheckpointFails == [][~CheckpointFails]_vars
+NeverCheckpointsAfterARevert == [][~(Checkpoint /\ saved # <<>>)]_vars
 NeverRevertAborts == [][~RevertAborts]_vars
 NeverAbortsACommitWithWorkPending == [][~(CheckpointFails /\ ck # head)]_vars
 NeverHolds == [][~Hold]_vars

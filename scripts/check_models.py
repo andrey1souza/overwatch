@@ -109,7 +109,7 @@ PROPERTY_MUTANTS = (NAMED_FAILURE_MUTANT,("a-failed-commit-moves-the-restore-poi
                     ("an-aborted-revert-moves-the-restore-point", (REVERT_ABORT, HALF_A_REVERT_ABORT), "RevertIsAllOrNothing"))
 REACHABLE = ("NeverReverts", "NeverCheckpoints", "NeverCheckpointFails", "NeverRevertAborts", "NeverAbortsACommitWithWorkPending", "NeverHolds", "NeverObserves", "NeverPersonCommits",
              "NeverTellsRevert", "NeverTellsHold", "NeverPulls", "NeverHoldsATimeout", "NeverPullsWhileHeld", "NeverUnavailable", "NeverResumes", "NeverDirtyStart")
-PROBE_NAMES = (*REACHABLE, "NoRevertOfUnseenWork")
+PROBE_NAMES = (*REACHABLE, "NoRevertOfUnseenWork", "NeverCheckpointsAfterARevert")
 FAIRNESS_CLAIMS = ("RunsEnd", "EveryEditIsChecked", "RegressionsReachAgent", "RevertNoticeReachesAgent", "HoldNoticeReachesAgent", "EditsAreSettled")
 FAIRNESS_NEEDED_BY = {
     "Nothing": (),
@@ -124,6 +124,21 @@ FAIRNESS_NEEDED_BY = {
     "TellHold": ("HoldNoticeReachesAgent",),
     "Settle": ("EditsAreSettled",),
 }
+
+
+def bounds(edits: int, names: str, timeout: int, agent_only: bool) -> Run:
+    """Every property of OverwatchTcr.cfg, liveness included, at other bounds than its own; agent_only keeps the person's
+    work and more than four builds out, as OverwatchTcrNotices.cfg does, so that three edits fit."""
+    assert edits >= 1, f"{edits} workspace edits leave nothing to check"
+    assert names.startswith("{") and names.endswith("}"), f"the names {names} are no set"
+    text = (SPEC / "OverwatchTcr.cfg").read_text()
+    for old in ('Names = {"a"}', "MaxEdits = 2", "Timeout = 1"):
+        assert old in text, f"OverwatchTcr.cfg no longer holds {old}, which the bounds runs replace"
+    text = text.replace('Names = {"a"}', f"Names = {names}").replace("MaxEdits = 2", f"MaxEdits = {edits}").replace("Timeout = 1", f"Timeout = {timeout}")
+    if agent_only:
+        text = text.replace("SPECIFICATION Spec\n", "SPECIFICATION Spec\nCONSTRAINT AgentWorkOnly\nCONSTRAINT FewBuilds\n")
+    label = f"{edits} edits, names {names}, timeout {timeout}{', agent only' if agent_only else ''}"
+    return Run(f"bounds {label}", "Overwatch", text, "pass", edits > 1, group="bounds" if edits > 1 else "")
 
 
 def fairness(left: str, claim: str) -> Run:
@@ -144,6 +159,8 @@ def runs() -> list[Run]:
     found += [property_mutant(*mutation) for mutation in PROPERTY_MUTANTS]
     found += [probe(name, 2, "violation") for name in REACHABLE]
     found += [probe("NoRevertOfUnseenWork", 2, "pass"), probe("NoRevertOfUnseenWork", 3, "violation")]
+    found += [probe("NeverCheckpointsAfterARevert", 2, "pass"), probe("NeverCheckpointsAfterARevert", 3, "violation")]
+    found += [bounds(1, '{"a"}', 1, False), bounds(2, '{"a", "b"}', 1, False), bounds(3, '{"a"}', 0, True), bounds(3, '{"a"}', 1, True)]
     found += [fairness(left, claim) for left in FAIRNESS_NEEDED_BY for claim in FAIRNESS_CLAIMS]
     assert len({run.name for run in found}) == len(found), f"two of the {len(found)} runs share a name: {[run.name for run in found]}"
     assert all(run.expected in ("pass", "violation") for run in found), f"a run of {[run.name for run in found]} expects something other than pass or violation"
@@ -181,8 +198,10 @@ def execute(run: Run, jar: Path, java: str) -> tuple[str, str]:
 
 def wanted(run: Run, args: argparse.Namespace) -> bool:
     """Whether the command line asks for run: the fairness runs and the reverts configuration each have a flag of their own, and --full adds the heavy ones."""
-    assert run.group in ("", "fairness", "reverts"), f"run {run.name} is in the group {run.group!r}, which no flag selects"
+    assert run.group in ("", "fairness", "reverts", "bounds"), f"run {run.name} is in the group {run.group!r}, which no flag selects"
     assert hasattr(args, "full"), f"the arguments {args} do not say whether the heavy runs are wanted"
+    if run.group == "bounds":
+        return args.bounds
     if run.group == "fairness":
         return args.fairness
     if run.group == "reverts":
@@ -196,6 +215,7 @@ def main() -> None:
     parser.add_argument("--java", default="java")
     parser.add_argument("--only", default="", help="run only the runs whose name contains this text")
     parser.add_argument("--full", action="store_true", help="include IntegrationContract.cfg")
+    parser.add_argument("--bounds", action="store_true", help="run every property of OverwatchTcr.cfg at three edits and at two failure names, about an hour")
     parser.add_argument("--reverts", action="store_true", help="add OverwatchTcrReverts.cfg, 153 million states, which CI runs in a job of its own")
     parser.add_argument("--fairness", action="store_true", help="run the 66 runs that leave out one action's fairness, about an hour")
     args = parser.parse_args()

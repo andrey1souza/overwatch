@@ -135,6 +135,23 @@ No claim needs the fairness of `WokenTurnStarts` at these bounds: a woken turn i
 `RunsEnd` rests on `Tick` and `TimesOut` alone, since a check that hangs ends only when its clock runs out; `EveryEditIsChecked` adds `QuietElapses` and `ReadResults`; `RegressionsReachAgent` adds `Flush` and `TurnCompletes`; and the three TCR actions `Settle`, `TellRevert` and `TellHold` are each needed by exactly the claim about their own progress.
 Weak fairness suffices for all six claims, since `Spec` uses it and they hold, so strong fairness is not needed by any of them, and no run substitutes it.
 
+Whether a verdict depends on the bounds is checked at the bounds that fit, with every property of `OverwatchTcr.cfg`, liveness included.
+At two edits a revert uses up the budget, so no edit follows a revert and `EditsAreSettled`, `EveryEditIsChecked` and `RegressionsReachAgent` never see one: the probe `NeverCheckpointsAfterARevert` holds with two edits and is violated with three, 24,389,509 states generated and 7,864,279 distinct.
+`python3 scripts/check_models.py --bounds` therefore runs all properties with three edits, with only the agent's own work and at most four builds, once without a tick and once with one, and with two failure names and two edits; each passes with the same verdicts as the base bounds.
+
+| Bounds | States generated | Distinct | Verdicts |
+| --- | --- | --- | --- |
+| one edit, one name, one tick | 68,292 | 20,106 | all hold |
+| two edits, one name, one tick (`OverwatchTcr.cfg`) | 5,633,023 | 1,411,606 | all hold |
+| two edits, two names, one tick | 51,715,267 | 12,801,532 | all hold |
+| three edits, one name, no tick, agent only | 32,901,892 | 7,656,256 | all hold |
+| three edits, one name, one tick, agent only | 55,315,723 | 12,669,979 | all hold |
+
+Four edits were not finished: the same properties at four edits, agent only and no tick, had found 24 million distinct states with 8 million still waiting when the run was stopped after an hour, without an error found in what it had explored, so no verdict is claimed at four edits.
+`OverwatchTcrNotices.cfg` checks its safety and notice properties at four edits, and the bounds above are no proof for more edits, more names or more ticks.
+The escape of `EditsAreSettled` for an edit at the last version, `head = MaxEdits /\ Guard`, stays, since a revert there needs a version beyond the bound; it applies only to that last version, and with three edits a settled edit after a revert is reached, as the probe shows.
+The two-name run with a tick of two was not run.
+
 The committed model-checking configurations use finite bounds: two checks, a small failure alphabet, up to two requests, and up to one report change or session restart.
 The TCR configurations use one failure name, one tick of the timeout clock (none in the notices configuration), and two, three or four workspace edits; `OverwatchTcrNames.cfg` uses two failure names, with no tick and only the agent's own work, so that a notice can be told apart from the baseline: `RevertNoticeNamesNewFailures` says that a revert's notice names exactly the failures of the result that the baseline does not hold, and a mutant that names the inherited ones too breaks it, which one failure name could not show.
 These bounds exercise concurrency and policy combinations; passing them is not proof for every unbounded program execution or every external host version.
