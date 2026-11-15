@@ -7,15 +7,52 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 from __future__ import annotations
 
+import codecs
 import os
+import re
 import subprocess
+import tempfile
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from fnmatch import fnmatchcase
 from pathlib import Path
 
+from tcr_settings import validate_allow
+
 # How long a git command may take, in seconds. A commit runs the repository's own hooks, which can be slow.
-GIT_TIMEOUT = 120
+GIT_TIMEOUT = 30
 # How many file names a checkpoint message lists before it says how many more there were.
 MESSAGE_FILES = 5
 MESSAGE_PREFIX = "tcr: "
+# A staged file larger than this is refused: 50 MiB is where GitHub starts to warn about a file.
+MAX_STAGED_BYTES = 50 * 1024 * 1024
+ENV_TEMPLATES = frozenset({".env.example", ".env.sample", ".env.template"})
+PRIVATE_KEY_NAMES = frozenset({"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"})
+CREDENTIAL_NAMES = frozenset({"credentials", "credentials.json", "credentials.yml", "credentials.yaml"})
+SECRET_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+SECRET_FILE_NAMES = frozenset({".npmrc", ".netrc"})
+NAME_RULE = "name pattern"
+SIZE_RULE = f"larger than {MAX_STAGED_BYTES // (1024 * 1024)} MiB"
+# Only secrets that have an unmistakable form: a generic `key = "..."` pattern flagged too much ordinary code.
+CONTENT_RULES = (
+    ("AWS access key", r"AKIA[0-9A-Z]{16}"),
+    ("private key", r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY"),
+    ("GitHub token", r"gh[pousr]_[A-Za-z0-9]{36,}"),
+    ("Slack token", r"xox[baprs]-"),
+    ("Stripe live key", r"sk_live_"),
+    ("Anthropic key", r"sk-ant-"),
+    ("Google API key", r"AIza[0-9A-Za-z_-]{35}"),
+)
+CONTENT_PATTERN = re.compile("|".join(f"(?P<rule{index}>{pattern})" for index, (_, pattern) in enumerate(CONTENT_RULES)))
+HUNK_HEADER = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+# How many times a revert saves the files again when they changed while it saved them.
+MAX_SAVE_ATTEMPTS = 3
+# How many paths one git clean is given, so that a long list stays under the limit on the length of a command.
+CLEAN_BATCH = 200
+SAVED_REF_PREFIX = "refs/overwatch/reverted/"
+SAVED_REF_TIME = "%Y%m%dT%H%M%S%fZ"
+SAVED_MESSAGE = "overwatch: work that a TCR revert discarded"
 # Files and directories in the git directory that exist while an operation is unfinished, with its name.
 IN_PROGRESS = {"MERGE_HEAD": "merge", "CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert",
                "BISECT_LOG": "bisect", "rebase-merge": "rebase", "rebase-apply": "rebase"}
@@ -30,17 +67,54 @@ class CheckpointError(Exception):
     """A git operation of the checkpoint failed or was refused; the message says why and what was left as it was."""
 
 
-def run_git(cwd: Path, argv: list[str], *, warnings_fail: bool = False) -> str:
+class Refused(CheckpointError):
+    """The checkpoint would have committed files it must not: refusals lists each one. Nothing was committed, and the
+    files stay in the work tree, unstaged."""
+
+    def __init__(self, refusals: list[Refusal]) -> None:
+        assert refusals, "a checkpoint was refused with nothing to refuse; raise Refused only for a refusal"
+        self.refusals = refusals
+        super().__init__(f"no checkpoint: it would commit {', '.join(refusal.text() for refusal in refusals)}; nothing was committed or reverted")
+        assert self.refusals is refusals, "Refused lost the refusals it was made with"
+
+
+@dataclass(frozen=True)
+class Refusal:
+    """One reason a checkpoint would not commit a file: the rule it broke, and the line of it when a line did."""
+    path: str
+    rule: str
+    line: int | None = None
+
+    def text(self) -> str:
+        """The refusal as the agent and the user read it: `.env (name pattern)` or `src/a.py:12 (AWS access key)`."""
+        place = self.path if self.line is None else f"{self.path}:{self.line}"
+        assert self.path and self.rule, f"a refusal of {self.path!r} for {self.rule!r} names nothing; give both"
+        assert self.line is None or self.line > 0, f"line {self.line} of {self.path} is no line number"
+        return f"{place} ({self.rule})"
+
+
+@dataclass(frozen=True)
+class GitIO:
+    """What a git command reads besides its arguments: the text on its standard input, and the index file it uses in
+    place of the repository's own."""
+    stdin: str | None = None
+    index: Path | None = None
+
+
+def run_git(cwd: Path, argv: list[str], *, warnings_fail: bool = False, io: GitIO = GitIO()) -> str:
     """Runs git with argv in cwd and returns what it printed, or raises CheckpointError with git's own message. Bytes
     that are not UTF-8, as in a file name Linux allows, come back as the surrogate characters that encode them again.
     Git finds the repository from cwd alone, whatever location variables the environment holds. With warnings_fail, a
-    command that exits 0 but wrote to stderr, as git does for a directory it cannot read, fails too."""
+    command that exits 0 but wrote to stderr, as git does for a directory it cannot read, fails too. io gives it
+    input and an index file of its own."""
     environment = {name: value for name, value in os.environ.items() if name not in GIT_LOCATION_VARIABLES}
     assert not GIT_LOCATION_VARIABLES & set(environment), f"git's environment still names a repository: {GIT_LOCATION_VARIABLES & set(environment)}"
+    if io.index is not None:
+        environment["GIT_INDEX_FILE"] = str(io.index)
     command = " ".join(argv)
     try:
         result = subprocess.run(["git", *argv], cwd=cwd, env=environment, capture_output=True, text=True, errors="surrogateescape",
-                                timeout=GIT_TIMEOUT, check=False)
+                                timeout=GIT_TIMEOUT, check=False, input=io.stdin)
     except (OSError, subprocess.SubprocessError) as error:
         raise CheckpointError(f"git {command} could not run in {cwd}: {error}; check that git is installed") from error
     stderr = result.stderr.strip()
@@ -129,20 +203,23 @@ def is_clean(cwd: Path) -> bool:
     return clean
 
 
-def unavailable_reason(cwd: Path) -> str | None:
+def unavailable_reason(cwd: Path, *, dirty_ok: bool = False) -> str | None:
     """Why TCR cannot start in the repository holding cwd, as one sentence, or None when it can. It starts only on a
     branch that has a commit and a clean tree, with no operation in progress and no untracked nested repository, so
-    that no revert can discard work that was there before it."""
+    that no revert can discard work that was there before it. With dirty_ok, uncommitted changes are no reason: the
+    caller knows whose they are."""
     root = repository_root(cwd)
     operation = operation_in_progress(root)
     nested = nested_repositories(root)
     committed = has_commit(root)
+    clean = is_clean(root) or dirty_ok
+    changed = [] if clean else uncommitted(root)
     reasons = [
         (not committed, "the repository has no commit to restore"),
         (committed and not on_branch(root), "HEAD is detached, so a checkpoint would belong to no branch"),
         (operation is not None, f"a {operation} is in progress"),
         (bool(nested), f"the untracked nested repository {', '.join(nested)} would not be restored"),
-        (not is_clean(root), "the working tree has uncommitted changes that a revert would discard"),
+        (not clean, "the working tree has uncommitted changes that a revert would discard" + (f": {named(changed)}" if changed else "")),
     ]
     reason = next((text for applies, text in reasons if applies), None)
     assert reason is None or any(reason == text for _, text in reasons), f"reason {reason!r} is not one of the listed reasons"
@@ -162,14 +239,44 @@ def uncommitted(root: Path) -> list[str]:
     return tracked + untracked
 
 
-def message(files: list[str]) -> str:
-    """The checkpoint's commit message: tcr: then up to MESSAGE_FILES file names, then how many more there were."""
+def dirty_submodules(root: Path) -> list[str]:
+    """The submodules of the repository at root whose own files differ from what the repository records: neither a
+    checkpoint nor a revert goes into them."""
+    inside = set(submodules(root))
+    entries = run_git(root, ["status", "--porcelain=v1", "-z", "--ignore-submodules=none"]).split("\0")
+    dirty = sorted({entry[3:] for entry in entries if len(entry) > 3 and entry[3:] in inside})
+    assert set(dirty) <= inside, f"{set(dirty) - inside} are listed as submodules but are none"
+    assert len(dirty) <= len(inside), f"{len(dirty)} dirty submodules among {len(inside)}"
+    return dirty
+
+
+def named(files: list[str]) -> str:
+    """Up to MESSAGE_FILES file names on one line, then how many more there were."""
     shown = [name.replace("\n", " ").replace("\t", " ") for name in files[:MESSAGE_FILES]]
     hidden = len(files) - len(shown)
-    text = MESSAGE_PREFIX + ", ".join(shown) + (f" and {hidden} more" if hidden > 0 else "")
-    assert text.startswith(MESSAGE_PREFIX) and "\n" not in text, f"message {text!r} is not one tcr: line"
-    assert hidden == 0 or text.endswith(f"and {hidden} more"), f"message {text!r} does not say that {hidden} files were left out"
+    text = ", ".join(shown) + (f" and {hidden} more" if hidden > 0 else "")
+    assert "\n" not in text, f"the names {text!r} are not on one line"
+    assert hidden == 0 or text.endswith(f"and {hidden} more"), f"names {text!r} do not say that {hidden} files were left out"
     return text
+
+
+def message(files: list[str]) -> str:
+    """The checkpoint's commit message: tcr: then up to MESSAGE_FILES file names, then how many more there were."""
+    text = MESSAGE_PREFIX + named(files)
+    assert text.startswith(MESSAGE_PREFIX) and "\n" not in text, f"message {text!r} is not one tcr: line"
+    assert text.count(MESSAGE_PREFIX) == 1 or any(MESSAGE_PREFIX in name for name in files), f"message {text!r} repeats the prefix"
+    return text
+
+
+def current_branch(root: Path) -> str | None:
+    """The name of the branch HEAD names; None on a detached HEAD."""
+    try:
+        branch = run_git(root, ["symbolic-ref", "--short", "-q", "HEAD"]).strip()
+    except CheckpointError:
+        return None
+    assert branch and "\n" not in branch, f"HEAD in {root} names the branch {branch!r}, which is no name"
+    assert on_branch(root), f"{branch!r} was named as the branch, but HEAD in {root} is detached"
+    return branch
 
 
 def refuse_unsafe(root: Path, action: str) -> None:
@@ -181,11 +288,135 @@ def refuse_unsafe(root: Path, action: str) -> None:
     assert root.is_dir(), f"{root} is not a directory to {action} in"
 
 
-def checkpoint(cwd: Path) -> str | None:
+def name_rule(path: str) -> str | None:
+    """NAME_RULE when the file's name says it holds secrets, as `.env`, a private key or a credentials file does;
+    None for any other name, and for a template such as `.env.example` or a public key."""
+    name = path.rsplit("/", 1)[-1].lower()
+    if name in ENV_TEMPLATES or name.endswith(".pub"):
+        return None
+    private_key = any(name == key or name.startswith(f"{key}.") for key in PRIVATE_KEY_NAMES)
+    secret = (name == ".env" or name.startswith(".env.") or name.endswith(SECRET_FILE_SUFFIXES) or name in SECRET_FILE_NAMES
+              or private_key or name in CREDENTIAL_NAMES)
+    assert not secret or not name.endswith(".pub"), f"{path} is a public key but was refused as a secret"
+    assert not secret or name not in ENV_TEMPLATES, f"{path} is a template but was refused as a secret"
+    return NAME_RULE if secret else None
+
+
+def matches_path(parts: list[str], pattern: list[str]) -> bool:
+    """Whether the path, split at its slashes, fits the pattern, split the same way: a part of the pattern is a glob for
+    one part of the path, which a star does not cross, and a part that is two stars fits any number of parts."""
+    reached, last = {0}, len(parts)
+    for token in pattern:
+        if token == "**":
+            reached = {position for start in reached for position in range(start, last + 1)}
+        else:
+            reached = {position + 1 for position in reached if position < last and fnmatchcase(parts[position], token)}
+    assert all(0 <= position <= last for position in reached), f"the pattern {pattern} reached a part beyond the path {parts}"
+    assert not reached or min(reached) >= (0 if "**" in pattern else len(pattern)), f"the pattern {pattern} reached {reached} in {parts} without matching each part"
+    return last in reached
+
+
+def is_allowed(path: str, allow: tuple[str, ...]) -> bool:
+    """Whether an allowlist entry names the file. An entry is a path from the repository's root, and a glob in it fits
+    one directory or file name at a time; a name without a directory fits only that name at the root, and `**/` before
+    it fits the name in any directory."""
+    parts = path.split("/")
+    allowed = any(matches_path(parts, entry.split("/")) for entry in allow)
+    assert not allowed or allow, f"{path} is allowed by an empty allowlist"
+    assert all(parts), f"{path!r} has an empty directory or file name to allow"
+    return allowed
+
+
+def staged_files(root: Path) -> list[tuple[str, str, str]]:
+    """The mode, blob and path of each file the index adds or changes against HEAD, in git's order."""
+    fields = run_git(root, ["diff", "--cached", "--raw", "--no-abbrev", "-z", "--no-renames", "--diff-filter=AM"]).split("\0")
+    files = [(header.split()[1], header.split()[3], fields[position + 1]) for position, header in enumerate(fields) if header.startswith(":")]
+    assert all(len(blob) >= 40 for _, blob, _ in files), f"git listed a blob that is no object ID in {files}"
+    assert all(path for _, _, path in files), f"git listed a staged file with no path in {files}"
+    return files
+
+
+def oversized(root: Path, files: list[tuple[str, str, str]]) -> list[Refusal]:
+    """The files among the staged ones, leaving out submodules, whose content is larger than MAX_STAGED_BYTES."""
+    blobs = [(blob, path) for mode, blob, path in files if mode != "160000"]
+    if not blobs:
+        return []
+    sizes = run_git(root, ["cat-file", "--batch-check=%(objectsize)"], io=GitIO(stdin="".join(f"{blob}\n" for blob, _ in blobs))).split()
+    assert len(sizes) == len(blobs), f"git gave {len(sizes)} sizes for {len(blobs)} blobs"
+    found = [Refusal(path, SIZE_RULE) for (_, path), size in zip(blobs, sizes) if size.isdigit() and int(size) > MAX_STAGED_BYTES]
+    assert all(refusal.path in {path for _, path in blobs} for refusal in found), f"{found} name a file that was not staged"
+    return found
+
+
+def header_path(header: str) -> str:
+    """The path that a `+++ b/path` header of a diff names. Git ends the header with a tab when the path holds a space,
+    and writes a path with a quote or a control character between double quotes, with backslash escapes."""
+    path = header.rstrip("\t")
+    if path.startswith('"') and path.endswith('"') and len(path) > 1:
+        path = codecs.escape_decode(path[1:-1].encode("utf-8"))[0].decode("utf-8", "surrogateescape")
+    path = path.removeprefix("b/")
+    assert path and not path.endswith("\t"), f"the header {header!r} names no path"
+    assert not path.startswith("b/") or header.startswith('"'), f"the header {header!r} kept its b/ prefix"
+    return path
+
+
+def added_lines(diff: str) -> Iterator[tuple[str, int, str]]:
+    """The path, the line number in the new file and the text of each line that a zero-context diff adds. A hunk header
+    says how many old and new lines its hunk holds, so a line that begins like a file header is still a line."""
+    path, line, old_left, new_left = "", 0, 0, 0
+    for text in diff.split("\n"):
+        if old_left or new_left:
+            if text.startswith("+"):
+                yield path, line, text[1:]
+                line, new_left = line + 1, new_left - 1
+            elif text.startswith("-"):
+                old_left -= 1
+        elif text.startswith("+++ "):
+            path = header_path(text[4:])
+        elif text.startswith("@@"):
+            header = HUNK_HEADER.match(text)
+            assert header, f"git wrote the hunk header {text!r}, which this reader does not know"
+            old_left, line, new_left = int(header.group(1) or 1), int(header.group(2)), int(header.group(3) or 1)
+    assert old_left == 0 and new_left == 0, f"the diff ended inside a hunk, with {old_left} old and {new_left} new lines unread"
+
+
+def secret_lines(root: Path, skipped: set[str]) -> list[Refusal]:
+    """The first line of each file the index changes, apart from skipped, that adds a high-confidence secret, once for
+    each kind of secret. Only the lines the edit adds are read, from one diff of the whole index."""
+    diff = run_git(root, ["-c", "core.quotepath=false", "diff", "--cached", "--text", "-U0", "--no-color", "--no-ext-diff", "--no-renames", "--diff-filter=AM"])
+    found: dict[tuple[str, str], int] = {}
+    for path, line, text in added_lines(diff):
+        hit = CONTENT_PATTERN.search(text) if path not in skipped else None
+        if hit and hit.lastgroup:
+            found.setdefault((path, CONTENT_RULES[int(hit.lastgroup.removeprefix("rule"))][0]), line)
+    assert all(number > 0 for number in found.values()), f"a secret was found on line 0 of {found}"
+    assert not {path for path, _ in found} & skipped, f"a skipped file was read for secrets: {found}"
+    return [Refusal(path, rule, number) for (path, rule), number in found.items()]
+
+
+def refusals(root: Path, allow: tuple[str, ...]) -> list[Refusal]:
+    """Why the staged files in the repository at root must not be committed: a name that says secrets, a line that
+    is a high-confidence secret, or a size over MAX_STAGED_BYTES. An allowlist entry skips the first two for the files
+    it names, never the third."""
+    files = staged_files(root)
+    allowed = {path for _, _, path in files if is_allowed(path, allow)}
+    named = [Refusal(path, NAME_RULE) for _, _, path in files if path not in allowed and name_rule(path)]
+    contents = secret_lines(root, allowed | {refusal.path for refusal in named})
+    found = [*named, *contents, *oversized(root, files)]
+    assert len({(refusal.path, refusal.rule, refusal.line) for refusal in found}) == len(found), f"a refusal is listed twice in {found}"
+    assert not any(refusal.path in allowed and refusal.rule != SIZE_RULE for refusal in found), f"an allowed file is refused by name or content in {found}"
+    return found
+
+
+def checkpoint(cwd: Path, allow: tuple[str, ...] = ()) -> str | None:
     """Commits every file that is not ignored, new files included, and returns the new commit, or None when there
     was nothing to commit. The repository's own commit hooks and signing apply. When the commit fails, raises
     CheckpointError and leaves the changes staged, so no work is lost. Refuses while an operation is in progress or
-    an untracked repository sits in the workspace."""
+    an untracked repository sits in the workspace. When a file is named like a secret, adds a high-confidence secret
+    or is over MAX_STAGED_BYTES, and no entry of allow names it for the first two, raises Refused, commits nothing and
+    unstages everything, so the work tree is as the edit left it. An allowlist with an entry that is empty or only
+    wildcards raises ConfigurationError, as the hook does for the same file."""
+    allow = validate_allow(allow)
     root = repository_root(cwd)
     refuse_unsafe(root, "checkpoint")
     if has_commit(root) and not on_branch(root):
@@ -197,6 +428,10 @@ def checkpoint(cwd: Path) -> str | None:
     files = [name for name in run_git(root, ["diff", "--cached", "--name-only", "-z"]).split("\0") if name]
     if not files:
         return None
+    found = refusals(root, allow)
+    if found:
+        run_git(root, ["reset", "-q"])
+        raise Refused(found)
     before = run_git(root, ["rev-parse", "HEAD"]).strip() if has_commit(root) else ""
     try:
         run_git(root, ["commit", "-q", "-m", message(files)])
@@ -211,19 +446,97 @@ def checkpoint(cwd: Path) -> str | None:
     return head
 
 
-def revert(cwd: Path) -> None:
-    """Restores the latest commit: tracked files as committed, and files and directories that are neither tracked
-    nor ignored removed. Ignored files, untracked nested repositories and the files inside submodules stay. Checks everything first and changes
-    nothing when there is no commit to restore or an operation is in progress."""
+def snapshot_tree(root: Path, names: list[str]) -> str:
+    """The tree of HEAD with the files in names as they are in the workspace now, made in a temporary index so that HEAD,
+    the repository's index and the workspace stay as they are."""
+    with tempfile.TemporaryDirectory() as directory:
+        index, listing = Path(directory) / "index", Path(directory) / "paths"
+        run_git(root, ["read-tree", "HEAD"], io=GitIO(index=index))
+        if names:
+            listing.write_bytes(b"\0".join(os.fsencode(name) for name in names))
+            run_git(root, ["--literal-pathspecs", "add", "-A", "--pathspec-from-file", str(listing), "--pathspec-file-nul"], io=GitIO(index=index))
+        tree = run_git(root, ["write-tree"], io=GitIO(index=index)).strip()
+    assert len(tree) in (40, 64), f"git wrote the tree {tree!r}, which is neither a SHA-1 nor a SHA-256 object ID"
+    assert names or tree == run_git(root, ["rev-parse", "HEAD^{tree}"]).strip(), f"a snapshot of no files is not the tree of HEAD in {root}"
+    return tree
+
+
+def point_ref_at(root: Path, ref: str, tree: str, *, is_new: bool) -> None:
+    """Makes ref name a commit of tree on top of HEAD; a new ref must not exist yet."""
+    commit = run_git(root, ["commit-tree", tree, "-p", "HEAD", "-m", SAVED_MESSAGE]).strip()
+    run_git(root, ["update-ref", ref, commit, *([""] if is_new else [])])
+    assert run_git(root, ["rev-parse", ref]).strip() == commit, f"{ref} does not name the saved commit {commit}"
+    assert run_git(root, ["rev-parse", f"{ref}^"]).strip() == run_git(root, ["rev-parse", "HEAD"]).strip(), f"{ref} is not on top of HEAD"
+
+
+def save_discarded(root: Path, names: list[str], after_save: Callable[[], None] | None) -> tuple[str, list[str]]:
+    """Saves the files in names, which a revert would discard, under a new ref below SAVED_REF_PREFIX, and returns the
+    ref and the files that were saved. Anyone can write a file while that takes time, so after each save it lists the
+    files again and saves again when they differ, until a list gives the tree already saved, MAX_SAVE_ATTEMPTS times at
+    most; then it deletes the ref and raises CheckpointError, so that the caller deletes nothing. after_save runs after
+    each save, before the list."""
+    tree = snapshot_tree(root, names)
+    ref = SAVED_REF_PREFIX + datetime.now(timezone.utc).strftime(SAVED_REF_TIME)
+    point_ref_at(root, ref, tree, is_new=True)
+    assert ref.startswith(SAVED_REF_PREFIX), f"the ref {ref} is not below {SAVED_REF_PREFIX}"
+    try:
+        for _ in range(MAX_SAVE_ATTEMPTS):
+            if after_save is not None:
+                after_save()
+            names = uncommitted(root)
+            later = snapshot_tree(root, names)
+            if later == tree:
+                return ref, names
+            tree = later
+            point_ref_at(root, ref, tree, is_new=False)
+        raise CheckpointError(f"the files in {root} kept changing while the work was saved, so nothing was reverted; stop what writes to them and try again")
+    except CheckpointError:
+        run_git(root, ["update-ref", "-d", ref])
+        assert not run_git(root, ["for-each-ref", ref]).strip(), f"the ref {ref} is still there after the save was given up"
+        raise
+
+
+def remove_untracked(root: Path, names: list[str]) -> None:
+    """Removes the files in names that are neither tracked nor ignored, and the directories that held them and are empty
+    now. A file that is not in names stays, even in the same directory, so that what was written after names was listed
+    is not lost."""
+    assert root.is_dir() and not any(name.startswith("/") for name in names), f"{names} are not paths below {root}"
+    assert all(name for name in names), f"{names} include an empty path, which git clean would read as every file"
+    for start in range(0, len(names), CLEAN_BATCH):
+        run_git(root, ["--literal-pathspecs", "clean", "-fd", "--", *names[start:start + CLEAN_BATCH]])
+    directories = sorted({parent for name in names for parent in (root / name).parents if parent != root and root in parent.parents}, key=lambda path: -len(path.parts))
+    for directory in directories:
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
+
+
+def revert(cwd: Path, *, save_ref: bool = True, after_save: Callable[[], None] | None = None, before_discard: Callable[[], None] | None = None) -> str | None:
+    """Restores the latest commit: tracked files as committed, and files that are neither tracked nor ignored removed,
+    with the directories that held only them. Ignored files, untracked nested repositories and the files inside
+    submodules stay. Checks everything first and changes nothing when there is no commit to restore or an operation is in
+    progress. Unless save_ref is false, the files it discards are first saved under a ref, which it returns, and saved
+    again until a list of the files finds nothing new; when that cannot be done, or git fails while it saves, the ref
+    is deleted and nothing is reverted. It removes only the untracked files of that last list, so a new file written
+    after it stays and is reported by CheckpointError; a file of the list or a tracked file changed after it is lost,
+    which can take tens of milliseconds, because git has no way to reset and list in one step. before_discard runs
+    after the last list, before anything is discarded."""
     root = repository_root(cwd)
     if not has_commit(root):
         raise CheckpointError(f"no revert: {root} has no commit to restore; nothing was changed")
     refuse_unsafe(root, "revert")
     run_git(root, ["clean", "-nfd"], warnings_fail=True)
+    names = uncommitted(root)
+    saved, discarded = save_discarded(root, names, after_save) if save_ref and names else (None, names)
+    if before_discard is not None:
+        before_discard()
     run_git(root, ["reset", "--hard", "HEAD"])
-    run_git(root, ["clean", "-fd"])
+    remove_untracked(root, discarded)
     left = uncommitted(root)
     if left:
         raise CheckpointError(f"the revert in {root} left {left}; restore them by hand")
     assert not left, f"{root} still differs from HEAD in {left} after the revert"
     assert has_commit(root), f"{root} lost its commit during the revert"
+    assert saved is None or save_ref, f"a revert saved {saved} without being asked to"
+    return saved
