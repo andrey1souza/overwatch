@@ -63,6 +63,9 @@ CLEAN_BATCH = 200
 SAVED_REF_PREFIX = "refs/overwatch/reverted/"
 SAVED_REF_TIME = "%Y%m%dT%H%M%S%fZ"
 SAVED_MESSAGE = "overwatch: work that a TCR revert discarded"
+# Who the saved commit is by when git knows no one: the commit only holds the discarded work, and is nobody's own.
+FALLBACK_IDENTITY = (("GIT_AUTHOR_NAME", "overwatch"), ("GIT_AUTHOR_EMAIL", "overwatch@localhost"),
+                     ("GIT_COMMITTER_NAME", "overwatch"), ("GIT_COMMITTER_EMAIL", "overwatch@localhost"))
 UNWATCHED_REASON = "{files} is marked assume-unchanged or skip-worktree and differs from HEAD, so git does not show the edit and a revert would overwrite it"
 # Files and directories in the git directory that exist while an operation is unfinished, with its name.
 IN_PROGRESS = {"MERGE_HEAD": "merge", "CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert",
@@ -111,9 +114,10 @@ class Refusal:
 @dataclass(frozen=True)
 class GitIO:
     """What a git command reads besides its arguments: the text on its standard input, and the index file it uses in
-    place of the repository's own."""
+    place of the repository's own, and variables it needs besides the process's."""
     stdin: str | None = None
     index: Path | None = None
+    environment: tuple[tuple[str, str], ...] = ()
 
 
 def run_git(cwd: Path, argv: list[str], *, warnings_fail: bool = False, io: GitIO = GitIO()) -> str:
@@ -125,6 +129,7 @@ def run_git(cwd: Path, argv: list[str], *, warnings_fail: bool = False, io: GitI
     input and an index file of its own."""
     environment = {name: value for name, value in os.environ.items() if name not in GIT_LOCATION_VARIABLES}
     assert not GIT_LOCATION_VARIABLES & set(environment), f"git's environment still names a repository: {GIT_LOCATION_VARIABLES & set(environment)}"
+    environment.update(io.environment)
     if io.index is not None:
         environment["GIT_INDEX_FILE"] = str(io.index)
     command = " ".join(argv)
@@ -534,9 +539,22 @@ def snapshot_tree(root: Path, names: list[str]) -> str:
     return tree
 
 
+def identity_for_saved_commit(root: Path) -> tuple[tuple[str, str], ...]:
+    """Nothing when git knows who the author and the committer are, as the person set them; otherwise FALLBACK_IDENTITY,
+    so that a repository without a configured identity can still save the work a revert discards."""
+    assert root.is_dir(), f"{root} is not a directory to ask git for an identity in"
+    try:
+        run_git(root, ["var", "GIT_AUTHOR_IDENT"])
+        run_git(root, ["var", "GIT_COMMITTER_IDENT"])
+    except CheckpointError:
+        return FALLBACK_IDENTITY
+    assert not FALLBACK_IDENTITY or FALLBACK_IDENTITY[0][0] == "GIT_AUTHOR_NAME", "the fallback identity does not start with the author's name"
+    return ()
+
+
 def point_ref_at(root: Path, ref: str, tree: str, *, is_new: bool) -> None:
     """Makes ref name a commit of tree on top of HEAD; a new ref must not exist yet."""
-    commit = run_git(root, ["commit-tree", tree, "-p", "HEAD", "-m", SAVED_MESSAGE]).strip()
+    commit = run_git(root, ["commit-tree", tree, "-p", "HEAD", "-m", SAVED_MESSAGE], io=GitIO(environment=identity_for_saved_commit(root))).strip()
     run_git(root, ["update-ref", ref, commit, *([""] if is_new else [])])
     assert run_git(root, ["rev-parse", ref]).strip() == commit, f"{ref} does not name the saved commit {commit}"
     assert run_git(root, ["rev-parse", f"{ref}^"]).strip() == run_git(root, ["rev-parse", "HEAD"]).strip(), f"{ref} is not on top of HEAD"

@@ -265,6 +265,23 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(read(self.repo / "agent_new.py"), "x\n")
         self.assertEqual(read(self.repo / "pkg" / "m.py"), "y\n")
 
+    def test_a_revert_saves_the_work_in_a_repository_where_git_knows_no_identity(self) -> None:
+        self.discard_work()
+        no_guessing = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly", "GIT_CONFIG_VALUE_0": "true", "HOME": self.outside.name}
+        without_identity = {name: value for name, value in os.environ.items() if not name.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_"))} | no_guessing
+        with unittest.mock.patch.dict(os.environ, without_identity, clear=True):
+            saved = checkpoint.revert(self.repo, save_ref=True)
+        self.assertEqual(read(self.repo / "a.txt"), "base\n")
+        git(self.repo, ["checkout", saved, "--", "."])
+        self.assertEqual(read(self.repo / "a.txt"), "broken\n")
+        self.assertEqual(read(self.repo / "agent_new.py"), "x\n")
+        self.assertEqual(git(self.repo, ["log", "-1", "--format=%an <%ae>", saved]), "overwatch <overwatch@localhost>")
+
+    def test_a_saved_commit_keeps_the_identity_git_knows(self) -> None:
+        self.discard_work()
+        saved = checkpoint.revert(self.repo, save_ref=True)
+        self.assertEqual(git(self.repo, ["log", "-1", "--format=%an", saved]), "t")
+
     def test_a_revert_that_cannot_save_changes_nothing(self) -> None:
         self.discard_work()
         put(self.repo / ".git" / "refs" / "overwatch", "a file where the refs directory should be\n")
