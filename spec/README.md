@@ -68,6 +68,11 @@ They also state a limit: work that a person did just before the agent's edit, wi
 Two directories hold checks that are not properties of the model.
 `refinement/` holds `OldOverwatch.tla`, a frozen copy of `Overwatch.tla` from before TCR, and two modules that check, in each direction, that the two have the same behaviors when `TcrMode` is off: `NewImplementsOld` maps `Overwatch` to the old module under the identity mapping, fairness included, and `OldImplementsNew` maps the old module to `Overwatch` with the TCR variables at the values they have while TCR is off.
 This replaces comparing state counts.
+A third module, `TcrImplementsBase`, checks the safety of that old module for `Overwatch` with TCR on: a Checkpoint, a failed Checkpoint, a Hold, an Observe, a PersonCommits, a RevertAborts and a Tell step change only variables that the old module lacks, and a Revert is for it a change of the workspace by another process.
+A Revert writes the content of the restore point into the version it creates, which the old module keeps fixed from its first state, so a prophecy variable guesses that content in the first state and only the behaviors whose guess is right are kept, as every behavior has one.
+TLC found one step the old module has no match for, and the check names it as `HeldCompletes`: a turn may end while a held failure is new, where the old module keeps it guarded.
+Fairness is not checked through the old module, since a turn that ends only because of a hold is not a step its fairness takes.
+A mutant in which a Checkpoint also restarts the quiet timer breaks the check.
 `probes/` holds `Probes.tla`, whose probes each say that something never happens, so that a violation is a trace of it: every new action and state of TCR is reachable, and a property of TCR is not true only because its scenario cannot occur.
 `python3 scripts/check_models.py --jar /path/to/tla2tools.jar` runs these, the TCR and notice configurations, and the lifecycle instance, and compares each verdict with what it must be.
 

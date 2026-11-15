@@ -35,6 +35,7 @@ class Run:
     config: str
     expected: str
     heavy: bool = False
+    edit: tuple[str, str] | None = None
 
 
 def probe(name: str, edits: int, expected: str) -> Run:
@@ -50,12 +51,26 @@ def checked(config: str, module: str, heavy: bool = False) -> Run:
     return Run(f"configuration {config}", module, (SPEC / f"{config}.cfg").read_text(), "pass", heavy)
 
 
+def mutant(name: str, module: str, old: str, new: str) -> Run:
+    """A refinement check of a copy of Overwatch.tla in which old is replaced by new; TLC must find the break."""
+    assert old in (SPEC / "Overwatch.tla").read_text(), f"mutant {name} replaces {old!r}, which Overwatch.tla does not hold"
+    assert old != new, f"mutant {name} replaces {old!r} with itself"
+    base = refinement(module)
+    return Run(f"mutant {name} of refinement {module}", module, base.config, "violation", edit=(old, new))
+
+
 def refinement(module: str) -> Run:
     assert (SPEC / "refinement" / f"{module}.cfg").is_file(), f"spec/refinement/{module}.cfg does not exist"
     assert (SPEC / "refinement" / f"{module}.tla").is_file(), f"spec/refinement/{module}.tla does not exist"
     return Run(f"refinement {module}", module, (SPEC / "refinement" / f"{module}.cfg").read_text(), "pass")
 
 
+CHECKPOINT = ("    /\\ ck' = head /\\ settleDue' = FALSE /\\ person' = \"none\" /\\ held' = FALSE /\\ heldAt' = NoHold\n"
+              "    /\\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,\n")
+CHECKPOINT_RESTARTS_THE_QUIET_TIMER = (
+    "    /\\ ck' = head /\\ settleDue' = FALSE /\\ person' = \"none\" /\\ held' = FALSE /\\ heldAt' = NoHold /\\ quiet' = TRUE\n"
+    "    /\\ UNCHANGED <<truth, head, based, busy, from, installed, produced, consumed,\n")
+REFINEMENT_MUTANTS = (("checkpoint-restarts-the-quiet-timer", CHECKPOINT, CHECKPOINT_RESTARTS_THE_QUIET_TIMER),)
 REACHABLE = ("NeverReverts", "NeverCheckpoints", "NeverCheckpointFails", "NeverHolds", "NeverObserves", "NeverPersonCommits",
              "NeverTellsRevert", "NeverTellsHold", "NeverPulls", "NeverHoldsATimeout", "NeverPullsWhileHeld", "NeverUnavailable", "NeverResumes", "NeverDirtyStart")
 PROBE_NAMES = (*REACHABLE, "NoRevertOfUnseenWork")
@@ -66,7 +81,8 @@ def runs() -> list[Run]:
     found = [checked("Overwatch", "Overwatch"), checked("OverwatchTcr", "Overwatch"), checked("OverwatchTcrReverts", "Overwatch"), checked("OverwatchTcrQueues", "Overwatch"),
              checked("OverwatchTcrNotices", "Overwatch", heavy=True), checked("IntegrationLifecycle", "IntegrationLifecycle"),
              checked("IntegrationNotices", "IntegrationContract"), checked("IntegrationContract", "IntegrationContract", heavy=True),
-             refinement("NewImplementsOld"), refinement("OldImplementsNew")]
+             refinement("NewImplementsOld"), refinement("OldImplementsNew"), refinement("TcrImplementsBase")]
+    found += [mutant(name, "TcrImplementsBase", old, new) for name, old, new in REFINEMENT_MUTANTS]
     found += [probe(name, 2, "violation") for name in REACHABLE]
     found += [probe("NoRevertOfUnseenWork", 2, "pass"), probe("NoRevertOfUnseenWork", 3, "violation")]
     assert len({run.name for run in found}) == len(found), f"two of the {len(found)} runs share a name: {[run.name for run in found]}"
@@ -91,6 +107,10 @@ def execute(run: Run, jar: Path, java: str) -> tuple[str, str]:
         work = Path(directory)
         for source in (*SPEC.glob("*.tla"), *(SPEC / "refinement").glob("*.tla"), *(SPEC / "probes").glob("*.tla")):
             shutil.copyfile(source, work / source.name)
+        if run.edit:
+            target = work / "Overwatch.tla"
+            assert run.edit[0] in target.read_text(), f"run {run.name} edits text that Overwatch.tla does not hold"
+            target.write_text(target.read_text().replace(*run.edit, 1))
         (work / "Run.cfg").write_text(run.config)
         result = subprocess.run([java, "-XX:+UseParallelGC", TLC_HEAP, "-cp", str(jar), "tlc2.TLC", "-config", "Run.cfg", "-workers", "auto",
                                  "-metadir", str(work / "states"), f"{run.module}.tla"], cwd=work, capture_output=True, text=True, timeout=TLC_TIMEOUT)

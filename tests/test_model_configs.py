@@ -93,7 +93,7 @@ class ModelConfigTests(unittest.TestCase):
         names = [run.name for run in check_models.runs()]
         for config in MODULE_OF:
             self.assertIn(f"configuration {config}", names)
-        for module in ("NewImplementsOld", "OldImplementsNew"):
+        for module in ("NewImplementsOld", "OldImplementsNew", "TcrImplementsBase"):
             self.assertIn(f"refinement {module}", names)
         unseen = [run.name for run in check_models.runs() if run.name.startswith("probe NoRevertOfUnseenWork")]
         self.assertEqual(sorted(unseen), ["probe NoRevertOfUnseenWork with 2 edits", "probe NoRevertOfUnseenWork with 3 edits"])
