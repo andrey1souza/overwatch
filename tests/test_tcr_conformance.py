@@ -28,11 +28,13 @@ PASSING = "RESULT: PASS"
 FAILING = "RESULT: FAIL"
 SESSION = "session-1"
 HOOK_EVENTS = {"Start": "UserPromptSubmit", "Observe": "PostToolUse", "Checkpoint": "PostToolUse", "FailCommit": "PostToolUse",
-               "Refuse": "PostToolUse", "Revert": "PostToolUse", "Hold": "PostToolUse"}
+               "Refuse": "PostToolUse", "Revert": "PostToolUse", "Hold": "PostToolUse", "Move": "PostToolUse"}
+PULL_COMMAND = "git merge --ff-only teammate"
+TEAMMATE_BRANCH = "teammate"
 NO_HOOK_EVENTS = {"Build", "Read", "Quiet", "Complete", "Tick", "Timeout"}
 # The schedule in which the check outlives its deadline: the fixture check sleeps from the agent's edit on.
 TIMED_OUT = "a check that timed out holds the edit and never reverts it"
-# The schedule in which a pull ends a hold: the agent's shell is an editing tool, so the hook judges the pull as the agent's edit.
+# The schedule in which a pull ends a hold: the agent's shell is an editing tool, and the hook leaves the pull it reads unjudged.
 PULLED = "a pull after the person committed a held edit ends the hold"
 CHECK_DEADLINE_SECONDS = 1
 HANGING_CHECK = "import time\ntime.sleep(30)\n"
@@ -45,7 +47,7 @@ HELD_WORSE = "a held check that gets worse is held again and never reverted"
 HELD_SURVIVES = "a held edit survives a turn start and the next edit that passes is committed"
 HELD_CHANGED = "a change to the tree while an edit is held stops TCR at the turn start"
 HELD_THEN_JUDGED = "a held check that passed is judged again and a new failure is reverted"
-LATE_CHECK = (HELD, HELD_THEN_COMMITTED, HELD_WORSE, HELD_SURVIVES, HELD_CHANGED, HELD_THEN_JUDGED)
+LATE_CHECK = (HELD, HELD_THEN_COMMITTED, HELD_WORSE, HELD_SURVIVES, HELD_CHANGED, HELD_THEN_JUDGED, PULLED)
 
 # The model's revert that cannot finish saving: files that change while the revert saves them need a write at that instant.
 ABORTED_REVERT = "a revert whose files keep changing while it saves aborts and deletes nothing"
@@ -146,6 +148,22 @@ class TcrConformanceTests(CodexHook):
         assert read(result).endswith(f"v{state.head}"), f"{result} does not name version {state.head}"
         assert state.head <= len(trace["truth"]) + len(trace["events"]), f"head {state.head} is past the schedule {trace['name']}"
 
+    def write_pull(self, trace: dict, state: Replay, result: Path) -> None:
+        """The model's pull: a teammate's commit brings the next workspace version into a clean tree, as `git merge --ff-only`."""
+        state.head += 1
+        failures = trace["truth"][state.head] if state.head < len(trace["truth"]) else []
+        assert git(self.cwd, ["status", "--porcelain"]) == "", f"{self.cwd} is not clean, and a pull needs a clean tree"
+        branch = git(self.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
+        git(self.cwd, ["checkout", "-q", "-b", TEAMMATE_BRANCH])
+        self.put(result, content([] if trace["name"] in LATE_CHECK else failures, state.head))
+        if trace["name"] in LATE_CHECK:
+            self.write_late_check(state, failures)
+        git(self.cwd, ["add", "-A"])
+        git(self.cwd, ["commit", "-q", "-m", "a teammate's commit"])
+        git(self.cwd, ["checkout", "-q", branch])
+        git(self.cwd, ["merge", "-q", "--ff-only", TEAMMATE_BRANCH])
+        assert read(result).endswith(f"v{state.head}"), f"the pull left {result} without version {state.head}"
+
     def run_hook(self, trace: dict, state: Replay, event: str, expected: dict, result: Path) -> None:
         """The hook that follows an event of the model, and what the repository and the saved state must then show."""
         if event == "FailCommit":
@@ -154,6 +172,8 @@ class TcrConformanceTests(CodexHook):
             write(self.cwd / "key.txt", SECRET)
         discarded = read(result)
         fields = {} if event == "Start" else {"tool_name": "Read" if event == "Observe" else "Edit"}
+        if event == "Move":
+            fields = {"tool_name": "Bash", "tool_input": {"command": PULL_COMMAND}}
         output, _ = self.call(HOOK_EVENTS[event], **fields)
         state.context = str(output.get("hookSpecificOutput", {}).get("additionalContext", ""))
         state.commits += event == "Checkpoint"
@@ -185,6 +205,9 @@ class TcrConformanceTests(CodexHook):
             expected = trace["expected"][index]
             if event in ("Edit", "Outside"):
                 self.write_edit(trace, state, event, result)
+            elif event == "Move":
+                self.write_pull(trace, state, result)
+                self.run_hook(trace, state, event, expected, result)
             elif event == "Commit":
                 git(self.cwd, ["add", "-A"])
                 git(self.cwd, ["commit", "-q", "-m", "the person commits"])
@@ -199,8 +222,8 @@ class TcrConformanceTests(CodexHook):
                 self.assertIn(event, NO_HOOK_EVENTS, f"{trace['name']}: the replay does not know the event {event}")
 
     def test_every_schedule_that_the_hook_can_replay_holds(self) -> None:
-        replayed = [trace for trace in TRACES if trace["name"] not in (OVERTAKEN, ABORTED_REVERT, PULLED)]
-        self.assertGreaterEqual(len(replayed), 18, f"only {[trace['name'] for trace in replayed]} are replayed")
+        replayed = [trace for trace in TRACES if trace["name"] not in (OVERTAKEN, ABORTED_REVERT)]
+        self.assertGreaterEqual(len(replayed), 19, f"only {[trace['name'] for trace in replayed]} are replayed")
         for position, trace in enumerate(replayed):
             with self.subTest(trace["name"]):
                 if position:
@@ -236,7 +259,7 @@ class TcrConformanceTests(CodexHook):
 
     def test_the_schedule_with_an_overtaken_result_is_in_the_fixture(self) -> None:
         names = [trace["name"] for trace in TRACES]
-        for exempt in (OVERTAKEN, ABORTED_REVERT, PULLED):
+        for exempt in (OVERTAKEN, ABORTED_REVERT):
             self.assertIn(exempt, names, f"the schedule {exempt!r} no longer exists; remove the exemption")
         for late in LATE_CHECK:
             self.assertIn(late, names, f"the schedule {late!r} no longer exists; remove it from LATE_CHECK")
