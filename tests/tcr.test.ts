@@ -869,19 +869,6 @@ test('a held edit that the files no longer are at the next turn start does not r
   }, { mute: true })
 })
 
-test('an edit held for a check that gave no result is not resumed at the next turn start', async ($, on) => {
-  await inSession({ $, on }, async project => {
-    await $.turn.start({ text: 'go', turnId: 't1' })
-    await project.clock.advance(DECIDE_MS)
-    await edit($, project, ['a.py'], 'f1')
-    await project.clock.advance(1500)
-    expect(told(project).some(text => text.includes('gave no result to judge by'))).toBe(true)
-    await $.turn.start({ text: 'again', turnId: 't2' })
-    await project.clock.advance(SETTLE_MS)
-    expect(told(project).some(text => text.includes('TCR is unavailable') && text.includes('uncommitted changes'))).toBe(true)
-  }, { env: { OVERWATCH_TCR_TIMEOUT_SCALE: '0.002' }, hang: 'check' })
-})
-
 const BEFORE_MOVE = 'a'.repeat(40)
 const AFTER_MOVE = 'b'.repeat(40)
 const METADATA = '/repo/.git'

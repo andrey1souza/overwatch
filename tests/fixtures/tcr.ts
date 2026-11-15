@@ -19,6 +19,7 @@ type Options = { settings?: Record<string, unknown>; initial?: string; withUpstr
 /** What the fake checkpoint command line knows about the repository, and what it was asked to do. */
 export type Workspace = {
   fingerprint: string
+  content: string
   committed: string
   dirty: string[]
   refusal: string | undefined
@@ -56,7 +57,7 @@ export function tcrProject(on: On, options: Options = {}) {
   const clock = mock.clock(on)
   const prompts: string[] = []
   const toasts: string[] = []
-  const workspace: Workspace = { fingerprint: 'clean', committed: 'clean', dirty: [], refusal: undefined, reasonOverride: undefined, commits: [], reverted: [], asked: [], oneShots: [], started: new Set(), flags: [], saved: [], refused: [], isNewShape: false, rawCheckpoint: undefined, hang, next: undefined, onRevert: () => { output = initial }, hooks: {}, silent: mute, settingsDelayMs: 0, revertError: undefined, files: new Map() }
+  const workspace: Workspace = { fingerprint: 'clean', content: 'same', committed: 'clean', dirty: [], refusal: undefined, reasonOverride: undefined, commits: [], reverted: [], asked: [], oneShots: [], started: new Set(), flags: [], saved: [], refused: [], isNewShape: false, rawCheckpoint: undefined, hang, next: undefined, onRevert: () => { output = initial }, hooks: {}, silent: mute, settingsDelayMs: 0, revertError: undefined, files: new Map() }
   prepare?.(workspace)
   let output = initial
   let zigOutput = ZIG_GREEN
@@ -206,7 +207,7 @@ function writeFiles(workspace: Workspace, names: readonly string[]) {
 
 /** git status in the repository: the files that differ from the latest commit, as `git status --porcelain -z` lists them. */
 async function* statusRun(workspace: Workspace) {
-  if (workspace.dirty.length > 0) yield chunk(workspace.dirty.map(name => `?? ${name}\0`).join(''))
+  if (workspace.dirty.length > 0) yield chunk(workspace.dirty.map(name => (name.includes('\0') ? `${name}\0` : `?? ${name}\0`)).join(''))
   assert(workspace.dirty.every(name => name !== ''), `a dirty file has no name: ${workspace.dirty}`)
   return exited(0)
 }
@@ -253,7 +254,9 @@ function checkpointAnswer(workspace: Workspace, flags: readonly string[]): { cod
 /** What the fake checkpoint command answers to a revert: whether it changed the files, and the ref it saved them in unless told not to. */
 function revertAnswer(workspace: Workspace, flags: readonly string[]): { code: number; answer: Record<string, unknown> } {
   if (workspace.revertError !== undefined) return { code: 1, answer: { error: workspace.revertError } }
-  assert(flags.every(flag => flag.startsWith('--')), `the revert was given ${flags}, which holds something that is no flag`)
+  assert(flags.every((flag, at) => flag.startsWith('--') || flags[at - 1] === '--expect'), `the revert was given ${flags}, which holds something that is no flag or fingerprint`)
+  const expected = flags[flags.indexOf('--expect') + 1]
+  if (flags.includes('--expect') && expected !== workspace.fingerprint) return { code: 0, answer: { reverted: false, saved: null, changed: true } }
   const restored = workspace.dirty
   let saved: string | null = null
   if (restored.length > 0) {
@@ -274,7 +277,7 @@ function revertAnswer(workspace: Workspace, flags: readonly string[]): { code: n
 function answerTo(workspace: Workspace, command: string, flags: readonly string[]): { code: number; answer: Record<string, unknown> } {
   assert(['reason', 'fingerprint', 'checkpoint', 'revert'].includes(command), `the plugin asked the checkpoint command for ${JSON.stringify(command)}; it knows reason, fingerprint, checkpoint and revert`)
   if (command === 'reason') return { code: 0, answer: { reason: workspace.reasonOverride !== undefined ? workspace.reasonOverride : workspace.dirty.length > 0 && !flags.includes('--held') ? UNCOMMITTED : null } }
-  if (command === 'fingerprint') return { code: 0, answer: { fingerprint: workspace.fingerprint } }
+  if (command === 'fingerprint') return { code: 0, answer: flags.includes('--content') ? { fingerprint: workspace.fingerprint, content: workspace.content } : { fingerprint: workspace.fingerprint } }
   const answered = command === 'checkpoint' ? checkpointAnswer(workspace, flags) : revertAnswer(workspace, flags)
   assert(answered.code === 0 || 'error' in answered.answer, `${command} failed with ${answered.code} but printed no error`)
   return answered

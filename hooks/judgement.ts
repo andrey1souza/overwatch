@@ -14,6 +14,7 @@ import {
   checkpointedBy,
   dirtyFiles,
   fingerprintOf,
+  identityOf,
   initialTcr,
   isJudging,
   judgementLimitOf,
@@ -114,18 +115,19 @@ async function activeSettings($: EngineInterface, state: State, root: string): P
  * files it starts from. The files are fingerprinted before and after the question, and a change between stops it. Files
  * that are still the edit TCR held for a check without an earlier result, as `held` says, are no reason by themselves.
  */
-async function decisionOf($: EngineInterface, root: string, held: { files: string | undefined; checks: number }): Promise<{ next: string; settled: string | undefined }> {
+async function decisionOf($: EngineInterface, root: string, held: { identity: string | undefined; checks: number }): Promise<{ next: string; settled: string | undefined; isHeld: boolean }> {
   assert(root.startsWith('/'), `TCR was asked to decide for ${root}; pass the repository's absolute path`)
   try {
     const files = await fingerprintOf($, root)
-    const next = await stateOf($, root, held.checks > 0 && files === held.files)
-    if (next !== TCR_ACTIVE) return { next, settled: undefined }
-    const decided = (await fingerprintOf($, root)) === files ? { next, settled: files } : { next: CHANGED_WHILE_ACTING, settled: undefined }
+    const isHeld = held.checks > 0 && held.identity !== undefined && (await identityOf($, root)) === held.identity
+    const next = await stateOf($, root, isHeld)
+    if (next !== TCR_ACTIVE) return { next, settled: undefined, isHeld: false }
+    const decided = (await fingerprintOf($, root)) === files ? { next, settled: files, isHeld } : { next: CHANGED_WHILE_ACTING, settled: undefined, isHeld: false }
     assert((decided.next === TCR_ACTIVE) === (decided.settled !== undefined), `TCR decided ${decided.next} with ${decided.settled} settled`)
     return decided
   } catch (error) {
     if (!(error instanceof CommandError)) throw error
-    return { next: error.message, settled: undefined }
+    return { next: error.message, settled: undefined, isHeld: false }
   }
 }
 
@@ -149,10 +151,10 @@ async function decideNow($: EngineInterface, state: State) {
   assert(cwd === undefined || cwd.startsWith('/'), `the session's directory ${cwd} is not an absolute path`)
   const root = cwd === undefined ? undefined : await repositoryOf($, cwd)
   if (root === undefined || (await activeSettings($, state, root)) === undefined) return
-  const { next, settled } = await decisionOf($, root, { files: state.tcr.held, checks: state.tcrHeld.size })
+  const { next, settled, isHeld } = await decisionOf($, root, { identity: state.tcr.held, checks: state.tcrHeld.size })
   if (state.epoch !== epoch) return
   const [previous, text] = [state.tcr.status, notice(state.tcr.status, next)]
-  const held = next === TCR_ACTIVE && state.tcrHeld.size > 0 && settled === state.tcr.held ? settled : undefined
+  const held = next === TCR_ACTIVE && isHeld ? state.tcr.held : undefined
   state.tcr = { status: next, settled, seen: settled, unjudged: false, held }
   void cancelJudgement(state)
   if (text !== undefined) queueTcr($, state, 'state', tcrMessage(text, false))
@@ -274,11 +276,11 @@ async function changedWhileJudging($: EngineInterface, root: string, before: rea
 }
 
 /** Leaves the edit that `files` fingerprints uncommitted and unreverted, and tells the agent why. */
-function holdTcr($: EngineInterface, state: State, files: string, { reason, text = `overwatch: TCR left the latest change uncommitted and unreverted: ${reason}.` }: { reason: string; text?: string }) {
+async function holdTcr($: EngineInterface, state: State, { root, files }: Edit, { reason, text = `overwatch: TCR left the latest change uncommitted and unreverted: ${reason}.` }: { reason: string; text?: string }) {
   assert(reason !== '' && reason !== TCR_ACTIVE, `TCR holds an edit for ${JSON.stringify(reason)}, which tells the agent nothing`)
   assert(files !== '', `TCR holds the edit of the files ${JSON.stringify(files)} for ${reason}; it needs their fingerprint to know them again`)
   state.tcr.unjudged = false
-  state.tcr.held = files
+  state.tcr.held = await identityOf($, root)
   queueTcr($, state, 'hold', tcrMessage(text, false))
   assert(!state.tcr.unjudged && state.outbox.has('tcr:hold'), `holding the edit for ${reason} did not leave it unjudged and told`)
 }
@@ -291,10 +293,11 @@ function holdTcr($: EngineInterface, state: State, files: string, { reason, text
 async function actOnJudgement($: EngineInterface, state: State, edit: Edit, judged: readonly Judged[]) {
   assert(judged.length > 0, `TCR judges the edit ${edit.files} with no check; hold it when the project has none`)
   const unread = judged.filter(({ report }) => report === undefined)
-  if (unread.length > 0) return holdTcr($, state, edit.files, { reason: `${unread.map(({ live }) => live.watcher?.name).join(', ')} gave no result to judge by` })
+  for (const { live } of unread) state.tcrHeld.add(live.key)
+  if (unread.length > 0) return holdTcr($, state, edit, { reason: `${unread.map(({ live }) => live.watcher?.name).join(', ')} gave no result to judge by` })
   const offline = judged.filter(({ report }) => report?.environment !== undefined)
   for (const { live, report } of offline) queueEnvironment($, { state, live, watcher: live.watcher as Watcher }, report?.environment ?? '')
-  if (offline.length > 0) return holdTcr($, state, edit.files, { reason: 'a check cannot run in this environment' })
+  if (offline.length > 0) return holdTcr($, state, edit, { reason: 'a check cannot run in this environment' })
   for (const { live, report } of judged) {
     if (state.tcrHeld.has(live.key) && !(report as Report).isFailed) {
       state.tcrHeld.delete(live.key)
@@ -307,7 +310,7 @@ async function actOnJudgement($: EngineInterface, state: State, edit: Edit, judg
   const unknown = verdicts.filter(({ verdict }) => verdict === 'unjudged')
   const failed = unknown.map(({ live }) => live.watcher?.name).join(', ')
   for (const { live } of unknown) state.tcrHeld.add(live.key)
-  if (unknown.length > 0) return holdTcr($, state, edit.files, { reason: `${failed} failed and has no earlier result to compare with`, text: `overwatch: TCR held the edit: ${failed} failed and has no earlier result to compare with` })
+  if (unknown.length > 0) return holdTcr($, state, edit, { reason: `${failed} failed and has no earlier result to compare with`, text: `overwatch: TCR held the edit: ${failed} failed and has no earlier result to compare with` })
   const isHeld = (await projectPolicy($, state)).inherited === 'block' && judged.some(({ report }) => report?.isFailed)
   if (isHeld) state.tcr.unjudged = false
   else await checkpointTcr($, state, edit)
@@ -368,8 +371,9 @@ async function revertTcr($: EngineInterface, state: State, edit: Edit, causes: r
   const tcr = state.tcr
   if (!(await isUnchanged($, state, tcr, edit))) return
   const names = await dirtyFiles($, root)
-  const { reverted, saved } = revertedBy(await ask($, root, 'revert', saveReverted ? [] : ['--no-save-ref']))
-  if (!reverted) return holdTcr($, state, files, { reason: `${causes.map(({ live, report }) => `${live.watcher?.name} reported ${report?.summary}`).join('; ')}, but no file differs from the latest checkpoint, so there is nothing to revert` })
+  const { reverted, saved, changed } = revertedBy(await ask($, root, 'revert', ['--expect', files, ...(saveReverted ? [] : ['--no-save-ref'])]))
+  if (changed) return pauseUnlessPaused($, state, CHANGED_WHILE_ACTING)
+  if (!reverted) return holdTcr($, state, edit, { reason: `${causes.map(({ live, report }) => `${live.watcher?.name} reported ${report?.summary}`).join('; ')}, but no file differs from the latest checkpoint, so there is nothing to revert` })
   const restored = await fingerprintOf($, root)
   const left = await dirtyFiles($, root)
   const told = await Promise.all(causes.map(async ({ live, report }) => ({

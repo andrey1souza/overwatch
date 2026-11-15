@@ -111,17 +111,19 @@ export async function ask($: EngineInterface, root: string, command: keyof typeo
 }
 
 /** What a revert did: whether it changed the files, and the git ref that holds what it removed when it was asked to keep it. */
-export type RevertAnswer = { reverted: boolean; saved: string | null }
+export type RevertAnswer = { reverted: boolean; saved: string | null; changed: boolean }
 
 /** The answer of the checkpoint command to `revert`: `{ reverted, saved }`. */
 export function revertedBy(answer: Record<string, unknown>): RevertAnswer {
   const legacy = Array.isArray(answer.restored) ? answer.restored.length > 0 : undefined
   const reverted = typeof answer.reverted === 'boolean' ? answer.reverted : legacy
   const saved = answer.saved === undefined || answer.saved === null ? null : answer.saved
-  if (reverted === undefined || (saved !== null && typeof saved !== 'string')) throw new CommandError(`the checkpoint command answered the revert with ${JSON.stringify(answer)}; it must say { "reverted": true or false, "saved": a ref or null }`)
+  const changed = answer.changed === undefined ? false : answer.changed
+  if (reverted === undefined || typeof changed !== 'boolean' || (saved !== null && typeof saved !== 'string')) throw new CommandError(`the checkpoint command answered the revert with ${JSON.stringify(answer)}; it must say { "reverted": true or false, "saved": a ref or null, "changed": true or false }`)
   assert(typeof reverted === 'boolean' && (saved === null || typeof saved === 'string'), `the revert answer ${JSON.stringify(answer)} was read as ${reverted} and ${saved}`)
   assert(reverted || saved === null, `the revert answer ${JSON.stringify(answer)} says it saved ${saved} but changed nothing`)
-  return { reverted, saved }
+  assert(!changed || (!reverted && saved === null), `the revert answer ${JSON.stringify(answer)} says the files changed but also that it reverted them`)
+  return { reverted, saved, changed }
 }
 
 const JSON_TOKEN = /"(?:[^"\\]|\\.)*"|\btrue\b|\bfalse\b|\bnull\b|[:,]/g
@@ -204,12 +206,33 @@ export function refusedBecause(refused: readonly Refusal[]): string {
   return reason
 }
 
+/**
+ * The paths in the output of `git status --porcelain -z`: each record is two status letters, a space and a path, and a
+ * rename or copy is followed by one more field, the path it came from, which has no status letters.
+ */
+export function namesInStatus(text: string): string[] {
+  const fields = text.split('\0')
+  const names: string[] = []
+  for (let at = 0; at < fields.length; at += 1) {
+    const entry = fields[at] as string
+    if (entry.length <= 3) continue
+    names.push(entry.slice(3))
+    if (entry[0] === 'R' || entry[0] === 'C' || entry[1] === 'R' || entry[1] === 'C') {
+      at += 1
+      if ((fields[at] ?? '') !== '') names.push(fields[at] as string)
+    }
+  }
+  assert(names.every(name => name !== ''), `git status named ${JSON.stringify(names)}, which holds a blank path`)
+  assert(names.length >= fields.filter(entry => entry.length > 3).length, `git status named ${names.length} paths for ${fields.length} fields; every record names at least one`)
+  return names
+}
+
 /** The files git lists as changed or new in the repository at `root`, by their paths; the checks and the edits can differ in what they write. */
 export async function dirtyFiles($: EngineInterface, root: string): Promise<string[]> {
   assert(root.startsWith('/'), `git status was asked about ${root}; pass the repository's absolute path`)
   const { text, code } = await runWithin($, { argv: ['git', 'status', '--porcelain', '--untracked-files=all', '-z'], cwd: root }, await limitOf($, COMMAND_LIMITS_MS.fingerprint), 'git status')
   if (code !== 0) throw new CommandError(`git status exited ${code} in ${root}`)
-  const names = text.split('\0').filter(entry => entry.length > 3).map(entry => entry.slice(3))
+  const names = namesInStatus(text)
   assert(names.every(name => name !== '' && !name.startsWith(' ')), `git status named ${JSON.stringify(names)}, which holds a blank path`)
   return names
 }
@@ -221,6 +244,18 @@ export async function fingerprintOf($: EngineInterface, root: string): Promise<s
   assert(root.startsWith('/'), `the fingerprint of ${root} is for a relative path; pass the repository's absolute path`)
   assert(fingerprint === fingerprint.trim(), `the fingerprint ${JSON.stringify(fingerprint)} has spaces around it; the command prints it bare`)
   return fingerprint
+}
+
+/**
+ * What a held edit's files are: the workspace fingerprint, which a change of size or time shows, and a digest of the
+ * contents of the files that differ from HEAD, which a change that keeps both shows, joined as the Python engine joins them.
+ */
+export async function identityOf($: EngineInterface, root: string): Promise<string> {
+  const { fingerprint, content } = await ask($, root, 'fingerprint', ['--content'])
+  if (typeof fingerprint !== 'string' || fingerprint === '' || typeof content !== 'string' || content === '') throw new CommandError(`the checkpoint command gave the fingerprint ${JSON.stringify(fingerprint)} and the content digest ${JSON.stringify(content)}; both must be text`)
+  assert(!fingerprint.includes(':') && !content.includes(':'), `the fingerprint ${fingerprint} or the digest ${content} holds a colon, which joins them`)
+  assert(root.startsWith('/'), `the identity of ${root} was asked for; pass the repository's absolute path`)
+  return `${fingerprint}:${content}`
 }
 
 /** TCR_ACTIVE, or the reason TCR cannot run in the repository at `root`; an edit TCR holds, which `isHeld` says the files still are, is no reason by itself. */
