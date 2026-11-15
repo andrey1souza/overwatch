@@ -134,6 +134,17 @@ test('a judgement started before a newer edit is never read as that edit\'s', as
   }, { judgeDelayMs: 300 })
 })
 
+test('a watcher report that arrives after the agent\'s edit never stands for the edit being judged', async ($, on) => {
+  await inSession({ $, on }, async project => {
+    project.willChange(['example.py'], 'f1')
+    await $.tool.call({ tool: 'Edit', file_path: '/repo/example.py' })
+    project.setReport(WARNINGS)
+    await project.clock.advance(SETTLE_MS + JUDGE_MS + END_MS)
+    expect(project.workspace.commits).toEqual([])
+    expect(project.workspace.reverted).toEqual([['example.py']])
+  })
+})
+
 test('files that change while the checks judge the edit are acted on by nothing', async ($, on) => {
   await inSession({ $, on }, async project => {
     project.setReport(WARNINGS)
