@@ -329,8 +329,37 @@ TCR needs Python 3.11 or newer on both paths: `engine/discovery.py` imports `typ
 
 TCR works in Codex, OpenCode and Pi, and each of them commits and reverts as described and tells the agent why a revert happened.
 OpenCode 1 shows the "TCR is on" notice to you but not to the agent.
-Claude Code does not read the setting yet.
+Claude Code has its own rules, in the subsection "In Claude Code" below.
 A revert removes empty directories, and a rename that only changes letter case is invisible to it on a case-insensitive filesystem.
+
+#### In Claude Code
+
+`"mode": "tcr"` in `.overwatch.json` makes the Claude Code plugin commit the agent's edits that keep the checks green and revert the edits that add a failure.
+A failure is new when the session's own baseline did not have it, so inherited failures never cause a revert.
+
+```json
+{ "mode": "tcr", "tcr": { "saveReverted": true, "allow": ["fixtures/token.txt"] } }
+```
+
+A short while after an edit changed files, the plugin runs every check once, a check with a baseline command to its end and a watch-mode check until its first report, and judges the edit by those results.
+A checker installed on the machine counts as a check, so a project that only has one still runs TCR.
+A green edit is committed as a checkpoint named `tcr: <files>`, with the repository's own commit hooks and signing.
+An edit that adds a failure restores the latest checkpoint, and the agent is told the failure, the files that came back and the git ref that holds what was removed: `refs/overwatch/reverted/<time>`, which `git checkout <ref> -- .` brings back.
+`"saveReverted": false` keeps no such ref.
+A revert removes empty directories, and a rename that only changes letter case is invisible to it on a case-insensitive filesystem.
+
+TCR neither commits nor reverts in these cases, and tells the agent why:
+
+- The check fails and has no earlier result to compare with, or a check could not run, gave no summary or ran past nine minutes. The edit stays in the tree, and a check without an earlier result stays without one, whatever it fails with, until it passes. At the next turn start TCR resumes when the files are still exactly that edit.
+- A newer edit or any other change of the files came first. TCR looks at the files again right before it commits or reverts and when it is done, so a result that was overtaken acts on nothing, and files changed by a person at a tool that does not edit make TCR wait for the next turn.
+- The checkpoint would commit a file whose name or content looks like a secret, or one over 50 MiB. The reason names each file as `path` or `path:line` with the rule; add what is safe to `tcr.allow`, or to `.gitignore`.
+- The working tree is not clean when the session starts, a commit hook fails, or `.overwatch.json` holds a `mode` other than `"tcr"` or a `tcr` setting of the wrong type. The reason is named, and TCR starts again at a later turn start when it can.
+- HEAD was moved by someone other than TCR, as a pull or checkout does. What TCR held is forgotten, since the baselines it held against are gone.
+
+The plugin runs `engine/checkpoint.py` with `python3`, which must be on `PATH`, to compare files, commit and revert; without it TCR is unavailable and says why.
+A question to it has a limit of 20 seconds, a commit or a revert two minutes, a check nine minutes and a whole judgement 13 minutes, and past a limit TCR is unavailable.
+`tcr.hostLimitSeconds` is checked but does not apply, since the judgement runs beside the agent and not inside a hook.
+Neovim ignores `"mode": "tcr"`.
 
 ## Install
 
