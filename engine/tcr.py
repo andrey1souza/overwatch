@@ -116,7 +116,7 @@ def tcr_state(turn: Turn, old: State, current: State) -> str:
     previous = old.tcr
     if previous is not None and turn.event.hook_event_name not in TURN_START_EVENTS:
         outside = (previous == TCR_ACTIVE and not turn.edited
-                   and old.fingerprint not in (None, UNSETTLED) and old.fingerprint != current.fingerprint)
+                   and old.judged not in (None, UNSETTLED) and old.judged != current.fingerprint)
         return OUTSIDE_CHANGE if outside else previous
     reason = why_unavailable(turn, old, current)
     state = TCR_ACTIVE if reason is None else reason
@@ -382,7 +382,17 @@ def after_edit(turn: Turn, old: State, current: State, settings: Settings) -> Tc
 
 def settle(turn: Turn, old: State, current: State) -> TcrStep:
     """What TCR does at this event: nothing without the mode, except to tell the agent when the mode went away;
-    otherwise it keeps its state, and on the agent's own latest edit it judges the result."""
+    otherwise it keeps its state, and on the agent's own latest edit it judges the result. The step's state records
+    the files TCR looked at, so that a later follower read of other files does not hide an edit from it."""
+    step = decide(turn, old, current)
+    assert isinstance(step, TcrStep), f"TCR decided {step!r} at {turn.event.hook_event_name}, which is no step"
+    recorded = replace(step, state=replace(step.state, judged=step.state.fingerprint))
+    assert recorded.state.judged == recorded.state.fingerprint, f"TCR recorded {recorded.state.judged!r} for the files {recorded.state.fingerprint!r}"
+    return recorded
+
+
+def decide(turn: Turn, old: State, current: State) -> TcrStep:
+    """The step of settle before it records what TCR looked at."""
     if read_mode(turn.override) != TCR_MODE:
         return TcrStep(current) if old.tcr is None else TcrStep(replace(current, tcr=None, held=()), (TCR_OFF,))
     try:
@@ -402,7 +412,7 @@ def judge(turn: Turn, old: State, current: State, settings: Settings) -> TcrStep
     current = replace(current, tcr=state)
     on_branch = branch_notice(turn) if state == TCR_ACTIVE and old.tcr != state else ""
     notices = tcr_notice(old.tcr, state, on_branch)
-    if state != TCR_ACTIVE or not turn.edited or turn.moved or old.fingerprint == current.fingerprint:
+    if state != TCR_ACTIVE or not turn.edited or turn.moved or old.judged == current.fingerprint:
         return TcrStep(current, notices)
     files_unchanged = fingerprint(turn.cwd) == current.fingerprint
     if not settles_edit(current, files_unchanged):
