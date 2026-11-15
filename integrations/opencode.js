@@ -45,10 +45,28 @@ function warningText(output) {
   return text
 }
 
+/** What to show for a start or a message: the status, else the context. */
+function statusWarning(output) {
+  assert(output !== null && typeof output === "object", `hook output ${String(output)} is not an object; pass the checker's JSON`)
+  const text = output.systemMessage ?? contextOf(output)
+  assert(text === undefined || typeof text === "string", `warning is ${typeof text}; the checker writes it as text`)
+  return text
+}
+
+/** What to show for an idle session: the refusal when the checker blocked the stop, else nothing. */
+function blockedWarning(output) {
+  assert(output !== null && typeof output === "object", `hook output ${String(output)} is not an object; pass the checker's JSON`)
+  const text = output.decision === "block" ? warningText(output) : undefined
+  assert((text === undefined) === (output.decision !== "block"), `decision ${output.decision} gave warning ${text}; give one only for block`)
+  return text
+}
+
 /**
  * OpenCode 1's hooks for the project in directory: before a tool runs, refuse it when the checker denies it; after
- * an editing tool, add what the checker reports to the tool's output; when a session starts or goes idle, warn with
- * the checker's status or refusal through client's toast, once for each event OpenCode sends.
+ * an editing tool, add what the checker reports to the tool's output; when a session starts, receives a message or
+ * goes idle, warn with the checker's status or refusal through client's toast, once for each event OpenCode sends.
+ * OpenCode waits for chat.message before the model's first call, and the checker runs the events of one session in
+ * order, so a message's check starts after the session's start check ends and before the agent can edit.
  */
 export function createV1Hooks({ directory, client }, checker = serialChecker()) {
   assert(typeof directory === "string" && directory !== "", `OpenCode gave directory ${directory}; the hooks need the project's directory`)
@@ -68,6 +86,13 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
     }
   }
 
+  const warnAbout = async (life, event, read = statusWarning) => {
+    assert(typeof event.hook_event_name === "string", `event ${JSON.stringify(event)} names no hook; build it with payload`)
+    assert(typeof read === "function", `read is ${typeof read}; pass a function from the checker's output to text`)
+    const output = await check(event)
+    if (!life.closed) await warn(read(output))
+  }
+
   return {
     "tool.execute.before": async (input, output) => {
       const result = await check({ ...payload("PreToolUse", directory, input.sessionID),
@@ -75,19 +100,14 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
       const reason = deniedAction(result)
       if (reason !== undefined) throw new Error(reason)
     },
+    "chat.message": async input => warnAbout(sessions.stateOf(input.sessionID), payload("UserPromptSubmit", directory, input.sessionID)),
     event: async ({ event }) => {
       const sessionID = sessionIDOf(event)
       if (!sessionID) return
       if (event.type === "session.deleted") { sessions.remove(sessionID); return }
       const life = sessions.stateOf(sessionID)
-      if (event.type === "session.created") {
-        const output = await check({ ...payload("SessionStart", directory, sessionID), source: "startup" })
-        if (!life.closed) await warn(output.systemMessage ?? contextOf(output))
-      }
-      if (event.type === "session.idle") {
-        const output = await check(payload("Stop", directory, sessionID))
-        if (!life.closed && output.decision === "block") await warn(warningText(output))
-      }
+      if (event.type === "session.created") await warnAbout(life, { ...payload("SessionStart", directory, sessionID), source: "startup" })
+      if (event.type === "session.idle") await warnAbout(life, payload("Stop", directory, sessionID), blockedWarning)
     },
     "tool.execute.after": async (input, output) => {
       if (!EDITING_TOOLS.has(input.tool)) return
@@ -174,7 +194,7 @@ async function followIdle(ctx, check, { cwd, delivery, controller }) {
 export async function OverwatchPlugin(context) {
   assert(context !== null && typeof context === "object", `OpenCode gave plugin context ${String(context)}; pass its context object`)
   const hooks = createV1Hooks(context)
-  assert(["tool.execute.before", "tool.execute.after", "event"].every(name => typeof hooks[name] === "function"), `hooks ${Object.keys(hooks)} miss one OpenCode 1 calls`)
+  assert(["tool.execute.before", "tool.execute.after", "chat.message", "event"].every(name => typeof hooks[name] === "function"), `hooks ${Object.keys(hooks)} miss one OpenCode 1 calls`)
   return hooks
 }
 

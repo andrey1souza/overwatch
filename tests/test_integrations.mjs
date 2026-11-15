@@ -7,6 +7,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import OpenCode, { OverwatchPlugin, createV1Hooks, setupV2 } from "../integrations/opencode.js"
+import { serialChecker } from "../engine/check.js"
 import { registerPi } from "../integrations/pi.js"
 
 /** The checker's output for a failing fixture that tells message, or a passing one. */
@@ -64,6 +65,52 @@ test("OpenCode V1 appends a failed check to an editing tool result", async () =>
     result,
   )
   assert.match(result.output, /failure after edit/)
+})
+
+test("OpenCode V1 checks a message only after the session's start check ends, so the agent edits after the decision", async () => {
+  const log = []
+  let endStart
+  const startEnds = new Promise(resolve => { endStart = resolve })
+  const heldStart = async event => {
+    assert(event.session_id === "s1", `event ${event.hook_event_name} names session ${event.session_id}; it belongs to s1`)
+    assert(event.cwd === PROJECT, `event ${event.hook_event_name} names ${event.cwd}; it belongs to ${PROJECT}`)
+    log.push(`${event.hook_event_name} begins`)
+    if (event.hook_event_name === "SessionStart") await startEnds
+    log.push(`${event.hook_event_name} ends`)
+    return {}
+  }
+  const hooks = createV1Hooks({ directory: PROJECT, client: { tui: { showToast: async () => undefined } } }, serialChecker(heldStart))
+  const started = hooks.event({ event: { type: "session.created", properties: { info: { id: "s1" } } } })
+  const messaged = hooks["chat.message"]({ sessionID: "s1" })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(log, ["SessionStart begins"], "the message's check began before the session's start check ended")
+  endStart()
+  await Promise.all([started, messaged])
+  assert.deepEqual(log, ["SessionStart begins", "SessionStart ends", "UserPromptSubmit begins", "UserPromptSubmit ends"])
+})
+
+test("OpenCode V1 warns about an idle session only when the checker blocks the stop", async () => {
+  const toasts = []
+  const answers = [{ systemMessage: "overwatch: status only" }, output("fix the test")]
+  const hooks = createV1Hooks(
+    { directory: PROJECT, client: { tui: { showToast: async ({ body }) => { toasts.push(body.message) } } } },
+    async () => answers.shift(),
+  )
+  const idle = { event: { type: "session.idle", properties: { sessionID: "s1" } } }
+  await hooks.event(idle)
+  assert.deepEqual(toasts, [], "a stop the checker did not block was warned about")
+  await hooks.event(idle)
+  assert.deepEqual(toasts, ["fix the test"])
+})
+
+test("OpenCode V1 tells the user what a message's check says", async () => {
+  const toasts = []
+  const hooks = createV1Hooks(
+    { directory: PROJECT, client: { tui: { showToast: async ({ body }) => { toasts.push(body.message) } } } },
+    async () => ({ systemMessage: "overwatch: TCR is on" }),
+  )
+  await hooks["chat.message"]({ sessionID: "s1" })
+  assert.deepEqual(toasts, ["overwatch: TCR is on"])
 })
 
 test("OpenCode V2 checks edits and adds a cached failure to model context", async () => {
