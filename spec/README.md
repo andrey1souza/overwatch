@@ -103,6 +103,28 @@ The model of TCR leaves out these behaviors of the hooks, each a known abstracti
 - When TCR is decided again is not modelled for each host. The code decides at `SessionStart` and `UserPromptSubmit`. OpenCode 1 sends `UserPromptSubmit` from its `chat.message` hook, which runs after the session-start check ends and before the agent's first edit, so it decides again at each message. Pi sends no `UserPromptSubmit`, so a paused TCR never resumes in a Pi session, while the model resumes at every turn start for every host.
 - Parallel hooks are not modelled. The code runs the hooks of one session one at a time under a per-session lock, and the model has no hook, so an edit settles when a result for the current workspace is read.
 
+Which progress claim needs which fairness is checked, not assumed.
+`probes/Fairness.tla` has one variant of `Spec` for each of the ten actions that `Spec` makes weakly fair, each without that action's fairness, and `python3 scripts/check_models.py --fairness` runs each variant against each of the six progress claims, 66 runs of about a minute at the bounds of `OverwatchTcr.cfg` with one failure name, one tick and two edits, and compares each verdict with this table.
+A claim marked fails is violated without that action's fairness, and TLC's trace is the proof that the fairness is needed; a claim not marked holds without it at these bounds, which shows no need at them and is no proof that it is never needed.
+
+| Without the fairness of | RunsEnd | EveryEditIsChecked | RegressionsReachAgent | RevertNoticeReachesAgent | HoldNoticeReachesAgent | EditsAreSettled |
+| --- | --- | --- | --- | --- | --- | --- |
+| nothing (`Spec`) | holds | holds | holds | holds | holds | holds |
+| `QuietElapses` | holds | fails | fails | holds | holds | fails |
+| `Tick` | fails | fails | fails | holds | holds | fails |
+| `TimesOut` | fails | fails | fails | holds | holds | fails |
+| `ReadResults` | holds | fails | fails | holds | holds | fails |
+| `Flush` | holds | holds | fails | holds | holds | holds |
+| `WokenTurnStarts` | holds | holds | holds | holds | holds | holds |
+| `TurnCompletes` | holds | holds | fails | holds | holds | holds |
+| `TellRevert` | holds | holds | holds | fails | holds | holds |
+| `TellHold` | holds | holds | holds | holds | fails | holds |
+| `Settle` | holds | holds | holds | holds | holds | fails |
+
+No claim needs the fairness of `WokenTurnStarts` at these bounds: a woken turn is not needed for any of the six claims to hold.
+`RunsEnd` rests on `Tick` and `TimesOut` alone, since a check that hangs ends only when its clock runs out; `EveryEditIsChecked` adds `QuietElapses` and `ReadResults`; `RegressionsReachAgent` adds `Flush` and `TurnCompletes`; and the three TCR actions `Settle`, `TellRevert` and `TellHold` are each needed by exactly the claim about their own progress.
+Weak fairness suffices for all six claims, since `Spec` uses it and they hold, so strong fairness is not needed by any of them, and no run substitutes it.
+
 The committed model-checking configurations use finite bounds: two checks, a small failure alphabet, up to two requests, and up to one report change or session restart.
 The TCR configurations use one failure name, one tick of the timeout clock (none in the notices configuration), and two, three or four workspace edits.
 These bounds exercise concurrency and policy combinations; passing them is not proof for every unbounded program execution or every external host version.

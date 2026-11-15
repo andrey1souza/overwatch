@@ -36,6 +36,7 @@ class Run:
     expected: str
     heavy: bool = False
     edit: tuple[str, str] | None = None
+    group: str = ""
 
 
 def probe(name: str, edits: int, expected: str) -> Run:
@@ -74,6 +75,28 @@ REFINEMENT_MUTANTS = (("checkpoint-restarts-the-quiet-timer", CHECKPOINT, CHECKP
 REACHABLE = ("NeverReverts", "NeverCheckpoints", "NeverCheckpointFails", "NeverHolds", "NeverObserves", "NeverPersonCommits",
              "NeverTellsRevert", "NeverTellsHold", "NeverPulls", "NeverHoldsATimeout", "NeverPullsWhileHeld", "NeverUnavailable", "NeverResumes", "NeverDirtyStart")
 PROBE_NAMES = (*REACHABLE, "NoRevertOfUnseenWork")
+FAIRNESS_CLAIMS = ("RunsEnd", "EveryEditIsChecked", "RegressionsReachAgent", "RevertNoticeReachesAgent", "HoldNoticeReachesAgent", "EditsAreSettled")
+FAIRNESS_NEEDED_BY = {
+    "Nothing": (),
+    "QuietElapses": ("EveryEditIsChecked", "RegressionsReachAgent", "EditsAreSettled"),
+    "Tick": ("RunsEnd", "EveryEditIsChecked", "RegressionsReachAgent", "EditsAreSettled"),
+    "TimesOut": ("RunsEnd", "EveryEditIsChecked", "RegressionsReachAgent", "EditsAreSettled"),
+    "ReadResults": ("EveryEditIsChecked", "RegressionsReachAgent", "EditsAreSettled"),
+    "Flush": ("RegressionsReachAgent",),
+    "WokenTurnStarts": (),
+    "TurnCompletes": ("RegressionsReachAgent",),
+    "TellRevert": ("RevertNoticeReachesAgent",),
+    "TellHold": ("HoldNoticeReachesAgent",),
+    "Settle": ("EditsAreSettled",),
+}
+
+
+def fairness(left: str, claim: str) -> Run:
+    """Overwatch without the weak fairness of one action; the claim fails exactly when it needs that action."""
+    assert left in FAIRNESS_NEEDED_BY, f"fairness of {left} is not one of {sorted(FAIRNESS_NEEDED_BY)}"
+    assert claim in FAIRNESS_CLAIMS, f"{claim} is not one of the progress claims {FAIRNESS_CLAIMS}"
+    config = f"SPECIFICATION SpecWithout{left}\nCONSTANTS\n{PROBE_BOUNDS}    MaxEdits = 2\nPROPERTIES\n    {claim}\n"
+    return Run(f"fairness without {left} for {claim}", "Fairness", config, "violation" if claim in FAIRNESS_NEEDED_BY[left] else "pass", True, group="fairness")
 
 
 def runs() -> list[Run]:
@@ -85,6 +108,7 @@ def runs() -> list[Run]:
     found += [mutant(name, "TcrImplementsBase", old, new) for name, old, new in REFINEMENT_MUTANTS]
     found += [probe(name, 2, "violation") for name in REACHABLE]
     found += [probe("NoRevertOfUnseenWork", 2, "pass"), probe("NoRevertOfUnseenWork", 3, "violation")]
+    found += [fairness(left, claim) for left in FAIRNESS_NEEDED_BY for claim in FAIRNESS_CLAIMS]
     assert len({run.name for run in found}) == len(found), f"two of the {len(found)} runs share a name: {[run.name for run in found]}"
     assert all(run.expected in ("pass", "violation") for run in found), f"a run of {[run.name for run in found]} expects something other than pass or violation"
     return found
@@ -125,12 +149,13 @@ def main() -> None:
     parser.add_argument("--java", default="java")
     parser.add_argument("--only", default="", help="run only the runs whose name contains this text")
     parser.add_argument("--full", action="store_true", help="include IntegrationContract.cfg")
+    parser.add_argument("--fairness", action="store_true", help="run the 66 runs that leave out one action's fairness, about an hour")
     args = parser.parse_args()
     if not str(args.jar) or not args.jar.is_file():
         sys.exit(f"TLA tools jar missing: pass --jar or set TLA2TOOLS_JAR (got {args.jar!r})")
     if shutil.which(args.java) is None:
         sys.exit(f"Java not found: put {args.java!r} on PATH or pass --java with the path of a java executable")
-    selected = [run for run in runs() if args.only in run.name and (args.full or not run.heavy)]
+    selected = [run for run in runs() if args.only in run.name and (args.fairness if run.group == "fairness" else args.full or not run.heavy)]
     assert selected, f"no run contains {args.only!r}; see runs() for the names"
     assert all(run.expected in ("pass", "violation") for run in selected), f"a selected run expects something TLC never says: {selected}"
     failures = []
