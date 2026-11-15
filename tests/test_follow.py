@@ -111,6 +111,8 @@ class FollowTests(unittest.TestCase):
         git = ["git", "-C", str(self.project), "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
         subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
         subprocess.run([*git, "commit", "-q", "-m", "start"], check=True, capture_output=True)
+        for setting, value in (("user.name", "test"), ("user.email", "test@example.com")):
+            subprocess.run(["git", "-C", str(self.project), "config", setting, value], check=True, capture_output=True)
         self.settle_baseline()
         assert json.loads((self.project / ".overwatch.json").read_text())["mode"] == "tcr", f"{self.project} does not run TCR"
         assert not subprocess.run(["git", "-C", str(self.project), "status", "--porcelain"], capture_output=True, text=True).stdout, f"{self.project} is not clean"
