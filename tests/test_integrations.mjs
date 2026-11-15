@@ -4,10 +4,12 @@
  * Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
  */
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import test from "node:test"
 
 import OpenCode, { OverwatchPlugin, createV1Hooks, setupV2 } from "../integrations/opencode.js"
 import { serialChecker } from "../engine/check.js"
+import { SessionDelivery } from "../engine/delivery.js"
 import { registerPi } from "../integrations/pi.js"
 
 /** The checker's output for a failing fixture that tells message, or a passing one. */
@@ -297,4 +299,49 @@ test("OpenCode V2 allows diagnostics while protecting publication until recovery
   await assert.rejects(hooks["tool:execute.before"]({ tool: "publish", sessionID: "s1", input: {} }), /29 warnings/)
   failing = false
   await hooks["tool:execute.before"]({ tool: "publish", sessionID: "s1", input: {} })
+})
+
+const REPOSITORY = new URL("..", import.meta.url).pathname
+const TOLD_SCRIPT = [
+  "import json, sys",
+  "sys.path.insert(0, 'engine')",
+  "import tcr, records",
+  "step = tcr.TcrStep(records.State(), notices=(sys.argv[1],))",
+  "print(json.dumps(tcr.told({'overwatch': {'guarded': False}}, 'PostToolUse', step)))",
+].join("\n")
+
+/** What engine/tcr.py told() emits for a notice: the notice in the context and in overwatch.notices. */
+function noticeOutput(notice) {
+  assert(typeof notice === "string" && notice !== "", `notice ${JSON.stringify(notice)}; give the output some text`)
+  const run = spawnSync("python3", ["-c", TOLD_SCRIPT, notice], { cwd: REPOSITORY, encoding: "utf8" })
+  assert(run.status === 0, `engine/tcr.py told() failed for ${JSON.stringify(notice)}: ${run.stderr}`)
+  const emitted = JSON.parse(run.stdout)
+  assert(emitted.hookSpecificOutput.additionalContext === notice, `told() output ${run.stdout} does not carry the notice in its context`)
+  const { notices } = emitted.overwatch
+  assert(notices.length === 1 && notices[0] === notice, `told() output ${run.stdout} does not list the notice`)
+  return emitted
+}
+
+const REVERT_NOTICE = "overwatch: TCR reverted the latest change"
+const HOLD_NOTICE = "overwatch: TCR held the latest change"
+
+test("delivery tells two identical notices once", () => {
+  const delivery = new SessionDelivery()
+  delivery.observe("s", noticeOutput(REVERT_NOTICE))
+  delivery.observe("s", noticeOutput(REVERT_NOTICE))
+  assert.equal(delivery.take("s"), REVERT_NOTICE)
+})
+
+test("delivery tells two different notices both", () => {
+  const delivery = new SessionDelivery()
+  delivery.observe("s", noticeOutput(REVERT_NOTICE))
+  delivery.observe("s", noticeOutput(HOLD_NOTICE))
+  assert.equal(delivery.take("s"), `${REVERT_NOTICE}\n\n${HOLD_NOTICE}`)
+})
+
+test("delivery still tells a notice after a recovery output", () => {
+  const delivery = new SessionDelivery()
+  delivery.observe("s", noticeOutput(REVERT_NOTICE))
+  delivery.observe("s", { overwatch: { guarded: false } })
+  assert.equal(delivery.take("s"), REVERT_NOTICE)
 })
