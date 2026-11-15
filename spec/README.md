@@ -73,6 +73,8 @@ A Revert writes the content of the restore point into the version it creates, wh
 TLC found one step the old module has no match for, and the check names it as `HeldCompletes`: a turn may end while a held failure is new, where the old module keeps it guarded.
 Fairness is not checked through the old module, since a turn that ends only because of a hold is not a step its fairness takes.
 A mutant in which a Checkpoint also restarts the quiet timer breaks the check.
+A commit and a revert are each atomic in the sense of a transaction that commits or aborts: `CheckpointIsAllOrNothing` and `RevertIsAllOrNothing` say that the restore point, the person's work and the workspace are either all as the step makes them or all as they were, whether the commit failed or was refused, or the revert was given up.
+A mutant in which a failed commit moves the restore point, and one in which an aborted revert does, break them, and two probes show that the aborting branches are reached with work pending.
 `probes/` holds `Probes.tla`, whose probes each say that something never happens, so that a violation is a trace of it: every new action and state of TCR is reachable, and a property of TCR is not true only because its scenario cannot occur.
 `python3 scripts/check_models.py --jar /path/to/tla2tools.jar` runs these, the TCR and notice configurations, and the lifecycle instance, and compares each verdict with what it must be.
 

@@ -444,7 +444,11 @@ the restore point to it, and a revert only a result with a new failure of the
 latest edit; each clears the edit's due settlement. Neither acts on an
 overtaken result, on a failing result of a check that had no earlier result or
 that timed out, or while TCR is unavailable. A held edit changes
-nothing and a failed commit changes nothing, so no work is lost. A pull needs
+nothing and a failed commit changes nothing, so no work is lost. A commit and
+a revert are each all or nothing: the restore point, the person's work and the
+workspace are either all as the step makes them or all as they were, never half
+of each, which a failed or refused commit and an aborted revert leave as they
+were. A pull needs
 a clean tree and the restore point is never older than the baseline. Every
 revert and every hold adds its notice to the queue and keeps the notices that
 are waiting, no notice is dropped before it is delivered, a delivered notice is
@@ -497,6 +501,14 @@ RevertNeverLosesUnsavedWork ==
     [][RevertAborts => /\ head' = head /\ ck' = ck /\ person' = person
                        /\ truth' = truth /\ saved' = saved /\ settleDue' = settleDue
                        /\ tcr' = "unavailable"]_vars
+CheckpointIsAllOrNothing ==
+    [][(Checkpoint \/ CheckpointFails) =>
+        \/ (ck' = head /\ person' = "none" /\ head' = head /\ truth' = truth)
+        \/ (ck' = ck /\ person' = person /\ head' = head /\ truth' = truth)]_vars
+RevertIsAllOrNothing ==
+    [][(Revert \/ RevertAborts) =>
+        \/ (ck' = head' /\ person' = "none" /\ truth'[head'] = truth[ck])
+        \/ (ck' = ck /\ person' = person /\ head' = head /\ truth' = truth)]_vars
 SavedRevertKeepsTheDiscardedWork ==
     [][Revert => saved' = IF SaveReverted THEN Append(saved, truth[head]) ELSE saved]_vars
 SavingChangesNoTree == [][(Revert /\ SaveReverted) => truth'[head'] = truth[ck]]_vars

@@ -60,6 +60,14 @@ def mutant(name: str, module: str, old: str, new: str) -> Run:
     return Run(f"mutant {name} of refinement {module}", module, base.config, "violation", edit=(old, new))
 
 
+def property_mutant(name: str, old: str, new: str, claim: str) -> Run:
+    """A check of one TCR property against a copy of Overwatch.tla in which old is replaced by new; TLC must find the break."""
+    assert old in (SPEC / "Overwatch.tla").read_text(), f"mutant {name} replaces {old!r}, which Overwatch.tla does not hold"
+    assert old != new, f"mutant {name} replaces {old!r} with itself"
+    config = f"SPECIFICATION Spec\nCONSTANTS\n{PROBE_BOUNDS}    MaxEdits = 2\nPROPERTIES\n    {claim}\n"
+    return Run(f"mutant {name} of property {claim}", "Overwatch", config, "violation", edit=(old, new))
+
+
 def refinement(module: str) -> Run:
     assert (SPEC / "refinement" / f"{module}.cfg").is_file(), f"spec/refinement/{module}.cfg does not exist"
     assert (SPEC / "refinement" / f"{module}.tla").is_file(), f"spec/refinement/{module}.tla does not exist"
@@ -72,7 +80,25 @@ CHECKPOINT_RESTARTS_THE_QUIET_TIMER = (
     "    /\\ ck' = head /\\ settleDue' = FALSE /\\ person' = \"none\" /\\ held' = FALSE /\\ heldAt' = NoHold /\\ quiet' = TRUE\n"
     "    /\\ UNCHANGED <<truth, head, based, busy, from, installed, produced, consumed,\n")
 REFINEMENT_MUTANTS = (("checkpoint-restarts-the-quiet-timer", CHECKPOINT, CHECKPOINT_RESTARTS_THE_QUIET_TIMER),)
-REACHABLE = ("NeverReverts", "NeverCheckpoints", "NeverCheckpointFails", "NeverHolds", "NeverObserves", "NeverPersonCommits",
+FAILED_COMMIT = ("    /\\ tcr' = \"unavailable\" /\\ held' = FALSE /\\ heldAt' = NoHold\n"
+                 "    /\\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,\n"
+                 "                   pending, report, baseline, wasFailing, outbox, told, flush, turn,\n"
+                 "                   toldThisTurn, promptQueued, knows, elapsed, edited, ck, person,\n")
+HALF_A_FAILED_COMMIT = ("    /\\ tcr' = \"unavailable\" /\\ held' = FALSE /\\ heldAt' = NoHold /\\ ck' = head\n"
+                        "    /\\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,\n"
+                        "                   pending, report, baseline, wasFailing, outbox, told, flush, turn,\n"
+                        "                   toldThisTurn, promptQueued, knows, elapsed, edited, person,\n")
+REVERT_ABORT = ("    /\\ tcr' = \"unavailable\"\n"
+                "    /\\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,\n"
+                "                   pending, report, baseline, wasFailing, outbox, told, flush, turn,\n"
+                "                   toldThisTurn, promptQueued, knows, elapsed, edited, ck, person, settleDue,\n")
+HALF_A_REVERT_ABORT = ("    /\\ tcr' = \"unavailable\" /\\ ck' = head\n"
+                       "    /\\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,\n"
+                       "                   pending, report, baseline, wasFailing, outbox, told, flush, turn,\n"
+                       "                   toldThisTurn, promptQueued, knows, elapsed, edited, person, settleDue,\n")
+PROPERTY_MUTANTS = (("a-failed-commit-moves-the-restore-point", FAILED_COMMIT, HALF_A_FAILED_COMMIT, "CheckpointIsAllOrNothing"),
+                    ("an-aborted-revert-moves-the-restore-point", REVERT_ABORT, HALF_A_REVERT_ABORT, "RevertIsAllOrNothing"))
+REACHABLE = ("NeverReverts", "NeverCheckpoints", "NeverCheckpointFails", "NeverRevertAborts", "NeverAbortsACommitWithWorkPending", "NeverHolds", "NeverObserves", "NeverPersonCommits",
              "NeverTellsRevert", "NeverTellsHold", "NeverPulls", "NeverHoldsATimeout", "NeverPullsWhileHeld", "NeverUnavailable", "NeverResumes", "NeverDirtyStart")
 PROBE_NAMES = (*REACHABLE, "NoRevertOfUnseenWork")
 FAIRNESS_CLAIMS = ("RunsEnd", "EveryEditIsChecked", "RegressionsReachAgent", "RevertNoticeReachesAgent", "HoldNoticeReachesAgent", "EditsAreSettled")
@@ -106,6 +132,7 @@ def runs() -> list[Run]:
              checked("IntegrationNotices", "IntegrationContract"), checked("IntegrationContract", "IntegrationContract", heavy=True),
              refinement("NewImplementsOld"), refinement("OldImplementsNew"), refinement("TcrImplementsBase")]
     found += [mutant(name, "TcrImplementsBase", old, new) for name, old, new in REFINEMENT_MUTANTS]
+    found += [property_mutant(*mutation) for mutation in PROPERTY_MUTANTS]
     found += [probe(name, 2, "violation") for name in REACHABLE]
     found += [probe("NoRevertOfUnseenWork", 2, "pass"), probe("NoRevertOfUnseenWork", 3, "violation")]
     found += [fairness(left, claim) for left in FAIRNESS_NEEDED_BY for claim in FAIRNESS_CLAIMS]
