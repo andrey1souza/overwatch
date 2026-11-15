@@ -920,6 +920,21 @@ test('a held edit is not resumed at the next turn start after someone else moved
   }, { mute: true, prepare: onMain })
 })
 
+test('an edit made in the step that also moved HEAD is neither committed, held nor reverted, whatever the checks say', async ($, on) => {
+  await inSession({ $, on }, async project => {
+    await $.turn.start({ text: 'go', turnId: 't1' })
+    await project.clock.advance(DECIDE_MS)
+    project.setReport(WARNINGS)
+    project.willChange(['a.py'], 'f1')
+    pull(project)
+    await $.tool.call({ tool: 'Bash', command: 'git pull' })
+    await project.clock.advance(SETTLE_MS)
+    expect(project.workspace.commits).toEqual([])
+    expect(project.workspace.reverted).toEqual([])
+    expect(told(project).filter(text => text.includes('TCR reverted') || text.includes('TCR held'))).toEqual([])
+  }, { mute: true, prepare: onMain })
+})
+
 test('a check that outlives its limit neither commits nor reverts the edit, which is held', async ($, on) => {
   await inSession({ $, on }, async project => {
     await $.turn.start({ text: 'go', turnId: 't1' })

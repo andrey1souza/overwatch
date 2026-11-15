@@ -230,7 +230,7 @@ OpenCode 1 shows the "TCR is on" notice to you but not to the agent.
 Claude Code has its own rules, in the subsection "In Claude Code" below.
 A revert removes empty directories, and a rename that only changes letter case is invisible to it on a case-insensitive filesystem.
 
-## [In Claude Code]($heading.id('tcr-in-claude-code'))
+## [In Claude Code]($heading.id('in-claude-code'))
 
 `"mode": "tcr"` in `.overwatch.json` makes the Claude Code plugin commit the agent's edits that keep the checks green and revert the edits that add a failure.
 A failure is new when the session's own baseline did not have it, so inherited failures never cause a revert.
@@ -252,7 +252,7 @@ TCR neither commits nor reverts in these cases, and tells the agent why:
 - A newer edit or any other change of the files came first. TCR looks at the files again right before it commits or reverts and when it is done, so a result that was overtaken acts on nothing, and files changed by a person at a tool that does not edit make TCR wait for the next turn.
 - The checkpoint would commit a file whose name or content looks like a secret, or one over 50 MiB. The reason names each file as `path` or `path:line` with the rule; add what is safe to `tcr.allow`, or to `.gitignore`.
 - The working tree is not clean when the session starts, a commit hook fails, or `.overwatch.json` holds a `mode` other than `"tcr"` or a `tcr` setting of the wrong type. The reason is named, and TCR starts again at a later turn start when it can.
-- HEAD was moved by someone other than TCR, as a pull or checkout does. What TCR held is forgotten, since the baselines it held against are gone.
+- HEAD was moved by someone other than TCR, as a pull or checkout does. What TCR held is forgotten, since the baselines it held against are gone. An edit made in the step that moved HEAD is neither committed, held nor reverted, since the failures the move brought in are inherited; the files stay as they are until the next edit or turn start.
 
 The plugin runs `engine/checkpoint.py` with `python3`, which must be on `PATH`, to compare files, commit and revert; without it TCR is unavailable and says why.
 A question to it has a limit of 20 seconds, a commit or a revert two minutes, a check nine minutes and a whole judgement 13 minutes, and past a limit TCR is unavailable.

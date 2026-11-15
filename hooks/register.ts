@@ -17,7 +17,7 @@ import { toolchainOf, replacedToolchain, stopIfReplaced, restartOnReplaced } fro
 import type { LiveWatcher, State, Run, Restart, Ending } from './state'
 import { QUIET_MS, setStatus, schedule, queue, queueEnvironment, writeLog, deliver } from './delivery'
 import { projectPolicy, guardedFailure, completeTurn } from './completion'
-import { EDITING_TOOLS, cancelJudgement, decideTcr, noteFiles } from './judgement'
+import { EDITING_TOOLS, cancelJudgement, decideTcr, leaveUnjudged, noteFiles } from './judgement'
 import { initialTcr } from './tcr'
 
 /**
@@ -332,19 +332,20 @@ const liveWatcher = (key: string, dir: string): LiveWatcher => {
  * pull or checkout brings in failures the agent did not make. Each check reruns, stopping a run still reading the
  * old commit, and its next result is its baseline unless the agent edits first. A commit keeps the baselines, even
  * one made in the same step as an edit, since it changes no file, unless `command`, the step that moved HEAD, ran a
- * git operation that can bring in files, as a squash merge committed in the same step does.
+ * git operation that can bring in files, as a squash merge committed in the same step does. Answers whether it took
+ * fresh baselines, so TCR can leave the step's edit unjudged: the failures the move brought in are inherited.
  */
-async function rebaselineOnMove($: EngineInterface, state: State, command = '') {
+async function rebaselineOnMove($: EngineInterface, state: State, command = ''): Promise<boolean> {
   const { cwd, epoch } = state
   assert(state.head === undefined || COMMIT.test(state.head), `the session's HEAD ${state.head} is not a commit id; note only what commitOf returns`)
-  if (cwd === undefined) return
+  if (cwd === undefined) return false
   const root = await repositoryOf($, cwd)
   const head = root === undefined ? undefined : await commitOf($, root)
-  if (state.epoch !== epoch || head === undefined || head === state.head) return
+  if (state.epoch !== epoch || head === undefined || head === state.head) return false
   assert(root !== undefined, `HEAD ${head} was read with no repository for ${cwd}; read it only from one`)
   const from = state.head
   state.head = head
-  if (from === undefined || (!bringsInFiles(command) && await isCommitted($, root, from, head)) || state.epoch !== epoch) return
+  if (from === undefined || (!bringsInFiles(command) && await isCommitted($, root, from, head)) || state.epoch !== epoch) return false
   state.tcrHeld.clear()
   state.tcr.held = undefined
   for (const each of state.liveWatchers) {
@@ -354,6 +355,7 @@ async function rebaselineOnMove($: EngineInterface, state: State, command = '') 
     each.changed?.()
   }
   assert(state.liveWatchers.every(each => each.baseline === undefined && !each.isEdited), `a live watcher kept its baseline after HEAD moved to ${head}; clear each`)
+  return true
 }
 
 /**
@@ -372,7 +374,7 @@ async function afterTool($: EngineInterface, state: State, tool: string, command
     each.isEditedSinceResult = true
     each.changed?.()
   }
-  await rebaselineOnMove($, state, command)
+  if (await rebaselineOnMove($, state, command)) await leaveUnjudged(state)
   assert(state.liveWatchers.every(each => each.isEdited || each.baseline === undefined), `a live watcher was not marked edited after ${tool}; mark each so its next result is read against the edit`)
 }
 

@@ -58,6 +58,18 @@ export async function cancelJudgement(state: State) {
   assert(kills.every(kill => !state.tcrKills.has(kill)), `${kills.length} stopped checks are still among the ${state.tcrKills.size} that wait to be stopped`)
 }
 
+/**
+ * Leaves the edit that waits neither committed, held nor reverted, for the step also moved HEAD: the failures the move
+ * brought in are in the fresh baselines as inherited, so the checks say nothing of the edit. The files stay as they are
+ * and TCR looks at them again at the next edit or turn start.
+ */
+export async function leaveUnjudged(state: State) {
+  assert(state.tcr.status !== undefined || !state.tcr.unjudged, `an edit waits to be judged while TCR is ${state.tcr.status}; decide TCR before judging`)
+  state.tcr.unjudged = false
+  await cancelJudgement(state)
+  assert(!state.tcr.unjudged && state.tcrTimer === undefined, 'an edit that came with a move of HEAD still waits to be judged')
+}
+
 /** Stops TCR committing and reverting, for `reason`, until it is decided again at the start of a turn. */
 function pauseTcr($: EngineInterface, state: State, reason: string) {
   assert(reason !== '' && reason !== TCR_ACTIVE, `TCR was paused for ${JSON.stringify(reason)}; give the reason it cannot run`)
