@@ -356,6 +356,19 @@ test('a check with a baseline command is run to its end and judged by its exit c
   }, { withRust: true, withoutChecks: true })
 })
 
+test('a check with a baseline command that outlives its limit neither commits nor reverts the edit, whatever it printed', async ($, on) => {
+  await inSession({ $, on }, async project => {
+    project.setRustCode(1)
+    await $.turn.start({ text: 'go', turnId: 't1' })
+    await project.clock.advance(DECIDE_MS)
+    await edit($, project, ['a.rs'], 'f1')
+    await project.clock.advance(1500)
+    expect(project.workspace.commits).toEqual([])
+    expect(project.workspace.reverted).toEqual([])
+    expect(told(project).some(text => text.includes('gave no result to judge by'))).toBe(true)
+  }, { withRust: true, withoutChecks: true, hang: 'baseline', env: { OVERWATCH_TCR_TIMEOUT_SCALE: '0.002' } })
+})
+
 test('an edit undone before it is judged is not judged', async ($, on) => {
   await inSession({ $, on }, async project => {
     project.willChange(['a.py'], 'f1')

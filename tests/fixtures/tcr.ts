@@ -14,7 +14,7 @@ const HANG_TICK_MS = 20
 const ZIG_GREEN = 'Build Summary: 3/3 steps succeeded; 1/1 tests passed\n'
 export const ZIG_RED = 'Build Summary: 2/3 steps succeeded (1 failed); 0/1 tests passed (1 failed)\n'
 
-type Options = { settings?: Record<string, unknown>; initial?: string; withUpstream?: boolean; withZig?: boolean; reasonDelayMs?: number; silentWatcher?: boolean; judgeDelayMs?: number; withoutChecks?: boolean; withRust?: boolean; mute?: boolean; watcherEndsAfterTicks?: number; branch?: string; commandDelayMs?: number; hang?: 'reason' | 'fingerprint' | 'check'; checkWrites?: string[]; env?: Record<string, string>; prepare?: (workspace: Workspace) => void }
+type Options = { settings?: Record<string, unknown>; initial?: string; withUpstream?: boolean; withZig?: boolean; reasonDelayMs?: number; silentWatcher?: boolean; judgeDelayMs?: number; withoutChecks?: boolean; withRust?: boolean; mute?: boolean; watcherEndsAfterTicks?: number; branch?: string; commandDelayMs?: number; hang?: 'reason' | 'fingerprint' | 'check' | 'baseline'; checkWrites?: string[]; env?: Record<string, string>; prepare?: (workspace: Workspace) => void }
 
 /** What the fake checkpoint command line knows about the repository, and what it was asked to do. */
 export type Workspace = {
@@ -33,7 +33,7 @@ export type Workspace = {
   refused: { path: string; rule: string; line?: number | null }[]
   isNewShape: boolean
   rawCheckpoint: Record<string, unknown> | undefined
-  hang: 'reason' | 'fingerprint' | 'check' | undefined
+  hang: 'reason' | 'fingerprint' | 'check' | 'baseline' | undefined
   next: { files: string[]; fingerprint: string } | undefined
   onRevert: () => void
   /** What happens as the Nth ask of a command begins (`fingerprint#3`), or once it is answered (`revert#1:after`). */
@@ -162,8 +162,12 @@ async function* upstreamRun(clock: Clock) {
 }
 
 /** A test run that prints once and ends with the exit code a test sets. */
-async function* cargoRun(code: number) {
+async function* cargoRun(clock: Clock, code: number, hangs: boolean) {
   yield chunk('running tests\n')
+  while (hangs) {
+    await clock.sleep(HANG_TICK_MS)
+    yield chunk('\n')
+  }
   assert(Number.isInteger(code) && code >= 0, `a test run exits with ${code}, not an exit code`)
   return exited(code)
 }
@@ -219,7 +223,7 @@ function processes({ workspace, clock, output, zig, reportsInitial, reasonDelayM
     workspace.started.add(name)
     if (isOneShot) workspace.oneShots.push(name)
     if (isOneShot) writeFiles(workspace, checkWrites)
-    if (name === 'cargo') return yield* cargoRun(rustCode())
+    if (name === 'cargo') return yield* cargoRun(clock, rustCode(), workspace.hang === 'baseline' && workspace.oneShots.filter(each => each === name).length === 1)
     if (name === 'sh') return yield* upstreamRun(clock)
     const isZig = name === 'zig'
     const ticks = ticksOf(isZig, isOneShot, endsAfterTicks)
