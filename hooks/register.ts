@@ -6,6 +6,7 @@ import {
   environmentIn,
   exitMessage,
   gaveUpMessage,
+  envOf,
   languageOf,
   lastBuild,
   readReport,
@@ -16,6 +17,8 @@ import { toolchainOf, replacedToolchain, stopIfReplaced, restartOnReplaced } fro
 import type { LiveWatcher, State, Run, Restart, Ending } from './state'
 import { QUIET_MS, setStatus, schedule, queue, queueEnvironment, writeLog, deliver } from './delivery'
 import { projectPolicy, guardedFailure, completeTurn } from './completion'
+import { EDITING_TOOLS, cancelJudgement, decideTcr, noteFiles } from './judgement'
+import { initialTcr } from './tcr'
 
 /**
  * A watcher that ends within this long of its start counts as a quick exit and
@@ -25,17 +28,6 @@ const RETRY_MS = 30_000
 
 /** After this many quick exits in a row, a watcher is no longer restarted on a timer, only as turns start. */
 const GIVE_UP_AFTER = 3
-
-/** Tools whose call may change the project's files; a watcher that is no long-running command reruns after each. */
-const EDITING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash'])
-
-/** The spawn option that sets a watcher's env over overwatch's own; none when it sets none. */
-function envOf(watcher: Watcher): { env?: Record<string, string> } {
-  assert(watcher.env === undefined || Object.values(watcher.env).every(value => typeof value === 'string'), `${watcher.name}'s env ${JSON.stringify(watcher.env)} holds a value that is not a string; give each variable a string`)
-  const option = watcher.env === undefined ? {} : { env: { ...watcher.env } }
-  assert(option.env === undefined || Object.keys(option.env).length === Object.keys(watcher.env ?? {}).length, `the env option for ${watcher.name} lost variables of ${JSON.stringify(watcher.env)}; copy each`)
-  return option
-}
 
 /** Runs a command to its end and reports what it printed, unless it was stopped for a newer run first. */
 async function runOnce($: EngineInterface, run: Run, argv: readonly string[], isStale = () => false) {
@@ -285,6 +277,9 @@ async function stop($: EngineInterface, state: State) {
   state.flushing?.cancel()
   state.outbox.clear()
   state.environment.clear()
+  state.tcr = initialTcr()
+  state.tcrHeld.clear()
+  void cancelJudgement(state)
   const liveWatchers = state.liveWatchers.map(each => {
     each.isWatching = false
     each.retryAt = 0
@@ -350,6 +345,8 @@ async function rebaselineOnMove($: EngineInterface, state: State, command = '') 
   const from = state.head
   state.head = head
   if (from === undefined || (!bringsInFiles(command) && await isCommitted($, root, from, head)) || state.epoch !== epoch) return
+  state.tcrHeld.clear()
+  state.tcr.held = undefined
   for (const each of state.liveWatchers) {
     each.baseline = undefined
     each.isEdited = false
@@ -367,6 +364,7 @@ async function afterTool($: EngineInterface, state: State, tool: string, command
   assert(tool !== '', `a tool call named the tool ${JSON.stringify(tool)}; pass the name of the tool the agent called`)
   if (!state.isCorrectionTurn) state.completionCorrection = undefined
   assert(!state.isCorrectionTurn || state.completionCorrection !== undefined, `the correction turn lost its correction after ${tool}; keep it while the turn answers it`)
+  await noteFiles($, state, tool)
   if (!EDITING_TOOLS.has(tool)) return
   state.isEditedSinceCorrection = true
   for (const each of state.liveWatchers) {
@@ -405,6 +403,12 @@ const initialState = (): State => {
     isFindDue: false,
     onWatcherEnded: undefined,
     liveWatchers: [],
+    tcr: initialTcr(),
+    tcrDeciding: undefined,
+    tcrTimer: undefined,
+    tcrTicket: 0,
+    tcrKills: new Set(),
+    tcrHeld: new Set(),
   }
   assert(state.liveWatchers.length === 0 && state.outbox.size === 0, `a new session starts with ${state.liveWatchers.length} liveWatchers and ${state.outbox.size} messages`)
   assert(!state.isTurnRunning && !state.isFinding, 'a new session starts with a turn or search running')
@@ -423,6 +427,7 @@ export const register: Register = on => {
     state.onWatcherEnded = () => void ensureAll($, state)
     void ensureAll($, state)
     void rebaselineOnMove($, state)
+    void decideTcr($, state)
     return started
   })
 
@@ -446,6 +451,7 @@ export const register: Register = on => {
     schedule($, state)
     void ensureAll($, state)
     void rebaselineOnMove($, state)
+    void decideTcr($, state)
     return next(e)
   })
 

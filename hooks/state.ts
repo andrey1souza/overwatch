@@ -3,6 +3,7 @@
  */
 import type { Timer } from 'claude-code'
 import type { Report, Watcher } from './watchers'
+import type { Tcr } from './tcr'
 
 /** One watcher's place beside the others: a language in the project or one of its sub-projects, or a checker such as zanity. */
 export type LiveWatcher = {
@@ -36,7 +37,7 @@ export type LiveWatcher = {
 }
 
 /** A message for the agent, waiting to go with the others that arrive with it; each live has at most one of each kind waiting. */
-export type Message = { text: string; isWaking: boolean; kind: 'report' | 'exit' | 'environment' | 'baseline' }
+export type Message = { text: string; isWaking: boolean; kind: 'report' | 'exit' | 'environment' | 'baseline' | 'tcr' }
 
 export type State = {
   /** The interactive session's directory; undefined before it starts and once it ends. */
@@ -68,6 +69,16 @@ export type State = {
   onWatcherEnded: (() => void) | undefined
   /** One for each watcher found so far, in the order found, which is the status line's order. */
   liveWatchers: LiveWatcher[]
+  /** Whether TCR runs in this project, and what it waits to settle; see tcr.ts. */
+  tcr: Tcr
+  /** The decision about TCR in flight, which an edit's fingerprint waits for. */
+  tcrDeciding: Promise<void> | undefined
+  /** The judgement of the agent's latest edit: when it starts, which one it is, and how to stop the checks it runs. */
+  tcrTimer: Timer | undefined
+  tcrTicket: number
+  tcrKills: Set<() => Promise<unknown>>
+  /** The keys of the checks TCR left an edit unjudged for, which have no earlier result until one passes. */
+  tcrHeld: Set<string>
 }
 
 /** One watcher running in its live: what each step of a run needs. */
