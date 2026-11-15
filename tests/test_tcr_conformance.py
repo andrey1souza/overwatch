@@ -184,6 +184,9 @@ class TcrConformanceTests(CodexHook):
         self.assertEqual(self.saved_tcr() == "active", expected["tcr"] == "active", f"{name}: TCR after {event}")
         self.assertEqual(bool(self.saved_state()["held"]), expected["held"], f"{name}: held checks after {event}")
         self.assertEqual(git(self.cwd, ["status", "--porcelain"]) == "", expected["clean"], f"{name}: clean tree after {event}")
+        self.assertEqual(self.saved_tcr() not in (None, "active"), expected["tcr"] == "unavailable", f"{name}: a reason for TCR to be unavailable after {event}")
+        self.assertEqual(len(git(self.cwd, ["for-each-ref", "refs/overwatch/reverted"]).splitlines()), expected["saved"], f"{name}: saved refs after {event}")
+        self.assertEqual("TCR held the edit" in state.context, event == "Hold", f"{name}: the notice of a held edit after {event}")
         checkpoints = sum(subject.startswith("tcr: ") for subject in self.subjects())
         self.assertEqual(checkpoints, state.commits, f"{name}: checkpoints after {event}")
         if event == "Revert":
