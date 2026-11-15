@@ -33,6 +33,7 @@ jobs:
 
   model:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -63,6 +64,9 @@ jobs:
       - name: Validate traces of the real engine against the model
         if: steps.spec.outputs.changed == 'true'
         run: python3 tests/trace_validation.py --jar "$RUNNER_TEMP/tla2tools.jar"
+
+      - name: Model check TCR, the notices, the refinement of the earlier model, and the probes
+        run: python3 scripts/check_models.py --jar "$RUNNER_TEMP/tla2tools.jar"
 
   agents:
     runs-on: ubuntu-latest
