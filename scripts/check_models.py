@@ -7,7 +7,10 @@ trace of something that must be possible, or for none of something that must be 
 a property of TCR cannot hold only because its scenario is unreachable.
 
 Set TLA2TOOLS_JAR or pass --jar. IntegrationContract.cfg takes about ten minutes and a large
-heap, and OverwatchTcrNotices.cfg explores 300 million states, so they run only with --full.
+heap, and OverwatchTcrNotices.cfg explores 478 million states, so they run only with --full.
+OverwatchTcrReverts.cfg explores 153 million states and runs with --reverts, which CI gives a
+job of its own, and the 66 runs that leave out one action's fairness run with --fairness. No
+single run may take longer than TLC_TIMEOUT, which is under the time limit of a CI job.
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "spec"
 PROBE_BOUNDS = "    Names = {\"a\"}\n    Timeout = 1\n    TcrMode = TRUE\n    SaveReverted = TRUE\n    StartQueued = FALSE\n"
 TLC_HEAP = "-Xmx4g"
-TLC_TIMEOUT = 3600
+TLC_TIMEOUT = 2400
 
 
 @dataclass(frozen=True)
@@ -46,10 +49,10 @@ def probe(name: str, edits: int, expected: str) -> Run:
     return Run(f"probe {name} with {edits} edits", "Probes", config, expected)
 
 
-def checked(config: str, module: str, heavy: bool = False) -> Run:
+def checked(config: str, module: str, heavy: bool = False, group: str = "") -> Run:
     assert (SPEC / f"{config}.cfg").is_file(), f"spec/{config}.cfg does not exist"
     assert (SPEC / f"{module}.tla").is_file(), f"spec/{module}.tla does not exist"
-    return Run(f"configuration {config}", module, (SPEC / f"{config}.cfg").read_text(), "pass", heavy)
+    return Run(f"configuration {config}", module, (SPEC / f"{config}.cfg").read_text(), "pass", heavy, group=group)
 
 
 def mutant(name: str, module: str, old: str, new: str) -> Run:
@@ -60,11 +63,14 @@ def mutant(name: str, module: str, old: str, new: str) -> Run:
     return Run(f"mutant {name} of refinement {module}", module, base.config, "violation", edit=(old, new))
 
 
-def property_mutant(name: str, old: str, new: str, claim: str) -> Run:
+def property_mutant(name: str, edit: tuple[str, str], claim: str, names: str = '{"a"}') -> Run:
     """A check of one TCR property against a copy of Overwatch.tla in which old is replaced by new; TLC must find the break."""
+    old, new = edit
     assert old in (SPEC / "Overwatch.tla").read_text(), f"mutant {name} replaces {old!r}, which Overwatch.tla does not hold"
     assert old != new, f"mutant {name} replaces {old!r} with itself"
-    config = f"SPECIFICATION Spec\nCONSTANTS\n{PROBE_BOUNDS}    MaxEdits = 2\nPROPERTIES\n    {claim}\n"
+    bounds = PROBE_BOUNDS.replace('Names = {"a"}', f"Names = {names}")
+    assert names in bounds, f"the bounds {bounds!r} do not hold the names {names}"
+    config = f"SPECIFICATION Spec\nCONSTANTS\n{bounds}    MaxEdits = 2\nPROPERTIES\n    {claim}\n"
     return Run(f"mutant {name} of property {claim}", "Overwatch", config, "violation", edit=(old, new))
 
 
@@ -96,8 +102,11 @@ HALF_A_REVERT_ABORT = ("    /\\ tcr' = \"unavailable\" /\\ ck' = head\n"
                        "    /\\ UNCHANGED <<truth, head, based, busy, from, quiet, installed, produced, consumed,\n"
                        "                   pending, report, baseline, wasFailing, outbox, told, flush, turn,\n"
                        "                   toldThisTurn, promptQueued, knows, elapsed, edited, person, settleDue,\n")
-PROPERTY_MUTANTS = (("a-failed-commit-moves-the-restore-point", FAILED_COMMIT, HALF_A_FAILED_COMMIT, "CheckpointIsAllOrNothing"),
-                    ("an-aborted-revert-moves-the-restore-point", REVERT_ABORT, HALF_A_REVERT_ABORT, "RevertIsAllOrNothing"))
+FRESH_FAILURES = "FreshFailures == report.failures \\ baseline.failures"
+EVERY_FAILURE_IS_FRESH = "FreshFailures == report.failures"
+NAMED_FAILURE_MUTANT = ("a-revert-notice-names-the-inherited-failures-too", (FRESH_FAILURES, EVERY_FAILURE_IS_FRESH), "RevertNoticeNamesNewFailures", '{"a", "b"}')
+PROPERTY_MUTANTS = (NAMED_FAILURE_MUTANT,("a-failed-commit-moves-the-restore-point", (FAILED_COMMIT, HALF_A_FAILED_COMMIT), "CheckpointIsAllOrNothing"),
+                    ("an-aborted-revert-moves-the-restore-point", (REVERT_ABORT, HALF_A_REVERT_ABORT), "RevertIsAllOrNothing"))
 REACHABLE = ("NeverReverts", "NeverCheckpoints", "NeverCheckpointFails", "NeverRevertAborts", "NeverAbortsACommitWithWorkPending", "NeverHolds", "NeverObserves", "NeverPersonCommits",
              "NeverTellsRevert", "NeverTellsHold", "NeverPulls", "NeverHoldsATimeout", "NeverPullsWhileHeld", "NeverUnavailable", "NeverResumes", "NeverDirtyStart")
 PROBE_NAMES = (*REACHABLE, "NoRevertOfUnseenWork")
@@ -127,7 +136,7 @@ def fairness(left: str, claim: str) -> Run:
 
 def runs() -> list[Run]:
     """Every run, cheapest first, with what TLC must report."""
-    found = [checked("Overwatch", "Overwatch"), checked("OverwatchTcr", "Overwatch"), checked("OverwatchTcrReverts", "Overwatch"), checked("OverwatchTcrQueues", "Overwatch"),
+    found = [checked("Overwatch", "Overwatch"), checked("OverwatchTcr", "Overwatch"), checked("OverwatchTcrReverts", "Overwatch", group="reverts"), checked("OverwatchTcrQueues", "Overwatch"), checked("OverwatchTcrNames", "Overwatch"),
              checked("OverwatchTcrNotices", "Overwatch", heavy=True), checked("IntegrationLifecycle", "IntegrationLifecycle"),
              checked("IntegrationNotices", "IntegrationContract"), checked("IntegrationContract", "IntegrationContract", heavy=True),
              refinement("NewImplementsOld"), refinement("OldImplementsNew"), refinement("TcrImplementsBase")]
@@ -170,19 +179,31 @@ def execute(run: Run, jar: Path, java: str) -> tuple[str, str]:
     return verdict(output), (f"{counts[-1][0]} generated, {counts[-1][1]} distinct" if counts else "no state counts")
 
 
+def wanted(run: Run, args: argparse.Namespace) -> bool:
+    """Whether the command line asks for run: the fairness runs and the reverts configuration each have a flag of their own, and --full adds the heavy ones."""
+    assert run.group in ("", "fairness", "reverts"), f"run {run.name} is in the group {run.group!r}, which no flag selects"
+    assert hasattr(args, "full"), f"the arguments {args} do not say whether the heavy runs are wanted"
+    if run.group == "fairness":
+        return args.fairness
+    if run.group == "reverts":
+        return args.reverts or args.full
+    return args.full or not run.heavy
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--jar", type=Path, default=os.environ.get("TLA2TOOLS_JAR", ""))
     parser.add_argument("--java", default="java")
     parser.add_argument("--only", default="", help="run only the runs whose name contains this text")
     parser.add_argument("--full", action="store_true", help="include IntegrationContract.cfg")
+    parser.add_argument("--reverts", action="store_true", help="add OverwatchTcrReverts.cfg, 153 million states, which CI runs in a job of its own")
     parser.add_argument("--fairness", action="store_true", help="run the 66 runs that leave out one action's fairness, about an hour")
     args = parser.parse_args()
     if not str(args.jar) or not args.jar.is_file():
         sys.exit(f"TLA tools jar missing: pass --jar or set TLA2TOOLS_JAR (got {args.jar!r})")
     if shutil.which(args.java) is None:
         sys.exit(f"Java not found: put {args.java!r} on PATH or pass --java with the path of a java executable")
-    selected = [run for run in runs() if args.only in run.name and (args.fairness if run.group == "fairness" else args.full or not run.heavy)]
+    selected = [run for run in runs() if args.only in run.name and wanted(run, args)]
     assert selected, f"no run contains {args.only!r}; see runs() for the names"
     assert all(run.expected in ("pass", "violation") for run in selected), f"a selected run expects something TLC never says: {selected}"
     failures = []

@@ -11,13 +11,13 @@ from paths import ROOT
 import check_models
 
 SPEC = ROOT / "spec"
-MODULE_OF = {"Overwatch": "Overwatch", "OverwatchTcr": "Overwatch", "OverwatchTcrReverts": "Overwatch", "OverwatchTcrNotices": "Overwatch", "OverwatchTcrQueues": "Overwatch", "IntegrationContract": "IntegrationContract",
+MODULE_OF = {"Overwatch": "Overwatch", "OverwatchTcr": "Overwatch", "OverwatchTcrReverts": "Overwatch", "OverwatchTcrNotices": "Overwatch", "OverwatchTcrQueues": "Overwatch", "OverwatchTcrNames": "Overwatch", "IntegrationContract": "IntegrationContract",
              "IntegrationLifecycle": "IntegrationContract", "IntegrationNotices": "IntegrationContract"}
 DEFINITION = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*==", re.MULTILINE)
 CHECK_KEYWORDS = ("INVARIANTS", "PROPERTIES")
 TCR_PROPERTIES_HEADING = "(* Section: TCR properties"
 TCR_VARIABLES = ("tcr", "ck", "person", "settleDue", "notices", "noticeTold", "firstResult", "holds", "holdTold", "held", "saved", "heldAt")
-TCR_CONFIGS = ("OverwatchTcr", "OverwatchTcrReverts", "OverwatchTcrNotices", "OverwatchTcrQueues")
+TCR_CONFIGS = ("OverwatchTcr", "OverwatchTcrReverts", "OverwatchTcrNotices", "OverwatchTcrQueues", "OverwatchTcrNames")
 MIN_VERSIONS_TO_REVERT_SEEN_WORK = 3
 NOTICE_PROPERTIES = ("NoticesAreAccountedFor", "OnlyTcrHostsRaiseNotices", "NoticesOutliveRecovery", "PendingNoticesEventuallyResolve")
 
@@ -82,7 +82,7 @@ class ModelConfigTests(unittest.TestCase):
             self.assertNotIn("BaselineNeverAbsorbsEdits", checked_names(self.configs[name]))
             self.assertNotIn("PROPERTIES\n    RegressionsReachAgent", self.configs[name], f"{name}.cfg checks liveness, which a view does not allow")
         checking = [name for name in MODULE_OF if "BaselineNeverAbsorbsEdits" in checked_names(self.configs[name])]
-        self.assertEqual(sorted(checking), ["Overwatch", "OverwatchTcr"])
+        self.assertEqual(sorted(checking), ["Overwatch", "OverwatchTcr", "OverwatchTcrNames"])
 
     def test_every_probe_has_an_expected_verdict(self) -> None:
         defined = set(DEFINITION.findall(self.probes))

@@ -460,6 +460,9 @@ RestorePointIsNotOlderThanBaseline == ck >= based
 NoticesNameNewFailures ==
     \A i \in 1..Len(notices) : notices[i] # {} /\ TimedOut \notin notices[i]
 HoldsNameTheFailures == \A i \in 1..Len(holds) : holds[i] # {}
+RevertNoticeNamesNewFailures ==
+    [][Revert => \A name \in Names :
+         name \in notices'[Len(notices')] <=> (name \in report.failures /\ name \notin baseline.failures)]_vars
 HeadOnlyGrows == [][head' >= head]_vars
 RevertNeverDiscardsSeenWork == [][Revert => person # "seen"]_vars
 RevertRestoresCheckpointContent == [][Revert => truth'[head'] = truth[ck]]_vars
