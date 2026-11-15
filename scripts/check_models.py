@@ -126,7 +126,7 @@ FAIRNESS_NEEDED_BY = {
 }
 
 
-def bounds(edits: int, names: str, timeout: int, agent_only: bool) -> Run:
+def run_at_bounds(edits: int, names: str, timeout: int, agent_only: bool) -> Run:
     """Every property of OverwatchTcr.cfg, liveness included, at other bounds than its own; agent_only keeps the person's
     work and more than four builds out, as OverwatchTcrNotices.cfg does, so that three edits fit."""
     assert edits >= 1, f"{edits} workspace edits leave nothing to check"
@@ -160,7 +160,7 @@ def runs() -> list[Run]:
     found += [probe(name, 2, "violation") for name in REACHABLE]
     found += [probe("NoRevertOfUnseenWork", 2, "pass"), probe("NoRevertOfUnseenWork", 3, "violation")]
     found += [probe("NeverCheckpointsAfterARevert", 2, "pass"), probe("NeverCheckpointsAfterARevert", 3, "violation")]
-    found += [bounds(1, '{"a"}', 1, False), bounds(2, '{"a", "b"}', 1, False), bounds(3, '{"a"}', 0, True), bounds(3, '{"a"}', 1, True)]
+    found += [run_at_bounds(1, '{"a"}', 1, False), run_at_bounds(2, '{"a", "b"}', 1, False), run_at_bounds(3, '{"a"}', 0, True), run_at_bounds(3, '{"a"}', 1, True)]
     found += [fairness(left, claim) for left in FAIRNESS_NEEDED_BY for claim in FAIRNESS_CLAIMS]
     assert len({run.name for run in found}) == len(found), f"two of the {len(found)} runs share a name: {[run.name for run in found]}"
     assert all(run.expected in ("pass", "violation") for run in found), f"a run of {[run.name for run in found]} expects something other than pass or violation"
