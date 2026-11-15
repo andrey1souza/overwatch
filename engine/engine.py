@@ -234,7 +234,7 @@ def process_event(event: Event, root: Path) -> dict[str, Any]:
         edit = event.hook_event_name == "PostToolUse" and event.tool_name in EDITING_TOOLS
         command = tool_command(event.tool_input) if event.hook_event_name == "PostToolUse" else ""
         read = checked_state(session, cwd, Step(edit, command))
-        taken = tcr.settle(tcr.Turn(event, cwd, session, read_override(cwd), read.edited), read.old, read.current)
+        taken = tcr.settle(tcr.Turn(event, cwd, session, read_override(cwd), read.edited, read.moved), read.old, read.current)
         read = replace(read, current=taken.state)
         current = read.current
         output = tcr.told(report_output(event, read, session), event.hook_event_name, taken)
@@ -296,7 +296,7 @@ def checked_state(session: Session, cwd: Path, step: Step = Step(), followed: li
     )
     assert current.environment[:len(told)] == told, f"environment {current.environment} forgot what the agent was told; keep {told} first"
     assert should_run or followed is not None or current.reports == old.reports, f"unchanged workspace {cwd} got new reports; reuse the saved ones"
-    return Read(old, current, edited)
+    return Read(old, current, edited, moved)
 
 
 def merged_reports(followed: list[Report], saved: tuple[Report, ...]) -> list[Report]:

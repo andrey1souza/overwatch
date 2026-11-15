@@ -20,6 +20,7 @@ import checkpoint
 import discovery
 import engine
 import records
+import sessions
 import tcr
 import workspace
 from test_checkpoint import git, isolate_git, make_dir, put, restore_git, set_environment, set_mode
@@ -510,6 +511,29 @@ class HardeningTests(CodexHook):
         next_turn, _ = self.call("UserPromptSubmit")
         self.assertIn("TCR is unavailable", self.context(next_turn))
         self.assertIn("uncommitted changes", self.context(next_turn))
+
+    def saved_state(self) -> dict:
+        root = sessions.data_root(str(self.data))
+        sent = engine.Event("PostToolUse", "session-1", str(self.cwd), "Bash", {}, "")
+        state = json.loads(sessions.state_path(sent, self.cwd.resolve(), root).read_text())["state"]
+        assert "held" in state and "tcr" in state, f"the saved state {sorted(state)} has no held or tcr field"
+        assert isinstance(state["held"], list), f"the held checks {state['held']!r} are no list"
+        return state
+
+    def test_a_pull_through_the_agents_shell_ends_the_hold_of_an_edit_the_person_committed(self) -> None:
+        self.start_a_python_project()
+        self.add_go_check(FAILING_GO, 1)
+        self.assertTrue(self.saved_state()["held"])
+        self.commit("the person commits")
+        self.call("UserPromptSubmit")
+        self.assertTrue(self.saved_state()["held"])
+        moved = git(self.cwd, ["commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "a teammate's commit"])
+        git(self.cwd, ["update-ref", "refs/heads/teammate", moved])
+        git(self.cwd, ["merge", "-q", "--ff-only", "teammate"])
+        output, _ = self.call("PostToolUse", tool_name="Bash", tool_input={"command": "git merge --ff-only teammate"})
+        self.assertEqual(self.saved_state()["held"], [], f"the pull left the hold in place: {self.context(output)}")
+        self.assertEqual(self.saved_state()["tcr"], "active")
+        self.assertNotIn("TCR reverted", self.context(output))
 
     def test_an_edit_the_agent_made_while_the_first_checks_ran_is_named_as_the_reason_tcr_is_unavailable(self) -> None:
         write(self.cwd / ".overwatch.json", json.dumps({"mode": "tcr"}))

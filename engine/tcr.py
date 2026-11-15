@@ -40,12 +40,14 @@ NANOSECONDS = 1_000_000_000
 
 @dataclass(frozen=True)
 class Turn:
-    """What one hook event gives TCR to decide on: the event, the repository, the session and the project's settings."""
+    """What one hook event gives TCR to decide on: the event, the repository, the session, the project's settings, whether
+    the read followed the agent's own edit, and whether it took a fresh baseline because HEAD moved."""
     event: Event
     cwd: Path
     session: Session
     override: dict[str, Any]
     edited: bool
+    moved: bool = False
 
 
 @dataclass(frozen=True)
@@ -388,7 +390,7 @@ def settle(turn: Turn, old: State, current: State) -> TcrStep:
     current = replace(current, tcr=state)
     on_branch = branch_notice(turn) if state == TCR_ACTIVE and old.tcr != state else ""
     notices = tcr_notice(old.tcr, state, on_branch)
-    if state != TCR_ACTIVE or not turn.edited or old.fingerprint == current.fingerprint:
+    if state != TCR_ACTIVE or not turn.edited or turn.moved or old.fingerprint == current.fingerprint:
         return TcrStep(current, notices)
     files_unchanged = fingerprint(turn.cwd) == current.fingerprint
     if not settles_edit(current, files_unchanged):

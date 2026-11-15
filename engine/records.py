@@ -25,10 +25,12 @@ class StateError(ValueError):
 @dataclass(frozen=True)
 class Read:
     """One read of the checks' results: the state before and after it, and whether it follows the session's own
-    edit, the result model's edited, which only such a read may wake the agent for."""
+    edit, the result model's edited, which only such a read may wake the agent for. Moved says the read took a fresh
+    baseline because HEAD moved, which no edit of the agent caused."""
     old: "State"
     current: "State"
     edited: bool
+    moved: bool = False
 
 
 @dataclass(frozen=True)
