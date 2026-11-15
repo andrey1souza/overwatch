@@ -385,7 +385,19 @@ def settle(turn: Turn, old: State, current: State) -> TcrStep:
     otherwise it keeps its state, and on the agent's own latest edit it judges the result."""
     if read_mode(turn.override) != TCR_MODE:
         return TcrStep(current) if old.tcr is None else TcrStep(replace(current, tcr=None, held=()), (TCR_OFF,))
-    settings = read_settings(turn.override)
+    try:
+        return judge(turn, old, current, read_settings(turn.override))
+    except checkpoint.CheckpointError as error:
+        reason = str(error)
+        step = TcrStep(replace(current, tcr=reason), tcr_notice(old.tcr, reason))
+        assert step.state.tcr != TCR_ACTIVE, f"a git failure left TCR active: {reason!r}"
+        assert old.tcr == reason or step.notices, f"the agent was not told that TCR stopped: {reason!r}"
+        return step
+
+
+def judge(turn: Turn, old: State, current: State, settings: Settings) -> TcrStep:
+    """What TCR does at this event in TCR mode: it keeps its state, and on the agent's own latest edit it judges the
+    result. A git command that fails along the way raises CheckpointError, which settle turns into an unavailable TCR."""
     state = tcr_state(turn, old, current)
     current = replace(current, tcr=state)
     on_branch = branch_notice(turn) if state == TCR_ACTIVE and old.tcr != state else ""

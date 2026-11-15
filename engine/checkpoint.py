@@ -8,15 +8,23 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import codecs
+import json
 import os
 import re
+import stat
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from fnmatch import fnmatchcase
 from pathlib import Path
+
+MINIMUM_PYTHON = (3, 11)
+if sys.version_info < MINIMUM_PYTHON:
+    print(json.dumps({"error": f"overwatch needs python {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]} or newer; python3 on PATH is {sys.version_info[0]}.{sys.version_info[1]}"}))
+    raise SystemExit(1)
 
 from tcr_settings import validate_allow
 
@@ -30,14 +38,16 @@ MAX_STAGED_BYTES = 50 * 1024 * 1024
 ENV_TEMPLATES = frozenset({".env.example", ".env.sample", ".env.template"})
 PRIVATE_KEY_NAMES = frozenset({"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"})
 CREDENTIAL_NAMES = frozenset({"credentials", "credentials.json", "credentials.yml", "credentials.yaml"})
-SECRET_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
-SECRET_FILE_NAMES = frozenset({".npmrc", ".netrc"})
+SECRET_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".keystore")
+SECRET_FILE_NAMES = frozenset({".npmrc", ".netrc", ".pgpass", ".git-credentials", "terraform.tfstate", "secrets.yml", "secrets.yaml", "kubeconfig"})
 NAME_RULE = "name pattern"
+UNREADABLE_RULE = "its added lines could not be read, so they were not screened for secrets"
+SKIP_WORKTREE_TAG = "S"
 SIZE_RULE = f"larger than {MAX_STAGED_BYTES // (1024 * 1024)} MiB"
 # Only secrets that have an unmistakable form: a generic `key = "..."` pattern flagged too much ordinary code.
 CONTENT_RULES = (
     ("AWS access key", r"AKIA[0-9A-Z]{16}"),
-    ("private key", r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY"),
+    ("private key", r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY"),
     ("GitHub token", r"gh[pousr]_[A-Za-z0-9]{36,}"),
     ("Slack token", r"xox[baprs]-"),
     ("Stripe live key", r"sk_live_"),
@@ -53,6 +63,7 @@ CLEAN_BATCH = 200
 SAVED_REF_PREFIX = "refs/overwatch/reverted/"
 SAVED_REF_TIME = "%Y%m%dT%H%M%S%fZ"
 SAVED_MESSAGE = "overwatch: work that a TCR revert discarded"
+UNWATCHED_REASON = "{files} is marked assume-unchanged or skip-worktree and differs from HEAD, so git does not show the edit and a revert would overwrite it"
 # Files and directories in the git directory that exist while an operation is unfinished, with its name.
 IN_PROGRESS = {"MERGE_HEAD": "merge", "CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert",
                "BISECT_LOG": "bisect", "rebase-merge": "rebase", "rebase-apply": "rebase"}
@@ -76,6 +87,10 @@ class Refused(CheckpointError):
         self.refusals = refusals
         super().__init__(f"no checkpoint: it would commit {', '.join(refusal.text() for refusal in refusals)}; nothing was committed or reverted")
         assert self.refusals is refusals, "Refused lost the refusals it was made with"
+
+
+class Unreadable(CheckpointError):
+    """A diff of the staged files was not in the form this reader knows, so the lines it adds cannot be screened."""
 
 
 @dataclass(frozen=True)
@@ -103,7 +118,8 @@ class GitIO:
 
 def run_git(cwd: Path, argv: list[str], *, warnings_fail: bool = False, io: GitIO = GitIO()) -> str:
     """Runs git with argv in cwd and returns what it printed, or raises CheckpointError with git's own message. Bytes
-    that are not UTF-8, as in a file name Linux allows, come back as the surrogate characters that encode them again.
+    that are not UTF-8, as in a file name Linux allows, come back as the surrogate characters that encode them again,
+    and a carriage return comes back as one: no line ending is translated, so a line break is only a line feed.
     Git finds the repository from cwd alone, whatever location variables the environment holds. With warnings_fail, a
     command that exits 0 but wrote to stderr, as git does for a directory it cannot read, fails too. io gives it
     input and an index file of its own."""
@@ -113,18 +129,19 @@ def run_git(cwd: Path, argv: list[str], *, warnings_fail: bool = False, io: GitI
         environment["GIT_INDEX_FILE"] = str(io.index)
     command = " ".join(argv)
     try:
-        result = subprocess.run(["git", *argv], cwd=cwd, env=environment, capture_output=True, text=True, errors="surrogateescape",
-                                timeout=GIT_TIMEOUT, check=False, input=io.stdin)
+        result = subprocess.run(["git", *argv], cwd=cwd, env=environment, capture_output=True, timeout=GIT_TIMEOUT, check=False,
+                                input=None if io.stdin is None else io.stdin.encode(errors="surrogateescape"))
     except (OSError, subprocess.SubprocessError) as error:
         raise CheckpointError(f"git {command} could not run in {cwd}: {error}; check that git is installed") from error
-    stderr = result.stderr.strip()
+    stdout = result.stdout.decode(errors="surrogateescape")
+    stderr = result.stderr.decode(errors="surrogateescape").strip()
     if result.returncode != 0:
-        raise CheckpointError(f"git {command} failed in {cwd}: {stderr or result.stdout.strip() or f'exit {result.returncode}'}")
+        raise CheckpointError(f"git {command} failed in {cwd}: {stderr or stdout.strip() or f'exit {result.returncode}'}")
     if warnings_fail and stderr:
         raise CheckpointError(f"git {command} warned in {cwd}: {stderr}")
     assert result.returncode == 0, f"git {argv} exited {result.returncode} but was not reported; raise CheckpointError"
-    assert isinstance(result.stdout, str), f"git {argv} printed {type(result.stdout)}, not text"
-    return result.stdout
+    assert isinstance(stdout, str), f"git {argv} printed {type(stdout)}, not text"
+    return stdout
 
 
 def repository_root(cwd: Path) -> Path:
@@ -213,11 +230,13 @@ def unavailable_reason(cwd: Path, *, dirty_ok: bool = False) -> str | None:
     nested = nested_repositories(root)
     committed = has_commit(root)
     clean = is_clean(root) or dirty_ok
-    changed = [] if clean else uncommitted(root)
+    changed = uncommitted(root) if committed and not clean else []
+    unwatched = unwatched_edits(root) if committed else []
     reasons = [
         (not committed, "the repository has no commit to restore"),
         (committed and not on_branch(root), "HEAD is detached, so a checkpoint would belong to no branch"),
         (operation is not None, f"a {operation} is in progress"),
+        (bool(unwatched), UNWATCHED_REASON.format(files=named(unwatched))),
         (bool(nested), f"the untracked nested repository {', '.join(nested)} would not be restored"),
         (not clean, "the working tree has uncommitted changes that a revert would discard" + (f": {named(changed)}" if changed else "")),
     ]
@@ -237,6 +256,27 @@ def uncommitted(root: Path) -> list[str]:
     assert not set(tracked) & inside, f"{set(tracked) & inside} are submodules but were listed as changed files"
     assert not set(untracked) & kept, f"{set(untracked) & kept} are nested repositories but were listed as untracked files"
     return tracked + untracked
+
+
+def unwatched_edits(root: Path) -> list[str]:
+    """The tracked files that git was told not to look at, as `assume-unchanged` or `skip-worktree` does, and that differ
+    from HEAD now: a person's edit to one is not in `git status`, and a hard reset would overwrite it. A flagged file
+    that is not in the work tree, as in a sparse checkout, or that equals HEAD, holds nothing to lose."""
+    entries = [entry for entry in run_git(root, ["ls-files", "-v", "-z"]).split("\0") if len(entry) > 2]
+    flagged = [entry[2:] for entry in entries if entry[0].islower() or entry[0] == SKIP_WORKTREE_TAG]
+    edited = []
+    for name in flagged:
+        if not (root / name).is_file():
+            continue
+        try:
+            committed = run_git(root, ["rev-parse", "--verify", "-q", f"HEAD:{name}"]).strip()
+        except CheckpointError:
+            committed = ""
+        if run_git(root, ["hash-object", "--", name]).strip() != committed:
+            edited.append(name)
+    assert all((root / name).is_file() for name in edited), f"{edited} are listed as edited but are not files in {root}"
+    assert len(edited) <= len(flagged), f"{len(edited)} edited files among {len(flagged)} flagged ones"
+    return edited
 
 
 def dirty_submodules(root: Path) -> list[str]:
@@ -329,7 +369,7 @@ def is_allowed(path: str, allow: tuple[str, ...]) -> bool:
 
 def staged_files(root: Path) -> list[tuple[str, str, str]]:
     """The mode, blob and path of each file the index adds or changes against HEAD, in git's order."""
-    fields = run_git(root, ["diff", "--cached", "--raw", "--no-abbrev", "-z", "--no-renames", "--diff-filter=AM"]).split("\0")
+    fields = run_git(root, ["diff", "--cached", "--raw", "--no-abbrev", "-z", "--no-renames", "--diff-filter=AMT"]).split("\0")
     files = [(header.split()[1], header.split()[3], fields[position + 1]) for position, header in enumerate(fields) if header.startswith(":")]
     assert all(len(blob) >= 40 for _, blob, _ in files), f"git listed a blob that is no object ID in {files}"
     assert all(path for _, _, path in files), f"git listed a staged file with no path in {files}"
@@ -362,7 +402,8 @@ def header_path(header: str) -> str:
 
 def added_lines(diff: str) -> Iterator[tuple[str, int, str]]:
     """The path, the line number in the new file and the text of each line that a zero-context diff adds. A hunk header
-    says how many old and new lines its hunk holds, so a line that begins like a file header is still a line."""
+    says how many old and new lines its hunk holds, so a line that begins like a file header is still a line. Raises
+    Unreadable when the diff is not in a form this reader knows."""
     path, line, old_left, new_left = "", 0, 0, 0
     for text in diff.split("\n"):
         if old_left or new_left:
@@ -375,23 +416,51 @@ def added_lines(diff: str) -> Iterator[tuple[str, int, str]]:
             path = header_path(text[4:])
         elif text.startswith("@@"):
             header = HUNK_HEADER.match(text)
-            assert header, f"git wrote the hunk header {text!r}, which this reader does not know"
+            if not header:
+                raise Unreadable(f"git wrote the hunk header {text[:80]!r}, which the secrets guard does not know; the added lines were not screened")
             old_left, line, new_left = int(header.group(1) or 1), int(header.group(2)), int(header.group(3) or 1)
-    assert old_left == 0 and new_left == 0, f"the diff ended inside a hunk, with {old_left} old and {new_left} new lines unread"
+    if old_left or new_left:
+        raise Unreadable(f"the diff ended inside a hunk, with {old_left} old and {new_left} new lines unread; the added lines were not screened")
+    assert line >= 0, f"the diff gave the line number {line} for {path}, which is no line"
+    assert path or line == 0, f"the diff added lines of a file it never named: {line} lines read"
 
 
-def secret_lines(root: Path, skipped: set[str]) -> list[Refusal]:
+def secret_lines(root: Path, skipped: set[str], unread: set[str] = frozenset()) -> list[Refusal]:
     """The first line of each file the index changes, apart from skipped, that adds a high-confidence secret, once for
-    each kind of secret. Only the lines the edit adds are read, from one diff of the whole index."""
-    diff = run_git(root, ["-c", "core.quotepath=false", "diff", "--cached", "--text", "-U0", "--no-color", "--no-ext-diff", "--no-renames", "--diff-filter=AM"])
+    each kind of secret. Only the lines the edit adds are read, from one diff of the whole index, which leaves out the
+    files in unread: they are too large to read. When the diff is not in a form this reader knows, every staged file
+    that is not skipped or unread is refused as unscreened, since a secret may be in it."""
+    exclusions = [f":(exclude,literal){path}" for path in sorted(unread)]
+    diff = run_git(root, ["-c", "core.quotepath=false", "diff", "--cached", "--text", "-U0", "--no-color", "--no-ext-diff", "--no-textconv",
+                          "--src-prefix=a/", "--dst-prefix=b/", "--no-renames", "--diff-filter=AMT", "--", ".", *exclusions])
     found: dict[tuple[str, str], int] = {}
-    for path, line, text in added_lines(diff):
-        hit = CONTENT_PATTERN.search(text) if path not in skipped else None
-        if hit and hit.lastgroup:
-            found.setdefault((path, CONTENT_RULES[int(hit.lastgroup.removeprefix("rule"))][0]), line)
+    try:
+        for path, line, text in added_lines(diff):
+            hit = (CONTENT_PATTERN.search(text) or CONTENT_PATTERN.search(text.replace("\0", ""))) if path not in skipped else None
+            if hit and hit.lastgroup:
+                found.setdefault((path, CONTENT_RULES[int(hit.lastgroup.removeprefix("rule"))][0]), line)
+    except Unreadable:
+        return [Refusal(path, UNREADABLE_RULE) for _, _, path in staged_files(root) if path not in skipped and path not in unread]
     assert all(number > 0 for number in found.values()), f"a secret was found on line 0 of {found}"
     assert not {path for path, _ in found} & skipped, f"a skipped file was read for secrets: {found}"
     return [Refusal(path, rule, number) for (path, rule), number in found.items()]
+
+
+def oversized_in_work_tree(root: Path) -> list[Refusal]:
+    """The files that are changed or new in the work tree and larger than MAX_STAGED_BYTES, found from their sizes on disk
+    before git reads any of them. A directory, a submodule and a file that vanished are no file of that size."""
+    names = [name for name in run_git(root, ["ls-files", "--modified", "--others", "--exclude-standard", "-z"]).split("\0") if name]
+    found = []
+    for name in dict.fromkeys(names):
+        try:
+            status = os.lstat(root / name)
+        except OSError:
+            continue
+        if stat.S_ISREG(status.st_mode) and status.st_size > MAX_STAGED_BYTES:
+            found.append(Refusal(name, SIZE_RULE))
+    assert all(refusal.rule == SIZE_RULE for refusal in found), f"{found} include a refusal that is no size refusal"
+    assert len(found) <= len(set(names)), f"{len(found)} oversized files among {len(set(names))} changed ones"
+    return found
 
 
 def refusals(root: Path, allow: tuple[str, ...]) -> list[Refusal]:
@@ -401,8 +470,9 @@ def refusals(root: Path, allow: tuple[str, ...]) -> list[Refusal]:
     files = staged_files(root)
     allowed = {path for _, _, path in files if is_allowed(path, allow)}
     named = [Refusal(path, NAME_RULE) for _, _, path in files if path not in allowed and name_rule(path)]
-    contents = secret_lines(root, allowed | {refusal.path for refusal in named})
-    found = [*named, *contents, *oversized(root, files)]
+    large = oversized(root, files)
+    contents = secret_lines(root, allowed | {refusal.path for refusal in named}, {refusal.path for refusal in large})
+    found = [*named, *contents, *large]
     assert len({(refusal.path, refusal.rule, refusal.line) for refusal in found}) == len(found), f"a refusal is listed twice in {found}"
     assert not any(refusal.path in allowed and refusal.rule != SIZE_RULE for refusal in found), f"an allowed file is refused by name or content in {found}"
     return found
@@ -424,6 +494,9 @@ def checkpoint(cwd: Path, allow: tuple[str, ...] = ()) -> str | None:
     nested = nested_repositories(root)
     if nested:
         raise CheckpointError(f"no checkpoint: the untracked nested repository {', '.join(nested)} would be committed as an empty link; ignore or remove it")
+    too_large = oversized_in_work_tree(root)
+    if too_large:
+        raise Refused(too_large)
     run_git(root, ["add", "-A"])
     files = [name for name in run_git(root, ["diff", "--cached", "--name-only", "-z"]).split("\0") if name]
     if not files:
@@ -526,6 +599,9 @@ def revert(cwd: Path, *, save_ref: bool = True, after_save: Callable[[], None] |
     if not has_commit(root):
         raise CheckpointError(f"no revert: {root} has no commit to restore; nothing was changed")
     refuse_unsafe(root, "revert")
+    unwatched = unwatched_edits(root)
+    if unwatched:
+        raise CheckpointError(f"no revert: {UNWATCHED_REASON.format(files=named(unwatched))}; nothing was changed")
     run_git(root, ["clean", "-nfd"], warnings_fail=True)
     names = uncommitted(root)
     saved, discarded = save_discarded(root, names, after_save) if save_ref and names else (None, names)
