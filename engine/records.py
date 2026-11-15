@@ -98,6 +98,11 @@ class State:
     environment: tuple[str, ...] = ()
     # Whether the session has edited since the commit its baselines belong to, so a first result now is no baseline.
     touched: bool = False
+    tcr: str | None = None
+    # The keys of the checks TCR holds an edit for: each failed with no earlier result to judge it by.
+    held: tuple[str, ...] = ()
+    # The fingerprint of the files the latest held edit left, so that a turn start can tell nobody changed them since.
+    held_fingerprint: str | None = None
 
 
 def string_tuple(value: object, where: str) -> tuple[str, ...]:
@@ -156,11 +161,12 @@ def state_from(value: object) -> State:
     if not isinstance(value, dict):
         raise StateError(f"the saved state is a JSON {type(value).__name__}, not an object{REBUILT}")
     reports, baseline, gate = value.get("reports", []), value.get("baseline", {}), value.get("gate", {})
-    told, fingerprint, head = value.get("told"), value.get("fingerprint"), value.get("head")
+    told, fingerprint, head, tcr = value.get("told"), value.get("fingerprint"), value.get("head"), value.get("tcr")
+    held_fingerprint = value.get("held_fingerprint")
     if not isinstance(reports, list) or not isinstance(baseline, dict) or not isinstance(gate, dict):
         raise StateError(f"the saved state's reports, baseline or gate is not a list, object and object{REBUILT}")
-    if not isinstance(value.get("failed", False), bool) or not all(item is None or isinstance(item, str) for item in (told, fingerprint, head)):
-        raise StateError(f"the saved state's failed, told, fingerprint or head has the wrong type{REBUILT}")
+    if not isinstance(value.get("failed", False), bool) or not all(item is None or isinstance(item, str) for item in (told, fingerprint, head, tcr, held_fingerprint)):
+        raise StateError(f"the saved state's failed, told, fingerprint, head, tcr or held_fingerprint has the wrong type{REBUILT}")
     if not isinstance(value.get("touched", False), bool):
         raise StateError(f"the saved state's touched is {value.get('touched')!r}, not a boolean{REBUILT}")
     if gate.get("inherited", "allow") not in ("allow", "block"):
@@ -176,6 +182,9 @@ def state_from(value: object) -> State:
         head=head,
         environment=string_tuple(value.get("environment", []), "the saved state's environment"),
         touched=value.get("touched", False),
+        tcr=tcr,
+        held=string_tuple(value.get("held", []), "the saved state's held checks"),
+        held_fingerprint=held_fingerprint,
     )
     assert len(state.reports) == len(reports) and set(state.baseline) == set(baseline), f"state kept {len(state.reports)} of {len(reports)} reports or lost baseline entries; read every saved entry"
     assert state.fingerprint == fingerprint, f"state changed its fingerprint {fingerprint} while read; copy it as saved"
@@ -204,6 +213,9 @@ def state_json(state: State) -> dict[str, object]:
         "head": state.head,
         "environment": list(state.environment),
         "touched": state.touched,
+        "tcr": state.tcr,
+        "held": list(state.held),
+        "held_fingerprint": state.held_fingerprint,
     }
     assert len(value["reports"]) == len(state.reports), f"state JSON holds {len(value['reports'])} of {len(state.reports)} reports; write every report"
     assert value["gate"] == {"inherited": state.inherited}, f"state JSON gate {value['gate']} does not hold {state.inherited}; write the gate as state_from reads it"

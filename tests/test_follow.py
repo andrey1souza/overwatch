@@ -103,6 +103,36 @@ class FollowTests(unittest.TestCase):
         self.assertIn("RESULT: FAIL", json.dumps(line))
         self.assertEqual((line["overwatch"]["guarded"], line["overwatch"]["waking"]), (True, False))
 
+    def start_tcr_session(self) -> None:
+        """Commits the project in TCR mode and starts the session on that clean commit, with its passing baseline."""
+        override = json.loads((self.project / ".overwatch.json").read_text())
+        (self.project / ".overwatch.json").write_text(json.dumps({**override, "mode": "tcr"}))
+        git = ["git", "-C", str(self.project), "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
+        subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+        subprocess.run([*git, "commit", "-q", "-m", "start"], check=True, capture_output=True)
+        self.settle_baseline()
+        assert json.loads((self.project / ".overwatch.json").read_text())["mode"] == "tcr", f"{self.project} does not run TCR"
+        assert not subprocess.run(["git", "-C", str(self.project), "status", "--porcelain"], capture_output=True, text=True).stdout, f"{self.project} is not clean"
+
+    def agent_writes(self, name: str) -> Path:
+        """The agent's edit: a new file in the project, which the editing tool's PreToolUse has announced."""
+        self.hook("PreToolUse", "Edit")
+        edit = self.project / name
+        edit.write_text("the agent's edit\n")
+        assert edit.read_text() == "the agent's edit\n", f"{edit} does not hold the edit"
+        assert edit.is_relative_to(self.project), f"{edit} is outside the project {self.project}"
+        return edit
+
+    def test_a_failure_the_follower_reads_is_never_judged_by_tcr(self) -> None:
+        self.start_tcr_session()
+        follower = self.start_follower()
+        edit = self.agent_writes("edit.txt")
+        self.break_build()
+        line = self.next_line(follower)
+        self.assertIn("RESULT: FAIL", json.dumps(line))
+        self.assertNotIn("TCR reverted", json.dumps(line))
+        self.assertTrue(edit.exists())
+
     def test_follow_stops_with_the_process_that_started_it(self) -> None:
         pid = self.orphaned_follower()
         self.assertFalse(eventually(lambda: is_running(pid), lambda running: not running, 2 * engine.PARENT_SECONDS + 2))
