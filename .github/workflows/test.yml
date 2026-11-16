@@ -52,6 +52,8 @@ jobs:
       - name: Model check the timing spec
         if: steps.spec.outputs.changed == 'true'
         uses: benomahony/tla-check@7dab51c86bc6223aa2f62e7acb98050bb429f71f # v0.1.0
+        with:
+          configs: spec/Overwatch.cfg spec/IntegrationLifecycle.cfg spec/IntegrationContract.cfg
 
       - name: Verify implementation traces come from the current model
         if: steps.spec.outputs.changed == 'true'
