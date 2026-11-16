@@ -105,7 +105,13 @@ HALF_A_REVERT_ABORT = ("    /\\ tcr' = \"unavailable\" /\\ ck' = head\n"
 FRESH_FAILURES = "FreshFailures == report.failures \\ baseline.failures"
 EVERY_FAILURE_IS_FRESH = "FreshFailures == report.failures"
 NAMED_FAILURE_MUTANT = ("a-revert-notice-names-the-inherited-failures-too", (FRESH_FAILURES, EVERY_FAILURE_IS_FRESH), "RevertNoticeNamesNewFailures", '{"a", "b"}')
-PROPERTY_MUTANTS = (NAMED_FAILURE_MUTANT,("a-failed-commit-moves-the-restore-point", (FAILED_COMMIT, HALF_A_FAILED_COMMIT), "CheckpointIsAllOrNothing"),
+UNPROVEN = "Unproven == report.failures # {} /\\ (firstResult \\/ held \\/ TimedOut \\in report.failures)"
+TIMEOUT_IS_PROVEN = "Unproven == report.failures # {} /\\ (firstResult \\/ held)"
+PULL_KEEPS_THE_HOLD = ("    /\\ held' = FALSE /\\ heldAt' = NoHold\n    /\\ quiet' = TRUE /\\ pending' = <<>>\n    /\\ from' = IF busy",
+                       "    /\\ held' = held /\\ heldAt' = heldAt\n    /\\ quiet' = TRUE /\\ pending' = <<>>\n    /\\ from' = IF busy")
+TIMEOUT_MUTANT = ("a-timed-out-check-is-judged-like-any-other", (UNPROVEN, TIMEOUT_IS_PROVEN), "ATimedOutCheckOnlyHolds")
+PULL_MUTANT = ("a-pull-keeps-the-hold", PULL_KEEPS_THE_HOLD, "APullClearsTheHold")
+PROPERTY_MUTANTS = (NAMED_FAILURE_MUTANT, TIMEOUT_MUTANT, PULL_MUTANT,("a-failed-commit-moves-the-restore-point", (FAILED_COMMIT, HALF_A_FAILED_COMMIT), "CheckpointIsAllOrNothing"),
                     ("an-aborted-revert-moves-the-restore-point", (REVERT_ABORT, HALF_A_REVERT_ABORT), "RevertIsAllOrNothing"))
 REACHABLE = ("NeverReverts", "NeverCheckpoints", "NeverCheckpointFails", "NeverRevertAborts", "NeverAbortsACommitWithWorkPending", "NeverHolds", "NeverObserves", "NeverPersonCommits",
              "NeverTellsRevert", "NeverTellsHold", "NeverPulls", "NeverHoldsATimeout", "NeverPullsWhileHeld", "NeverUnavailable", "NeverResumes", "NeverDirtyStart")
