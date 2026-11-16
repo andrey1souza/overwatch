@@ -131,3 +131,8 @@ def revert(cwd: Path, *, save_ref: bool = True, after_save: Callable[[], None] |
     assert has_commit(root), f"{root} lost its commit during the revert"
     assert saved is None or save_ref, f"a revert saved {saved} without being asked to"
     return saved
+
+
+if __name__ == "__main__":
+    from checkpoint_command import main
+    sys.exit(main(sys.argv[1:]))
