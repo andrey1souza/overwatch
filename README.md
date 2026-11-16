@@ -318,7 +318,9 @@ When a check writes files that git does not ignore while it runs, Overwatch judg
 With `gate.inherited` set to `"block"`, an edit that leaves an inherited check failing is neither committed nor reverted, so the working tree is dirty at the next turn start and TCR becomes unavailable until you commit.
 
 A host stops a hook that runs too long.
-TCR commits only when the checks left at least 30 seconds of `tcr.hostLimitSeconds`, and reverts only when they left 150, which is three saves, the reset and the clean at the 30 seconds each git command may take; otherwise it holds the edit and says how long the checks took.
+TCR commits only when the checks left at least 30 seconds of `tcr.hostLimitSeconds`, and reverts only when they left 150, which is three saves, the reset and the clean at the 30 seconds each git command may take.
+A checkpoint runs about a dozen git commands and a revert up to about forty, each limited to 30 seconds, so these reserves assume a normal repository and are not a sum of the limits; in a very large repository a phase can outlast its reserve, and the host may then stop the hook.
+Otherwise it holds the edit and says how long the checks took.
 If `git` needs more than 5 seconds to list the files, Overwatch says so and does nothing, TCR included, until it is faster.
 
 TCR needs Python 3.11 or newer on both paths: `engine/discovery.py` imports `typing.Required`, so on an older Python the hook of Codex, OpenCode and Pi fails before TCR starts, and the checkpoint command that Claude Code runs through `python3` on `PATH` answers `overwatch needs python 3.11 or newer` and nothing is committed or reverted.
