@@ -12,14 +12,16 @@ import os
 import runpy
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 from pathlib import Path
 
 import paths
 import checkpoint
+import tcr
 import test_tcr
-from codex_hook import CodexHook, read, write
+from codex_hook import HOOK, CodexHook, read, write
 from test_checkpoint import git, isolate_git, remove, restore_git
 from test_checkpoint_guard import timed
 from test_tcr import EDITING, FAILING
@@ -45,6 +47,16 @@ ENCODED_KEYS = {
 }
 SECRET_NAMES = (".pgpass", ".git-credentials", "release.keystore", "terraform.tfstate", "secrets.yml", "kubeconfig", "sub/kubeconfig")
 OLD_PYTHON = (3, 9, 0)
+
+RAW_HEADER_NAME = ":100644 100644 " + "a" * 40 + " " + "b" * 40 + " M"
+ODD_NAMES = {
+    "a colon first": ":x",
+    "the shape of a raw header": RAW_HEADER_NAME,
+    "a space": "has space.txt",
+    "a line feed": "has\nline.txt",
+    "unicode": "caf\u00e9\u2603.txt",
+    "a colon in the middle": "a:b.txt",
+}
 
 TRUNCATED_DIFF = "+++ b/f.txt\n@@ -0,0 +1,2 @@\n+one\n"
 
@@ -103,6 +115,41 @@ class GuardCaseTests(unittest.TestCase):
         assert all(isinstance(text, str) and text for text in found), f"a refusal came back as no text: {found}"
         assert len(set(found)) == len(found), f"a refusal came back twice: {found}"
         return found
+
+    def test_every_staged_file_is_listed_with_its_own_path_whatever_its_name_starts_with(self) -> None:
+        for label, name in ODD_NAMES.items():
+            with self.subTest(label):
+                put_data(self.repo / name, b"content\n")
+                git(self.repo, ["add", "-A"])
+                listed = [path for _, _, path in checkpoint.staged_files(self.repo)]
+                git(self.repo, ["reset", "-q"])
+                remove(self.repo / name)
+                self.assertEqual(listed, [name])
+
+    def test_a_type_change_to_a_colon_name_is_listed_once(self) -> None:
+        link = self.repo / ":link"
+        link.symlink_to("a.txt")
+        git(self.repo, ["add", "-A"])
+        git(self.repo, ["commit", "-q", "-m", "link"])
+        remove(link)
+        put_data(link, b"now a file\n")
+        git(self.repo, ["add", "-A"])
+        self.assertEqual([(mode, path) for mode, _, path in checkpoint.staged_files(self.repo)], [("100644", ":link")])
+
+    def test_a_checkpoint_of_a_file_named_like_a_raw_header_commits_it(self) -> None:
+        for name in (":x", RAW_HEADER_NAME):
+            put_data(self.repo / name, b"content\n")
+        self.assertIsNotNone(checkpoint.checkpoint(self.repo))
+        self.assertEqual(git(self.repo, ["status", "--porcelain"]), "")
+
+    def test_an_unexpected_exception_while_screening_unstages_everything_and_raises_a_checkpoint_error(self) -> None:
+        put_data(self.repo / "new.txt", b"content\n")
+        with unittest.mock.patch.object(checkpoint, "refusals", side_effect=IndexError("boom")):
+            with self.assertRaises(checkpoint.CheckpointError) as caught:
+                checkpoint.checkpoint(self.repo)
+        self.assertIn("boom", str(caught.exception))
+        self.assertEqual(git(self.repo, ["diff", "--cached", "--name-only"]), "")
+        self.assertEqual(read(self.repo / "new.txt"), "content\n")
 
     def test_a_secret_is_found_whatever_line_endings_the_file_has(self) -> None:
         for number, (label, (content, line)) in enumerate(LINE_ENDINGS.items()):
@@ -273,6 +320,36 @@ class GuardCaseHookTests(CodexHook):
         self.assertIn("diff.algorithm", self.context(output))
         self.assertEqual(self.subjects(), ["start"])
         self.assertEqual(read(result), FAILING)
+
+    def call_here(self, event: str, **fields: object) -> dict[str, object]:
+        """Sends one hook event to the hook script inside this process, so that a test can make a module of the engine fail."""
+        payload = json.dumps({"session_id": "session-1", "cwd": str(self.cwd), "hook_event_name": event, **fields})
+        printed = io.StringIO()
+        environment = {"PATH": f"{self.bin}{os.pathsep}{os.defpath}", "PLUGIN_DATA": str(self.data)}
+        with unittest.mock.patch.dict(os.environ, environment), unittest.mock.patch.object(sys, "stdin", io.StringIO(payload)), \
+                unittest.mock.patch.object(tcr, "PROCESS_STARTED", time.monotonic()), unittest.mock.patch.object(tcr, "PROCESS_STARTED_WALL", time.time()):
+            with contextlib.redirect_stdout(printed), contextlib.suppress(SystemExit):
+                runpy.run_path(str(HOOK), run_name="__main__")
+        assert printed.getvalue().strip(), f"the hook printed nothing for the event {event}"
+        output = json.loads(printed.getvalue())
+        assert isinstance(output, dict), f"the hook printed {printed.getvalue()!r}, which is no JSON object"
+        return output
+
+    def test_an_unexpected_exception_in_the_checkpoint_is_told_and_pauses_tcr_without_a_traceback(self) -> None:
+        self.start()
+        put_data(self.cwd / "new.txt", b"content\n")
+        with unittest.mock.patch.object(checkpoint, "refusals", side_effect=IndexError("boom")):
+            output = self.call_here("PostToolUse", **EDITING)
+        self.assertIn("TCR is unavailable", self.context(output))
+        self.assertIn("boom", self.context(output))
+        self.assertEqual(git(self.cwd, ["diff", "--cached", "--name-only"]), "")
+
+    def test_an_exception_from_anywhere_in_the_checkpoint_step_pauses_tcr_and_is_told(self) -> None:
+        self.start()
+        put_data(self.cwd / "new.txt", b"content\n")
+        with unittest.mock.patch.object(checkpoint, "checkpoint", side_effect=IndexError("boom")):
+            output = self.call_here("PostToolUse", **EDITING)
+        self.assertIn("TCR stopped on an unexpected IndexError: boom", self.context(output))
 
 
 if __name__ == "__main__":

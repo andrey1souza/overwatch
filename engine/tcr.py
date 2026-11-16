@@ -397,8 +397,10 @@ def decide(turn: Turn, old: State, current: State) -> TcrStep:
         return TcrStep(current) if old.tcr is None else TcrStep(replace(current, tcr=None, held=()), (TCR_OFF,))
     try:
         return judge(turn, old, current, read_settings(turn.override))
-    except checkpoint.CheckpointError as error:
-        reason = str(error)
+    except ConfigurationError:
+        raise
+    except checkpoint.SCREENING_FAILURES as error:
+        reason = str(error) if isinstance(error, checkpoint.CheckpointError) else f"TCR stopped on an unexpected {type(error).__name__}: {error}"
         step = TcrStep(replace(current, tcr=reason), tcr_notice(old.tcr, reason))
         assert step.state.tcr != TCR_ACTIVE, f"a git failure left TCR active: {reason!r}"
         assert old.tcr == reason or step.notices, f"the agent was not told that TCR stopped: {reason!r}"

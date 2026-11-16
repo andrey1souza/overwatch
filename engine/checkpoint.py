@@ -8,6 +8,7 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import codecs
+import contextlib
 import json
 import os
 import re
@@ -375,7 +376,10 @@ def is_allowed(path: str, allow: tuple[str, ...]) -> bool:
 def staged_files(root: Path) -> list[tuple[str, str, str]]:
     """The mode, blob and path of each file the index adds or changes against HEAD, in git's order."""
     fields = run_git(root, ["diff", "--cached", "--raw", "--no-abbrev", "-z", "--no-renames", "--diff-filter=AMT"]).split("\0")
-    files = [(header.split()[1], header.split()[3], fields[position + 1]) for position, header in enumerate(fields) if header.startswith(":")]
+    assert fields[-1] == "", f"git ended its list of staged files with {fields[-1]!r}, not a NUL"
+    headers, names = fields[:-1:2], fields[1:-1:2]
+    assert len(headers) == len(names) and all(header.startswith(":") for header in headers), f"git listed headers and paths that do not pair up: {fields}"
+    files = [(header.split()[1], header.split()[3], name) for header, name in zip(headers, names)]
     assert all(len(blob) >= 40 for _, blob, _ in files), f"git listed a blob that is no object ID in {files}"
     assert all(path for _, _, path in files), f"git listed a staged file with no path in {files}"
     return files
@@ -483,6 +487,17 @@ def refusals(root: Path, allow: tuple[str, ...]) -> list[Refusal]:
     return found
 
 
+SCREENING_FAILURES = (CheckpointError, AssertionError, ValueError, LookupError, TypeError, OSError, subprocess.SubprocessError, RuntimeError)
+
+
+def unstage(root: Path) -> None:
+    """Takes everything out of the index, leaving the work tree as it is; a failure to do so is left for the commit to report."""
+    assert root.is_dir(), f"{root} is not a directory to unstage in"
+    with contextlib.suppress(CheckpointError):
+        run_git(root, ["reset", "-q"])
+    assert root.is_dir(), f"{root} went away while its index was emptied"
+
+
 def checkpoint(cwd: Path, allow: tuple[str, ...] = ()) -> str | None:
     """Commits every file that is not ignored, new files included, and returns the new commit, or None when there
     was nothing to commit. The repository's own commit hooks and signing apply. When the commit fails, raises
@@ -503,10 +518,16 @@ def checkpoint(cwd: Path, allow: tuple[str, ...] = ()) -> str | None:
     if too_large:
         raise Refused(too_large)
     run_git(root, ["add", "-A"])
-    files = [name for name in run_git(root, ["diff", "--cached", "--name-only", "-z"]).split("\0") if name]
+    try:
+        files = [name for name in run_git(root, ["diff", "--cached", "--name-only", "-z"]).split("\0") if name]
+        found = refusals(root, allow) if files else []
+    except SCREENING_FAILURES as error:
+        unstage(root)
+        if isinstance(error, CheckpointError):
+            raise
+        raise CheckpointError(f"no checkpoint: screening the staged files failed with {type(error).__name__}: {error}; nothing was committed and the changes are unstaged") from error
     if not files:
         return None
-    found = refusals(root, allow)
     if found:
         run_git(root, ["reset", "-q"])
         raise Refused(found)
