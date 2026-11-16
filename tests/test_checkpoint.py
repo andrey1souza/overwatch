@@ -14,6 +14,7 @@ from pathlib import Path
 
 from paths import ROOT
 import checkpoint
+import saved_revert
 from codex_hook import read
 from workspace import is_committed
 
@@ -396,7 +397,9 @@ class CheckpointTests(unittest.TestCase):
                 raise checkpoint.CheckpointError("git took longer than 30 seconds")
             return listed(root)
 
-        with unittest.mock.patch.object(checkpoint, "uncommitted", fail_the_second_listing), self.assertRaises(checkpoint.CheckpointError) as caught:
+        with (unittest.mock.patch.object(checkpoint, "uncommitted", fail_the_second_listing),
+              unittest.mock.patch.object(saved_revert, "uncommitted", fail_the_second_listing),
+              self.assertRaises(checkpoint.CheckpointError) as caught):
             checkpoint.revert(self.repo)
         self.assertIn("took longer", str(caught.exception))
         self.assertEqual(git(self.repo, ["for-each-ref", "refs/overwatch"]), "")

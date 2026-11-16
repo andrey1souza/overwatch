@@ -19,6 +19,7 @@ from pathlib import Path
 
 import paths
 import checkpoint
+import secrets_guard
 import tcr
 import test_tcr
 from codex_hook import HOOK, CodexHook, read, write
@@ -171,7 +172,7 @@ class GuardCaseTests(unittest.TestCase):
         put_data(self.repo / "f.txt", b"harmless\n")
         git(self.repo, ["add", "-A"])
         real = checkpoint.run_git
-        with unittest.mock.patch.object(checkpoint, "run_git", lambda cwd, argv, **kwargs: UNREADABLE_DIFF if "--text" in argv else real(cwd, argv, **kwargs)):
+        with unittest.mock.patch.object(secrets_guard, "run_git", lambda cwd, argv, **kwargs: UNREADABLE_DIFF if "--text" in argv else real(cwd, argv, **kwargs)):
             self.assertEqual(self.refusals(), [f"f.txt ({checkpoint.UNREADABLE_RULE})"])
 
     def test_a_truncated_diff_raises_a_checkpoint_error_not_an_assertion(self) -> None:
@@ -202,7 +203,7 @@ class GuardCaseTests(unittest.TestCase):
             assert isinstance(output, str), f"git {argv} printed {output!r}"
             return output
 
-        with unittest.mock.patch.object(checkpoint, "run_git", counting):
+        with unittest.mock.patch.object(secrets_guard, "run_git", counting):
             self.assertEqual(self.refusals(), [f"big.bin ({checkpoint.SIZE_RULE})"])
         self.assertLess(sum(printed), BYTES_READ_FOR_A_REFUSAL)
 
