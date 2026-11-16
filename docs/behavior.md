@@ -240,7 +240,7 @@ Tags: baseline, strict.
 - **When** [The agent attempts completion, publication, and inspection](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L184).
 - **Then** [Completion and publication are denied while inspection remains available](https://github.com/benomahony/overwatch/blob/main/tests/acceptance/world.py#L178).
 
-### Modes and limits
+### TCR mode
 
 #### TCR mode commits an edit that keeps the checks green
 
