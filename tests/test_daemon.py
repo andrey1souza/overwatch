@@ -115,7 +115,7 @@ class DaemonTests(unittest.TestCase):
         self.assertNotEqual(holder, os.getpid())
         os.kill(holder, signal.SIGTERM)
         eventually(lambda: self.alive(watcher), lambda alive: not alive)
-        self.assertFalse(daemon.socket_path(self.project, self.data).exists())
+        eventually(lambda: daemon.socket_path(self.project, self.data).exists(), lambda exists: not exists)
 
     def watch_with(self, source: str) -> None:
         """Makes the project's only watcher run source, a Python script, in place of the fixture watcher."""
