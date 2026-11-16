@@ -14,7 +14,7 @@ from pathlib import Path
 
 from paths import ROOT
 import checkpoint
-from test_checkpoint import git, isolate_git, make_dir, put, remove, restore_git
+from checkpoint_repository import git, isolate_git, make_dir, put, remove, restore_git
 from discovery import ConfigurationError
 from tcr_settings import read_settings
 from codex_hook import read

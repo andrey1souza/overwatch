@@ -23,7 +23,7 @@ import records
 import sessions
 import tcr
 import workspace
-from test_checkpoint import git, isolate_git, make_dir, put, restore_git, set_environment, set_mode
+from checkpoint_repository import git, isolate_git, make_dir, put, restore_git, set_environment, set_mode
 from codex_hook import CodexHook, read, write
 import test_tcr
 from test_tcr import EDITING, FAILING, PASSING

@@ -9,7 +9,7 @@ import os
 import unittest
 from pathlib import Path
 
-from test_checkpoint import git, install_hook, isolate_git, restore_git
+from checkpoint_repository import git, install_hook, isolate_git, restore_git
 from codex_hook import CodexHook, read, write
 
 PASSING = "RESULT: PASS"

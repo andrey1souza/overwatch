@@ -23,7 +23,7 @@ import secrets_guard
 import tcr
 import test_tcr
 from codex_hook import HOOK, CodexHook, read, write
-from test_checkpoint import git, isolate_git, remove, restore_git
+from checkpoint_repository import git, isolate_git, remove, restore_git
 from test_checkpoint_guard import timed
 from test_tcr import EDITING, FAILING
 from test_tcr_hardening import AWS_KEY
