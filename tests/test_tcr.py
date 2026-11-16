@@ -68,6 +68,16 @@ class TcrHookTests(CodexHook):
         self.assertEqual(git(self.cwd, ["status", "--porcelain"]), "")
         self.assertNotIn("reverted", self.context(output))
 
+    def test_an_edit_that_changes_no_content_makes_no_commit_and_leaves_tcr_on(self) -> None:
+        result = self.start()
+        write(result, PASSING, PASSING)
+        output, _ = self.call("PostToolUse", **EDITING)
+        self.assertEqual(self.subjects(), ["start"])
+        self.assertNotIn("unavailable", self.context(output))
+        write(result, f"{PASSING} again", PASSING)
+        self.call("PostToolUse", **EDITING)
+        self.assertEqual(self.subjects()[0], "tcr: result.txt")
+
     def test_an_edit_that_adds_a_failure_is_reverted_and_told(self) -> None:
         result = self.start()
         write(result, FAILING, PASSING)
