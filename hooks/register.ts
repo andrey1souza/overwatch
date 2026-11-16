@@ -14,7 +14,7 @@ import {
 } from './watchers'
 import { repositoryOf, COMMIT, commitOf, isCommitted, findIn } from './project'
 import { toolchainOf, replacedToolchain, stopIfReplaced, restartOnReplaced } from './toolchain'
-import type { LiveWatcher, State, Run, Restart, Ending } from './state'
+import { initialState, liveWatcher, type LiveWatcher, type State, type Run, type Restart, type Ending } from './state'
 import { QUIET_MS, setStatus, schedule, queue, queueEnvironment, writeLog, deliver } from './delivery'
 import { projectPolicy, guardedFailure, completeTurn } from './completion'
 import { EDITING_TOOLS, cancelJudgement, decideTcr, leaveUnjudged, noteFiles } from './judgement'
@@ -301,32 +301,6 @@ async function stop($: EngineInterface, state: State) {
   $.ui.status(undefined)
 }
 
-/** A new live for the watcher of one language in dir, watching nothing yet. */
-const liveWatcher = (key: string, dir: string): LiveWatcher => {
-  assert(key.endsWith(`:${dir}`), `live watcher key ${key} does not end with its directory ${dir}; key live watchers by language and dir`)
-  const made: LiveWatcher = {
-    watcher: undefined,
-    report: undefined,
-    key,
-    dir,
-    isWatching: false,
-    retryAt: 0,
-    quickExits: 0,
-    kill: undefined,
-    toolchain: undefined,
-    changed: undefined,
-    wasFailing: false,
-    baseline: undefined,
-    isEdited: false,
-    isEditedSinceResult: false,
-    origin: 'session',
-    told: undefined,
-    status: undefined,
-  }
-  assert(made.key === key && made.dir === dir, `live watcher for ${key} was made with key ${made.key} and dir ${made.dir}`)
-  return made
-}
-
 /**
  * Notes the commit the session's baselines belong to, and takes fresh ones once it moves under the session, as a
  * pull or checkout brings in failures the agent did not make. Each check reruns, stopping a run still reading the
@@ -383,38 +357,6 @@ function startTurn(state: State, text: string) {
   assert(typeof text === 'string', `a turn started with ${JSON.stringify(text)}, not its prompt text; pass turn.start's text`)
   state.isCorrectionTurn = state.completionCorrection !== undefined && text === state.completionCorrection
   assert(!state.isCorrectionTurn || text.startsWith('overwatch: '), `the turn ${JSON.stringify(text)} was taken for overwatch's correction; only its own text starts one`)
-}
-
-/** A session's state before it starts: no directory, liveWatchers or messages. */
-const initialState = (): State => {
-  const state: State = {
-    cwd: undefined,
-    epoch: 0,
-    isTurnRunning: false,
-    isPromptQueued: false,
-    head: undefined,
-    completionCorrection: undefined,
-    isCorrectionTurn: false,
-    isEditedSinceCorrection: false,
-    isToldThisTurn: false,
-    outbox: new Map(),
-    flushing: undefined,
-    environment: new Set(),
-    isFinding: false,
-    finding: undefined,
-    isFindDue: false,
-    onWatcherEnded: undefined,
-    liveWatchers: [],
-    tcr: initialTcr(),
-    tcrDeciding: undefined,
-    tcrTimer: undefined,
-    tcrTicket: 0,
-    tcrKills: new Set(),
-    tcrHeld: new Set(),
-  }
-  assert(state.liveWatchers.length === 0 && state.outbox.size === 0, `a new session starts with ${state.liveWatchers.length} liveWatchers and ${state.outbox.size} messages`)
-  assert(!state.isTurnRunning && !state.isFinding, 'a new session starts with a turn or search running')
-  return state
 }
 
 export const register: Register = on => {

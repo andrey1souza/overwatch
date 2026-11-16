@@ -12,6 +12,7 @@ import { expect, test } from 'claude-code/testing'
 import { assert } from '../hooks/assert'
 import { CLEAN, WARNINGS, type Workspace } from './fixtures/tcr'
 import { inSession, personWrites, told, DECIDE_MS, SETTLE_MS, type Kit, type Project } from './fixtures/tcr-session'
+import { onMain, pull } from './fixtures/tcr-move'
 import { TCR_TRACES } from './fixtures/tcr-traces'
 
 type State = { head: number; tcr: 'active' | 'unavailable' | 'off'; clean: boolean; held: boolean; saved: number; person: string }
@@ -25,9 +26,6 @@ const SCHEDULES = TCR_TRACES as unknown as Schedule[]
 const REPLAYED_AT_LEAST = 20
 const HANG_LIMIT_MS = 1500
 const TIMEOUT_ENV = { OVERWATCH_TCR_TIMEOUT_SCALE: '0.002' }
-const BEFORE_MOVE = 'a'.repeat(40)
-const AFTER_MOVE = 'b'.repeat(40)
-const METADATA = '/repo/.git'
 const REFUSED_KEY = { path: 'key.txt', rule: 'private key', line: 1 }
 const FAILED_COMMIT = 'the checkpoint commit failed and its changes are left staged: refused'
 const UNFINISHED_REVERT = 'the files kept changing while the revert saved them, so nothing was deleted'
@@ -69,22 +67,6 @@ function reportAt({ schedule, replay }: Run): string {
   assert(replay.version >= 0 && Number.isInteger(replay.version), `the replay is at version ${replay.version}`)
   assert(schedule.events.length > 0, `${schedule.name} has no events to replay`)
   return reportOf(schedule, schedule.truth[replay.version] ?? [], replay.version)
-}
-
-/** The repository sits at BEFORE_MOVE on main, as the plugin reads it from its metadata directory. */
-function onMain(workspace: Workspace) {
-  workspace.files.set(`${METADATA}/HEAD`, 'ref: refs/heads/main\n')
-  workspace.files.set(`${METADATA}/packed-refs`, `${BEFORE_MOVE} refs/heads/main\n`)
-  assert(workspace.files.get(`${METADATA}/packed-refs`)?.startsWith(BEFORE_MOVE), `main was not placed at ${BEFORE_MOVE} in ${METADATA}`)
-  assert(!workspace.files.has(`${METADATA}/logs/HEAD`), `${METADATA} starts with a history of moves; start it with none`)
-}
-
-/** A teammate's commit reaches the clean tree by a pull, which the reflog records as a pull and not a commit. */
-function pull({ workspace }: Project) {
-  workspace.files.set(`${METADATA}/refs/heads/main`, `${AFTER_MOVE}\n`)
-  workspace.files.set(`${METADATA}/logs/HEAD`, `${BEFORE_MOVE} ${AFTER_MOVE} Dev <dev@example.com> 1700000001 +0000\tpull: Fast-forward\n`)
-  assert(workspace.files.get(`${METADATA}/refs/heads/main`)?.trim() === AFTER_MOVE, `main did not move to ${AFTER_MOVE}`)
-  assert(workspace.files.get(`${METADATA}/logs/HEAD`)?.includes('pull: '), 'the reflog does not record the move as a pull')
 }
 
 function seenPerson(workspace: Workspace) {
