@@ -26,7 +26,7 @@ from codex_hook import HOOK, CodexHook, read, write
 from checkpoint_repository import git, isolate_git, remove, restore_git
 from test_checkpoint_guard import timed
 from test_tcr import EDITING, FAILING
-from test_tcr_hardening import AWS_KEY
+from tcr_hardening_case import AWS_KEY
 
 ONE_MEBIBYTE = 1024 * 1024
 OVERSIZED_BYTES = checkpoint.MAX_STAGED_BYTES + ONE_MEBIBYTE

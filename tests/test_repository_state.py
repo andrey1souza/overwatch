@@ -7,9 +7,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from checkpoint_repository import UNFINISHED, RepositoryCase, clear_marker, git, make_dir, present, put
 import checkpoint
 from codex_hook import read
-from checkpoint_repository import UNFINISHED, RepositoryCase, clear_marker, git, make_dir, present, put
 
 
 class RepositoryStateTests(RepositoryCase):

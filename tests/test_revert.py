@@ -9,10 +9,10 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from checkpoint_repository import RepositoryCase, git, make_dir, present, put, restore_git, set_environment, set_mode
 import checkpoint
 import saved_revert
 from codex_hook import read
-from checkpoint_repository import RepositoryCase, git, make_dir, present, put, restore_git, set_environment, set_mode
 
 
 class RevertTests(RepositoryCase):

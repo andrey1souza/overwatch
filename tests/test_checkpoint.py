@@ -7,11 +7,11 @@ from __future__ import annotations
 import json
 import unittest
 
+from checkpoint_repository import RepositoryCase, git, install_hook, make_dir, put, remove
 from paths import ROOT
 import checkpoint
 from codex_hook import read
 from workspace import is_committed
-from checkpoint_repository import RepositoryCase, git, install_hook, make_dir, put, remove
 
 
 class CheckpointTests(RepositoryCase):

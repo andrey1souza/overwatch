@@ -5,14 +5,17 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import os
+import sys
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
+import paths
 import checkpoint
 from codex_hook import read
 
+assert str(paths.ROOT / "engine") in sys.path, f"{paths.ROOT / 'engine'} is not on sys.path {sys.path}; paths puts engine/ there so engine imports by name"
 HOOK_MODE = 0o755
 # What git leaves in its directory while an operation is unfinished, and what that operation is called.
 UNFINISHED = {"MERGE_HEAD": "merge", "CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert", "BISECT_LOG": "bisect",
