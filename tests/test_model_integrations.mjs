@@ -35,3 +35,13 @@ for (const kind of ['pi', 'opencode1', 'opencode2']) {
     })
   }
 }
+
+test("opencode1 hands the model a failure its first edit made while the session's start check ran", async t => {
+  const host = await integrationHost(t, 'opencode1')
+  host.build(['broken'])
+  await host.repair()
+  host.overlap()
+  await host.start()
+  await host.read()
+  assert(host.observation().contexts.some(text => text.includes('broken')), `the model never saw the failure: ${JSON.stringify(host.observation())}`)
+})
