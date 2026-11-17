@@ -38,6 +38,7 @@ def cases() -> list[dict]:
         ('restart clears previous session', 'Report Stop Restart Report Deliver', False, FAILED, EMPTY, 'allow', [], FAILED),
         ('restart restores new-failure guards', 'Stop Restart StartTurn Begin Finish Report Deliver RequestComplete Respond', False, EMPTY, EMPTY, 'allow', [], FAILED),
         ('shutdown during a held completion', 'RequestComplete Poll Stop LateFinish Deliver', True, FAILED, EMPTY, 'allow', [], FAILED),
+        ('failure first read at session start reaches the model', 'RequestRepair Respond Ack StartReport Report Deliver', False, FAILED, EMPTY, 'allow', [], FAILED),
     ]
     for policy in ('allow', 'block'):
         for scope in ([], ['primary'], ['secondary']):
@@ -45,10 +46,11 @@ def cases() -> list[dict]:
                              False, FAILED, FAILED, policy, scope, FAILED))
     # Only hosts that see another process's change before settling can replay one; Pi and OpenCode 1 cannot.
     noticing = {'claude', 'codex', 'opencode2', 'neovim'}
+    starting = {'codex', 'opencode1', 'opencode2'}
     rows = [{'host': host, 'name': name, 'events': events.split(), 'busy': busy,
              'inTurn': name != 'idle result delivery', 'reports': reports, 'baseline': baseline, 'inherited': inherited, 'selected': scope, 'next': after}
             for host in HOSTS for name, events, busy, reports, baseline, inherited, scope, after in programs
-            if host in noticing or 'Outside' not in events]
+            if (host in noticing or 'Outside' not in events) and (host in starting or 'StartReport' not in events)]
     assert len({(row['host'], row['name']) for row in rows}) == len(rows), 'Host contract case names must be unique'
     assert {row['host'] for row in rows} == set(HOSTS), f'Cases cover {[row["host"] for row in rows]}, expected {HOSTS}'
     return rows
@@ -84,6 +86,7 @@ Action == CASE Event = "RequestInspect" -> Request("inspect")
             [] Event = "Finish" -> FinishCheck(Cases[scenario].after)
             [] Event = "LateFinish" -> IF active THEN FinishCheck(Cases[scenario].after) ELSE UNCHANGED vars
             [] Event = "Report" -> Report
+            [] Event = "StartReport" -> StartReport
             [] Event = "Deliver" -> IF contextPending THEN Deliver ELSE UNCHANGED vars
             [] Event = "Stop" -> Stop
             [] Event = "Restart" -> Restart
@@ -156,6 +159,7 @@ INVARIANTS
  HostsWithoutIdleWakeStayIdle
  CorrectionRequestsAreDeduplicated
  PendingContextIsCurrent
+ SentContextReachedModel
  CompletionUsesHostCapability
  EditorOnlyReports
  Export
