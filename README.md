@@ -291,7 +291,8 @@ It does not see a secret that is split across lines, a bare secret, a JWT or a b
 There is no generic `key = "..."` rule, because that rule flagged ordinary code.
 Screening 1000 staged files is one `git diff`, and a test fails if it takes more than two seconds.
 
-TCR starts only on a clean tree, on a branch that has a commit, with no merge, rebase, cherry-pick, revert or bisect in progress, no untracked nested repository, no tracked file that is marked `assume-unchanged` or `skip-worktree` and differs from the latest commit, and at least one check configured.
+TCR starts only on a clean tree, on a branch that has a commit, with no merge, rebase, cherry-pick, revert or bisect in progress, no untracked nested repository, no tracked file that is marked `assume-unchanged` or `skip-worktree` and differs from the latest commit in content, in mode or in being a file or a link, and at least one check configured.
+A checkpoint and a revert refuse for the same reason, so that neither commits nor overwrites an edit that git does not show.
 Otherwise Overwatch tells the agent that TCR is unavailable, and why, and changes nothing.
 When the tree is dirty it names the files, and when a check wrote them, such as `report.xml`, it says that the checks changed the files while they ran and to add what a check writes to `.gitignore`.
 When the branch is `main` or `master` it tells the agent once that checkpoints land on it.

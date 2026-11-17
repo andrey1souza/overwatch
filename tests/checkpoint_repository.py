@@ -86,6 +86,19 @@ def remove(path: Path) -> None:
     assert not path.exists(), f"{path} is still there after it was removed"
 
 
+def link(path: Path, target: str) -> None:
+    """Makes a fixture symbolic link at path that names target, which need not exist."""
+    assert not path.exists() and not path.is_symlink(), f"{path} exists already; give each fixture link its own name"
+    path.symlink_to(target)
+    assert path.is_symlink() and os.readlink(path) == target, f"{path} is no link to {target}"
+
+
+def mode_of(path: Path) -> int:
+    """The permission bits of a fixture file, whether or not it is a link that leads anywhere."""
+    assert path.exists() or path.is_symlink(), f"{path} is not there to read the mode of"
+    return path.lstat().st_mode & 0o777
+
+
 def make_dir(path: Path) -> None:
     """Makes a fixture directory that does not exist yet."""
     assert not path.exists(), f"{path} exists already; give each fixture directory its own name"

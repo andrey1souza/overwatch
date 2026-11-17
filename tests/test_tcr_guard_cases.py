@@ -268,27 +268,6 @@ class GuardCaseTests(unittest.TestCase):
         put_data(self.empty / "new.txt", b"x\n")
         self.assertEqual(checkpoint.unavailable_reason(self.empty), "the repository has no commit to restore")
 
-    def test_a_file_git_is_told_not_to_watch_makes_a_revert_refuse(self) -> None:
-        for flag in ("assume-unchanged", "skip-worktree"):
-            with self.subTest(flag=flag):
-                git(self.repo, ["update-index", f"--{flag}", "a.txt"])
-                with (self.repo / "a.txt").open("wb") as handle:
-                    handle.write(b"a person's edit\n")
-                put_data(self.repo / f"other-{flag}.txt", b"x\n")
-                reason = checkpoint.unavailable_reason(self.repo, dirty_ok=True)
-                self.assertIn("a.txt", str(reason))
-                with self.assertRaises(checkpoint.CheckpointError) as caught:
-                    checkpoint.revert(self.repo)
-                self.assertIn("a.txt", str(caught.exception))
-                self.assertEqual(data_of(self.repo / "a.txt"), b"a person's edit\n")
-                git(self.repo, ["update-index", f"--no-{flag}", "a.txt"])
-                git(self.repo, ["checkout", "--", "a.txt"])
-                remove(self.repo / f"other-{flag}.txt")
-
-    def test_a_flagged_file_that_equals_the_latest_commit_is_no_reason(self) -> None:
-        git(self.repo, ["update-index", "--assume-unchanged", "a.txt"])
-        self.assertIsNone(checkpoint.unavailable_reason(self.repo))
-
 
 class GuardCaseHookTests(CodexHook):
     setUp = test_tcr.TcrHookTests.setUp

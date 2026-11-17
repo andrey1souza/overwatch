@@ -21,8 +21,8 @@ if sys.version_info < MINIMUM_PYTHON:
 
 from checkpoint_git import GIT_TIMEOUT, CheckpointError, repository_root, run_git
 from repository_state import (MESSAGE_FILES, UNWATCHED_REASON, current_branch, dirty_submodules, has_commit, is_clean, named,
-                              nested_repositories, on_branch, refuse_unsafe, staged_changes, unavailable_reason, uncommitted,
-                              unwatched_edits)
+                              nested_repositories, on_branch, refuse_unsafe, refuse_unwatched, staged_changes, unavailable_reason,
+                              uncommitted, unwatched_edits)
 from saved_revert import MAX_SAVE_ATTEMPTS, has_staged_copy, remove_untracked, save_discarded
 from secrets_guard import (MAX_STAGED_BYTES, NAME_RULE, SIZE_RULE, UNREADABLE_RULE, Refused, Unreadable, added_lines, name_rule,
                            oversized_in_work_tree, refusals, staged_files)
@@ -56,7 +56,8 @@ def checkpoint(cwd: Path, allow: tuple[str, ...] = ()) -> str | None:
     """Commits every file that is not ignored, new files included, and returns the new commit, or None when there
     was nothing to commit. The repository's own commit hooks and signing apply. When the commit fails, raises
     CheckpointError and leaves the changes staged, so no work is lost. Refuses while an operation is in progress or
-    an untracked repository sits in the workspace. When a file is named like a secret, adds a high-confidence secret
+    an untracked repository sits in the workspace, and while a file that git was told not to watch differs from HEAD,
+    because git would leave that edit out of the commit. When a file is named like a secret, adds a high-confidence secret
     or is over MAX_STAGED_BYTES, and no entry of allow names it for the first two, raises Refused, commits nothing and
     unstages everything, so the work tree is as the edit left it. An allowlist with an entry that is empty or only
     wildcards raises ConfigurationError, as the hook does for the same file."""
@@ -68,6 +69,7 @@ def checkpoint(cwd: Path, allow: tuple[str, ...] = ()) -> str | None:
     nested = nested_repositories(root)
     if nested:
         raise CheckpointError(f"no checkpoint: the untracked nested repository {', '.join(nested)} would be committed as an empty link; ignore or remove it")
+    refuse_unwatched(root, "checkpoint")
     too_large = oversized_in_work_tree(root)
     if too_large:
         raise Refused(too_large)
@@ -114,9 +116,7 @@ def revert(cwd: Path, *, save_ref: bool = True, after_save: Callable[[], None] |
     if not has_commit(root):
         raise CheckpointError(f"no revert: {root} has no commit to restore; nothing was changed")
     refuse_unsafe(root, "revert")
-    unwatched = unwatched_edits(root)
-    if unwatched:
-        raise CheckpointError(f"no revert: {UNWATCHED_REASON.format(files=named(unwatched))}; nothing was changed")
+    refuse_unwatched(root, "revert")
     run_git(root, ["clean", "-nfd"], warnings_fail=True)
     names = uncommitted(root)
     saved, discarded = save_discarded(root, names, after_save) if save_ref and (names or staged_changes(root)) else (None, names)

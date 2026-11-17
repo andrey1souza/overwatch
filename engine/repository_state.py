@@ -4,13 +4,21 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
-from checkpoint_git import CheckpointError, repository_root, run_git
+from checkpoint_git import CheckpointError, GitIO, repository_root, run_git
 
 # How many file names a checkpoint message lists before it says how many more there were.
 MESSAGE_FILES = 5
 SKIP_WORKTREE_TAG = "S"
+# The modes git records for a link, a plain file, an executable file and a submodule.
+SYMLINK_MODE = "120000"
+REGULAR_MODE = "100644"
+EXECUTABLE_MODE = "100755"
+SUBMODULE_MODE = "160000"
+EXECUTABLE_BITS = 0o111
 UNWATCHED_REASON = "{files} is marked assume-unchanged or skip-worktree and differs from HEAD, so git does not show the edit and a revert would overwrite it"
 # Files and directories in the git directory that exist while an operation is unfinished, with its name.
 IN_PROGRESS = {"MERGE_HEAD": "merge", "CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert",
@@ -130,25 +138,84 @@ def staged_changes(root: Path) -> bool:
     return listed != ""
 
 
+def committed_entry(root: Path, name: str) -> tuple[str, str] | None:
+    """The mode and object ID that HEAD records for the file name, or None when HEAD has no such file."""
+    listed = run_git(root, ["ls-tree", "-z", "HEAD", "--", name]).split("\0")[0]
+    if not listed:
+        return None
+    description, _, recorded = listed.partition("\t")
+    mode, _, object_id = description.split(" ")
+    assert recorded == name, f"HEAD lists {recorded!r} where {name!r} was asked for"
+    assert mode in (SYMLINK_MODE, REGULAR_MODE, EXECUTABLE_MODE, SUBMODULE_MODE), f"HEAD records {name!r} with the mode {mode}, which is no file or link"
+    return mode, object_id
+
+
+def honours_modes(root: Path) -> bool:
+    """Whether git in root tells an executable file from a plain one; false where core.fileMode is off."""
+    try:
+        setting = run_git(root, ["config", "--type=bool", "--get", "core.fileMode"]).strip()
+    except CheckpointError:
+        return True
+    assert setting in ("true", "false"), f"git gave core.fileMode as {setting!r}, not a yes or no"
+    assert root.is_dir(), f"{root} is not a directory to read the configuration of"
+    return setting == "true"
+
+
+def worktree_entry(root: Path, name: str) -> tuple[str, str] | None:
+    """The mode and object ID that the file, link or other thing at name in the work tree would have as a git entry,
+    looking at a link itself and not at what it points to; None when nothing is there, as in a sparse checkout. Anything
+    that is neither a file nor a link gets the empty mode, which equals no entry of HEAD."""
+    assert name and not name.startswith("/"), f"{name!r} is not a path below {root}"
+    try:
+        found = (root / name).lstat()
+    except FileNotFoundError:
+        return None
+    assert stat.S_ISLNK(found.st_mode) or (root / name).exists(), f"{name!r} is neither a link nor a thing that exists in {root}"
+    if stat.S_ISLNK(found.st_mode):
+        return SYMLINK_MODE, run_git(root, ["hash-object", "--stdin"], io=GitIO(stdin=os.readlink(root / name))).strip()
+    if not stat.S_ISREG(found.st_mode):
+        return "", ""
+    mode = EXECUTABLE_MODE if found.st_mode & EXECUTABLE_BITS else REGULAR_MODE
+    assert mode in (REGULAR_MODE, EXECUTABLE_MODE), f"{name!r} was given the mode {mode}, which is neither plain nor executable"
+    return mode, run_git(root, ["hash-object", "--", name]).strip()
+
+
+def differs_from_head(root: Path, name: str, modes_count: bool) -> bool:
+    """Whether the file at name in the work tree differs from what HEAD records for it, in content, in mode when
+    modes_count, or in being a link or a file. A name that is not in the work tree differs from nothing."""
+    assert name and not name.startswith("/"), f"{name!r} is not a path below {root}"
+    now = worktree_entry(root, name)
+    if now is None:
+        return False
+    committed = committed_entry(root, name)
+    assert committed is None or len(committed[1]) == len(now[1]) or now == ("", ""), f"{name!r} has object IDs of different kinds: {committed} and {now}"
+    if committed is not None and not modes_count and {now[0], committed[0]} <= {REGULAR_MODE, EXECUTABLE_MODE}:
+        return now[1] != committed[1]
+    return now != committed
+
+
 def unwatched_edits(root: Path) -> list[str]:
     """The tracked files that git was told not to look at, as `assume-unchanged` or `skip-worktree` does, and that differ
-    from HEAD now: a person's edit to one is not in `git status`, and a hard reset would overwrite it. A flagged file
-    that is not in the work tree, as in a sparse checkout, or that equals HEAD, holds nothing to lose."""
+    from HEAD now in content, mode or kind: a person's edit to one is not in `git status`, and a hard reset would
+    overwrite it. A flagged file that is not in the work tree, as in a sparse checkout, or that equals HEAD, holds
+    nothing to lose."""
     entries = [entry for entry in run_git(root, ["ls-files", "-v", "-z"]).split("\0") if len(entry) > 2]
     flagged = [entry[2:] for entry in entries if entry[0].islower() or entry[0] == SKIP_WORKTREE_TAG]
-    edited = []
-    for name in flagged:
-        if not (root / name).is_file():
-            continue
-        try:
-            committed = run_git(root, ["rev-parse", "--verify", "-q", f"HEAD:{name}"]).strip()
-        except CheckpointError:
-            committed = ""
-        if run_git(root, ["hash-object", "--", name]).strip() != committed:
-            edited.append(name)
-    assert all((root / name).is_file() for name in edited), f"{edited} are listed as edited but are not files in {root}"
+    modes_count = honours_modes(root) if flagged else True
+    edited = [name for name in flagged if differs_from_head(root, name, modes_count)]
+    assert all(worktree_entry(root, name) is not None for name in edited), f"{edited} are listed as edited but are not in {root}"
     assert len(edited) <= len(flagged), f"{len(edited)} edited files among {len(flagged)} flagged ones"
     return edited
+
+
+def refuse_unwatched(root: Path, action: str) -> None:
+    """Raises CheckpointError when a file that git was told not to watch differs from HEAD, so that action, a commit or a
+    revert, changes nothing: git leaves such an edit out of a commit, and a hard reset would overwrite it."""
+    unwatched = unwatched_edits(root) if has_commit(root) else []
+    if unwatched:
+        raise CheckpointError(f"no {action}: {UNWATCHED_REASON.format(files=named(unwatched))}; nothing was changed")
+    assert not unwatched, f"edited flagged files {unwatched} were not refused"
+    assert root.is_dir(), f"{root} is not a directory to {action} in"
 
 
 def dirty_submodules(root: Path) -> list[str]:
