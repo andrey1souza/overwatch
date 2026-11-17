@@ -11,6 +11,7 @@ from pathlib import Path
 
 from checkpoint import SCREENING_FAILURES, CheckpointError, Refused, checkpoint, repository_root, revert, unavailable_reason, uncommitted
 from discovery import ConfigurationError
+from saved_revert import has_staged_copy
 from tcr_settings import read_settings
 from workspace import content_fingerprint, fingerprint
 
@@ -95,7 +96,8 @@ def checkpoint_answer(cwd: Path, flags: tuple[str, ...]) -> dict[str, object]:
 
 def revert_answer(cwd: Path, flags: tuple[str, ...]) -> dict[str, object]:
     """Reverts as revert does, saving what it discards in a ref unless asked not to, and answers whether it changed the
-    files and the ref that holds what it removed. A tree that already matches the latest commit is left alone. A caller
+    files and the ref that holds what it removed, with `staged` when that ref also holds a version that only the index held,
+    in its second parent. A tree that already matches the latest commit is left alone. A caller
     that names the fingerprint of the files it judged gets nothing reverted and `changed` when the files differ from it now."""
     try:
         expected = expected_fingerprint(tuple(flag for flag in flags if flag != NO_SAVE_REF_FLAG))
@@ -108,7 +110,10 @@ def revert_answer(cwd: Path, flags: tuple[str, ...]) -> dict[str, object]:
     saved = revert(cwd, save_ref=NO_SAVE_REF_FLAG not in flags) if reverted else None
     assert reverted or saved is None, f"a revert that changed nothing named the ref {saved}"
     assert not reverted or not uncommitted(root), f"{root} still differs from HEAD after a revert that said it restored it"
-    return {"reverted": reverted, "saved": saved}
+    answer: dict[str, object] = {"reverted": reverted, "saved": saved}
+    if saved is not None and has_staged_copy(root, saved):
+        answer["staged"] = True
+    return answer
 
 
 COMMANDS: dict[str, Callable[[Path, tuple[str, ...]], dict[str, object]]] = {

@@ -111,19 +111,37 @@ export async function ask($: EngineInterface, root: string, command: keyof typeo
 }
 
 /** What a revert did: whether it changed the files, and the git ref that holds what it removed when it was asked to keep it. */
-export type RevertAnswer = { reverted: boolean; saved: string | null; changed: boolean }
+export type RevertAnswer = { reverted: boolean; saved: string | null; changed: boolean; staged: boolean }
+
+function badRevertAnswer(answer: Record<string, unknown>) {
+  assert(typeof answer === 'object' && answer !== null && !Array.isArray(answer), `the revert answer ${JSON.stringify(answer)} is no object`)
+  const error = new CommandError(`the checkpoint command answered the revert with ${JSON.stringify(answer)}; it must say { "reverted": true or false, "saved": a ref or null, "changed": true or false, "staged": true or false }`)
+  assert(['reverted', 'saved', 'changed', 'staged'].every(field => error.message.includes(`"${field}"`)), `the message of ${error.message} leaves out a field of the revert answer`)
+  return error
+}
+
+/** A true or false that the checkpoint command may leave out, which says false. */
+function flagOf(answer: Record<string, unknown>, name: 'changed' | 'staged'): boolean {
+  assert(name === 'changed' || name === 'staged', `${name} is no yes-or-no field of the revert answer`)
+  const flag = answer[name] ?? false
+  if (typeof flag !== 'boolean') throw badRevertAnswer(answer)
+  assert(typeof flag === 'boolean', `${name} was read as ${flag}, not true or false`)
+  return flag
+}
 
 /** The answer of the checkpoint command to `revert`: `{ reverted, saved }`. */
 export function revertedBy(answer: Record<string, unknown>): RevertAnswer {
   const legacy = Array.isArray(answer.restored) ? answer.restored.length > 0 : undefined
   const reverted = typeof answer.reverted === 'boolean' ? answer.reverted : legacy
   const saved = answer.saved === undefined || answer.saved === null ? null : answer.saved
-  const changed = answer.changed === undefined ? false : answer.changed
-  if (reverted === undefined || typeof changed !== 'boolean' || (saved !== null && typeof saved !== 'string')) throw new CommandError(`the checkpoint command answered the revert with ${JSON.stringify(answer)}; it must say { "reverted": true or false, "saved": a ref or null, "changed": true or false }`)
+  const changed = flagOf(answer, 'changed')
+  const staged = flagOf(answer, 'staged')
+  if (reverted === undefined || (saved !== null && typeof saved !== 'string')) throw badRevertAnswer(answer)
   assert(typeof reverted === 'boolean' && (saved === null || typeof saved === 'string'), `the revert answer ${JSON.stringify(answer)} was read as ${reverted} and ${saved}`)
   assert(reverted || saved === null, `the revert answer ${JSON.stringify(answer)} says it saved ${saved} but changed nothing`)
   assert(!changed || (!reverted && saved === null), `the revert answer ${JSON.stringify(answer)} says the files changed but also that it reverted them`)
-  return { reverted, saved, changed }
+  assert(!staged || saved !== null, `the revert answer ${JSON.stringify(answer)} says the ref holds a staged version but names no ref`)
+  return { reverted, saved, changed, staged }
 }
 
 const JSON_TOKEN = /"(?:[^"\\]|\\.)*"|\btrue\b|\bfalse\b|\bnull\b|[:,]/g

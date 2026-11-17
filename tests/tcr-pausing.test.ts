@@ -265,6 +265,27 @@ test('a revert keeps the content in a ref by default and names how to get it bac
   })
 })
 
+test('a revert names no command for a staged version when the saved ref holds none', async ($, on) => {
+  await inSession({ $, on }, async project => {
+    project.setReport(WARNINGS)
+    await edit($, project, ['example.py'], 'f1')
+    const reverted = told(project).filter(text => text.includes('TCR reverted'))
+    expect(reverted.length).toBe(1)
+    expect(reverted[0]).not.toContain('^2')
+  })
+})
+
+test('a revert names the command for the staged version when the saved ref also holds one', async ($, on) => {
+  await inSession({ $, on }, async project => {
+    project.setReport(WARNINGS)
+    await edit($, project, ['example.py'], 'f1')
+    const reverted = told(project).filter(text => text.includes('TCR reverted'))
+    expect(reverted.length).toBe(1)
+    expect(reverted[0]).toContain('git checkout refs/overwatch/tcr/1 -- .')
+    expect(reverted[0]).toContain('git checkout refs/overwatch/tcr/1^2 -- .')
+  }, { prepare: workspace => { workspace.staged = true } })
+})
+
 test('a revert with saveReverted off keeps no copy, says the content is gone and tells the command so', async ($, on) => {
   await inSession({ $, on }, async project => {
     project.setReport(WARNINGS)

@@ -44,6 +44,8 @@ export type Workspace = {
   settingsDelayMs: number
   /** What the revert fails with, as the checkpoint command prints it with exit code 1; none when it works. */
   revertError: string | undefined
+  /** Whether the saved ref also holds a version that only the index held, in its second parent. */
+  staged?: boolean
   /** The files of the repository's metadata directory that the plugin reads for itself, by path; the checkpoint command line reads none. */
   files: Map<string, string>
 }
@@ -270,7 +272,7 @@ function revertAnswer(workspace: Workspace, flags: readonly string[]): { code: n
     workspace.onRevert()
   }
   assert(workspace.dirty.length === 0 && (restored.length === 0 || workspace.fingerprint === workspace.committed), `a revert left ${workspace.dirty} dirty at ${workspace.fingerprint}, not ${workspace.committed}`)
-  return { code: 0, answer: { reverted: restored.length > 0, saved } }
+  return { code: 0, answer: { reverted: restored.length > 0, saved, ...(saved !== null && workspace.staged ? { staged: true } : {}) } }
 }
 
 /** What the fake checkpoint command answers to command, and its exit code. */

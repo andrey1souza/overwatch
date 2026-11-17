@@ -176,6 +176,17 @@ class CheckpointCommandTests(RepositoryCase):
         self.assertEqual(read(self.repo / "a.txt"), "base\n")
         self.assertFalse(present(self.repo / "new.txt"))
 
+    def test_the_command_line_revert_says_when_the_saved_ref_also_holds_a_staged_version(self) -> None:
+        put(self.repo / "a.txt", "edited\n")
+        code, printed = self.cli("revert")
+        self.assertEqual((code, "staged" in printed), (0, False))
+        put(self.repo / "a.txt", "staged\n")
+        git(self.repo, ["add", "a.txt"])
+        put(self.repo / "a.txt", "later\n")
+        code, printed = self.cli("revert")
+        self.assertEqual((code, printed["reverted"], printed.get("staged")), (0, True, True))
+        self.assertEqual(git(self.repo, ["show", f"{printed['saved']}^2:a.txt"]), "staged")
+
     def test_the_command_line_revert_saves_nothing_when_told_not_to(self) -> None:
         put(self.repo / "a.txt", "edited\n")
         self.assertEqual(self.cli("revert", None, "--no-save-ref"), (0, {"reverted": True, "saved": None}))

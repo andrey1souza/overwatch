@@ -371,7 +371,7 @@ async function revertTcr($: EngineInterface, state: State, edit: Edit, causes: r
   const tcr = state.tcr
   if (!(await isUnchanged($, state, tcr, edit))) return
   const names = await dirtyFiles($, root)
-  const { reverted, saved, changed } = revertedBy(await ask($, root, 'revert', ['--expect', files, ...(saveReverted ? [] : ['--no-save-ref'])]))
+  const { reverted, saved, changed, staged } = revertedBy(await ask($, root, 'revert', ['--expect', files, ...(saveReverted ? [] : ['--no-save-ref'])]))
   if (changed) return pauseUnlessPaused($, state, CHANGED_WHILE_ACTING)
   if (!reverted) return holdTcr($, state, edit, { reason: `${causes.map(({ live, report }) => `${live.watcher?.name} reported ${report?.summary}`).join('; ')}, but no file differs from the latest checkpoint, so there is nothing to revert` })
   const restored = await fingerprintOf($, root)
@@ -382,7 +382,7 @@ async function revertTcr($: EngineInterface, state: State, edit: Edit, causes: r
     known: live.baseline?.isFailed ? live.baseline.failures : [],
     log: await writeLog($, live, (report as Report).text),
   })))
-  queueTcr($, state, 'revert', tcrMessage(revertMessage(told, names.length > 0 ? names : ['the files of the edit'], saved), true))
+  queueTcr($, state, 'revert', tcrMessage(revertMessage(told, names.length > 0 ? names : ['the files of the edit'], saved, staged), true))
   if (state.tcr !== tcr || tcr.seen !== files || left.length > 0) return pauseUnlessPaused($, state, CHANGED_WHILE_ACTING)
   state.tcr = { status: TCR_ACTIVE, settled: restored, seen: restored, unjudged: false, held: undefined }
   for (const each of state.liveWatchers) {

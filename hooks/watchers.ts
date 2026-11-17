@@ -421,7 +421,7 @@ export function failureMessage(watcher: Watcher, report: Report, { known, log, o
 export type Reverted = { watcher: Watcher; report: Report; known: readonly string[]; log: string | undefined }
 
 /** Tells the agent TCR reverted its latest change: which new failures caused it, where the full output is, and which files came back. */
-export function revertMessage(causes: readonly Reverted[], restored: readonly string[], saved: string | null): string {
+export function revertMessage(causes: readonly Reverted[], restored: readonly string[], saved: string | null, staged = false): string {
   assert(causes.length > 0 && restored.length > 0, `a revert of ${restored.length} files for ${causes.length} failures cannot be told; give both`)
   const parts = causes.map(({ watcher, report, known, log }) => {
     const knownNames = new Set(known)
@@ -433,11 +433,12 @@ export function revertMessage(causes: readonly Reverted[], restored: readonly st
   })
   const kept = saved === null
     ? 'The reverted content is gone: it was never committed and no copy was saved.'
-    : `The reverted content is saved in ${saved}; \`git checkout ${saved} -- .\` brings it back.`
+    : `The reverted content is saved in ${saved}; \`git checkout ${saved} -- .\` brings it back.${staged ? ` The version that was staged is in \`${saved}^2\`; \`git checkout ${saved}^2 -- .\` brings it back.` : ''}`
   const message = `${parts.join('\n\n')}\nRestored: ${restored.map(name => `\`${name}\``).join(', ')}. ${kept} Try a smaller step.`
   assert(message.split('TCR reverted').length === causes.length + 1, `message names ${message.split('TCR reverted').length - 1} reverts for ${causes.length} failures`)
   assert(restored.every(name => message.includes(`\`${name}\``)), `message leaves out one of the restored files ${restored}`)
   assert(saved === null ? message.includes('is gone') : message.includes(`git checkout ${saved} -- .`), `message does not say whether the content is gone or saved in ${saved}`)
+  assert(message.includes(`${saved}^2`) === (staged && saved !== null), `message and the staged answer ${staged} disagree about ${saved}^2`)
   return message
 }
 
