@@ -22,7 +22,7 @@ It is not an automatic refinement proof of the implementation.
 
 ## Host contracts
 
-`Capabilities` in `IntegrationContract.tla` defines each host's permission, completion, delivery, status, and wakeup behavior.
+`Capabilities` in `IntegrationContract.tla` defines each host's permission, completion, delivery, start, status, and wakeup behavior.
 The typeset `IntegrationContract` module on the Spec page shows that definition directly.
 
 [Read the host capability definition](https://benomahony.github.io/overwatch/spec/IntegrationContract.pdf)
@@ -46,7 +46,7 @@ The snapshots and counters in a replay are observed through the host's actual ca
 
 The result layer checks result ordering, correspondence to a checked version, baseline isolation, eventual check completion, and eventual reporting of regressions.
 
-The interface layer checks that inspection and repair responses are enabled while a check is held, that those responses are allowed, that host capabilities determine completion feedback, that editor paths never invent agent gates, that pending context is current, that queued corrections are deduplicated, and that closed sessions stay silent.
+The interface layer checks that inspection and repair responses are enabled while a check is held, that those responses are allowed, that host capabilities determine completion feedback, that editor paths never invent agent gates, that pending context is current, that a failure counts as told only once the model has received it, that queued corrections are deduplicated, and that closed sessions stay silent.
 It also checks response and delivery liveness.
 
 Delivery liveness assumes check completion fairness, corresponding to the result layer's `RunsEnd` guarantee, and fair host servicing of report/context callbacks.
@@ -103,6 +103,9 @@ The fixture event names correspond to model actions: `RequestInspect`, `RequestR
 `Ack` consumes the reply.
 `Begin` and `Finish` start and finish a check; the fixture supplies the next snapshot.
 `Report` updates the visible report and `Deliver` consumes deferred context when pending.
+`StartReport` reads a result at session start through the host's start channel; OpenCode 1 shows it only as a warning, so a failure first read there is delivered by the next `Report`.
+Only hosts whose session start runs while the agent works replay it: Codex, OpenCode 1, and OpenCode 2.
+Pi delivers its start result before the agent's first model call.
 `Stop` closes the session and `Restart` starts a fresh one.
 `Turn` starts a person's turn only when idle, `CorrectionTurn` starts the submitted correction's own turn when one is pending (a person's turn otherwise), `StartTurn` requires an idle turn, and `Work` records completed tool work, which permits a fresh correction only outside a correction's own turn.
 `OutsideBegin` and `OutsideFinish` run a check on another process's change, which only hosts that notice such changes can replay, and `Outside` is that change in the result-layer traces.

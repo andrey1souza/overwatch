@@ -28,6 +28,10 @@ edits, Codex and OpenCode 2 see a change first at a hook that follows no
 edit of the session's, and an editor treats every save alike. Pi and
 OpenCode 1 check only after the session's own edits and at settlement, so
 they read every result as the session's.
+A result read at session start reaches the model through the host's start
+channel: Codex adds it to the session at once, Claude Code, OpenCode 2 and
+Pi hold it for the next model call, and OpenCode 1 shows it only as a
+warning, so a failure first read there is still to be delivered.
 These are integration capabilities, not user-selectable enforcement modes.
 *)
 Capabilities(h) ==
@@ -42,6 +46,10 @@ Capabilities(h) ==
                     [] h = "opencode2" -> "context"
                     [] h = "neovim" -> "quickfix"
                     [] OTHER -> "event",
+     start |-> CASE h = "codex" -> "event"
+                 [] h = "opencode1" -> "warning"
+                 [] h = "neovim" -> "quickfix"
+                 [] OTHER -> "context",
      idleWake |-> h \in {"claude", "opencode2"},
      status |-> h \in {"claude", "pi", "neovim"},
      noticesOutside |-> h \in {"claude", "codex", "opencode2", "neovim"}]
@@ -220,16 +228,23 @@ OutsideFinish(f) ==
                    correctionPending, correctionTurn>>
 
 Told == Notify /\ ~outside
-Report ==
+(* A report through channel publishes event context, retains turn or
+   context delivery for Deliver, and leaves a warning or quickfix entry
+   undelivered to the model. Report reads a result through the host's
+   delivery channel, StartReport through its start channel. *)
+ReportThrough(channel) ==
     /\ active /\ ~busy
     /\ visible' = [known |-> TRUE, failures |-> reports]
-    /\ contextPending' = (Told /\ ~contextSent /\ Capabilities(host).delivery \in {"turn", "context"})
-    /\ contextSent' = (contextSent \/ (Told /\ Capabilities(host).delivery = "event"))
-    /\ contexts' = contexts + IF Told /\ ~contextSent /\ Capabilities(host).delivery = "event" THEN 1 ELSE 0
+    /\ contextPending' = (Told /\ ~contextSent /\ channel \in {"turn", "context"})
+    /\ contextSent' = (contextSent \/ (Told /\ channel = "event"))
+    /\ contexts' = contexts + IF Told /\ ~contextSent /\ channel = "event" THEN 1 ELSE 0
     /\ UNCHANGED <<host, active, busy, reports, baseline, inherited, selected,
                    request, reply, requests, changes, session,
                    correctionQueued, warnings, corrections, inTurn, wakes, work,
                    correctionPending, correctionTurn, outside, outsides>>
+
+Report == ReportThrough(Capabilities(host).delivery)
+StartReport == ReportThrough(Capabilities(host).start)
 
 Deliver ==
     /\ active /\ contextPending
@@ -307,7 +322,7 @@ remains enabled even while a check is held.
 *)
 CheckCompletes == \E f \in Snapshots : FinishCheck(f) \/ OutsideFinish(f)
 Next == (\E k \in Kinds : Request(k)) \/ Respond \/ Acknowledge \/ BeginCheck
-        \/ CheckCompletes \/ Report \/ Deliver \/ Stop \/ Restart
+        \/ CheckCompletes \/ Report \/ StartReport \/ Deliver \/ Stop \/ Restart
         \/ StartTurn \/ StartCorrectionTurn \/ WorkCompleted
         \/ (~active /\ session = MaxSessions /\ UNCHANGED vars)
 (* Check completion fairness is the RunsEnd guarantee of the result model.
@@ -318,7 +333,8 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(CheckCompletes)
 (* Section: Safety and progress properties
 
 Capabilities constrain completion, editors never acquire agent gates,
-closed sessions stay silent, pending context stays current, and corrections
+closed sessions stay silent, pending context stays current, a failure counts
+as told only once the model has received it, and corrections
 are deduplicated. Progress properties require the fairness stated in Spec.
 *)
 InspectionIndependentOfChecks ==
@@ -331,6 +347,7 @@ StoppedSessionsStaySilent == ~active => ~contextPending /\ ~visible.known
 HostsWithoutIdleWakeStayIdle == ~Capabilities(host).idleWake => wakes = 0
 CorrectionRequestsAreDeduplicated == corrections <= changes + session + work + 1
 PendingContextIsCurrent == contextPending => Notify
+SentContextReachedModel == contextSent => contexts > 0
 CompletionUsesHostCapability ==
     request = "complete" /\ reply.ready =>
        reply.decision \in {"allow", Capabilities(host).completion}

@@ -106,15 +106,16 @@ export async function v2Host(project, check, outputs, session = { id: 'model' })
     tool: { hook: async (name, fn) => { hooks[name] = fn } }, event: events }, check)
   assert(hooks.context && hooks['execute.after'], 'OpenCode V2 needs context and editing hooks')
   assert(prompts.length === 0, 'OpenCode V2 must not queue a prompt at setup')
+  const context = async () => { const event = { sessionID: session.id, system: [] }; await hooks.context(event); contexts.push(...event.system.map(part => part.text)); return event }
   return {
-    start: () => hooks.context({ sessionID: session.id, system: [] }),
+    start: context,
     read: () => hooks['execute.after']({ tool: 'edit', sessionID: session.id, input: {} }),
     inspect: () => hooks['execute.before']({ tool: 'read', sessionID: session.id, input: {} }),
     repair: () => hooks['execute.before']({ tool: 'edit', sessionID: session.id, input: {} }),
     progress: () => hooks['execute.after']({ tool: 'read', sessionID: session.id, input: {} }),
     // OpenCode 2 checks before each model call as well, with no edit before it: where another process's change is first seen.
     notice: () => hooks.context({ sessionID: session.id, system: [] }),
-    context: async () => { const event = { sessionID: session.id, system: [] }; await hooks.context(event); contexts.push(...event.system.map(part => part.text)); return event },
+    context,
     observation: () => ({ contexts: [...contexts], warnings: 0, corrections: prompts.length }),
     complete: async () => {
       const before = prompts.length
