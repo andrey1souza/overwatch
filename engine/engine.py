@@ -235,6 +235,8 @@ def process_event(event: Event, root: Path) -> dict[str, Any]:
         read = checked_state(session, cwd, Step(edit, command))
         current = read.current
         output = report_output(event, read, session)
+        if event.hook_event_name == "SessionStart" and event.integration == "opencode1":
+            current = replace(current, told=read.old.told)
         save_state(session, current)
     assert current.fingerprint is not None, f"state for {cwd} has no fingerprint; checked_state must record one"
     assert session.state.exists(), f"no state was saved for {cwd} at {session.state}; save_state must write it"
