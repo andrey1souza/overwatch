@@ -222,7 +222,7 @@ The [behavior guide](https://benomahony.github.io/overwatch/behavior/) is genera
 
 Add a scenario by composing `Scenario(...).given(...).when(...).then(...)` with fixture actions for every implemented step. Titles must be unique. Use `status="proposed"` with no executable actions for a planned behavior. Keep hook payloads, temporary paths, and test setup in the fixture rather than the prose.
 
-The [Spec page](https://benomahony.github.io/overwatch/model/) renders every TLA+ declaration and definition in source order, using the source's own sections and comments. The [Behavior page](https://benomahony.github.io/overwatch/behavior/#model-derived-integration-contracts) renders every host contract from the TLC fixtures and supports agent and text filters.
+The [Spec page](https://benomahony.github.io/overwatch/model/) embeds every TLA+ module as TLATeX typesets it, in reading order, with the source's own sections and comments. The [Behavior page](https://benomahony.github.io/overwatch/behavior/#model-derived-integration-contracts) renders every host contract from the TLC fixtures and supports agent and text filters.
 
 The [behavioral specification](https://github.com/benomahony/overwatch/blob/main/spec/README.md) covers every integration. `Overwatch.tla` models baselines, workspace versions, buffered builds, and notification ordering. `IntegrationContract.tla` specifies the six hosts' request/response behavior, independent inspection during checks, scoped guards, completion feedback, delivery, and lifecycle. Both layers share `FailurePolicy.tla`. Host differences are explicit: OpenCode 1 warns at idle, Pi continues, OpenCode 2 queues a correction, Codex and Claude guard completion, and Neovim has no agent gates.
 
