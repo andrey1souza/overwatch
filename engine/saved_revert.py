@@ -20,6 +20,7 @@ CLEAN_BATCH = 200
 SAVED_REF_PREFIX = "refs/overwatch/reverted/"
 SAVED_REF_TIME = "%Y%m%dT%H%M%S%fZ"
 SAVED_MESSAGE = "overwatch: work that a TCR revert discarded"
+STAGED_MESSAGE = "overwatch: the version that a TCR revert discarded from the index"
 # Who the saved commit is by when git knows no one: the commit only holds the discarded work, and is nobody's own.
 FALLBACK_IDENTITY = (("GIT_AUTHOR_NAME", "overwatch"), ("GIT_AUTHOR_EMAIL", "overwatch@localhost"),
                      ("GIT_COMMITTER_NAME", "overwatch"), ("GIT_COMMITTER_EMAIL", "overwatch@localhost"))
@@ -53,23 +54,53 @@ def identity_for_saved_commit(root: Path) -> tuple[tuple[str, str], ...]:
     return ()
 
 
-def point_ref_at(root: Path, ref: str, tree: str, *, is_new: bool) -> None:
-    """Makes ref name a commit of tree on top of HEAD; a new ref must not exist yet."""
-    commit = run_git(root, ["commit-tree", tree, "-p", "HEAD", "-m", SAVED_MESSAGE], io=GitIO(environment=identity_for_saved_commit(root))).strip()
+def staged_copy(root: Path, tree: str) -> str | None:
+    """The tree of the repository's index when it holds a version that neither HEAD nor tree holds, so that a revert,
+    which resets the index too, would lose it; None when the index adds nothing."""
+    staged = run_git(root, ["write-tree"]).strip()
+    head_tree = run_git(root, ["rev-parse", "HEAD^{tree}"]).strip()
+    assert len(staged) in (40, 64), f"git wrote the tree {staged!r}, which is neither a SHA-1 nor a SHA-256 object ID"
+    assert len(head_tree) == len(staged), f"the tree of HEAD {head_tree!r} and the index tree {staged!r} are of different object ID kinds"
+    return None if staged in (tree, head_tree) else staged
+
+
+def has_staged_copy(root: Path, ref: str) -> bool:
+    """Whether the saved commit at ref has a second parent, the commit that holds the index's version of the files."""
+    assert ref.startswith(SAVED_REF_PREFIX), f"{ref} is not a ref below {SAVED_REF_PREFIX}, so it names no saved commit"
+    try:
+        run_git(root, ["rev-parse", "--verify", "-q", f"{ref}^2"])
+    except CheckpointError:
+        return False
+    assert run_git(root, ["rev-parse", f"{ref}^2^"]).strip() == run_git(root, ["rev-parse", f"{ref}^"]).strip(), f"the staged commit of {ref} is not on top of the same HEAD"
+    return True
+
+
+def point_ref_at(root: Path, ref: str, trees: tuple[str, str | None], *, is_new: bool) -> None:
+    """Makes ref name a commit of the first tree on top of HEAD, with a second parent that holds the second tree, the
+    staged one, when there is one; a new ref must not exist yet."""
+    tree, staged = trees
+    io = GitIO(environment=identity_for_saved_commit(root))
+    parents = ["-p", "HEAD"]
+    if staged is not None:
+        parents += ["-p", run_git(root, ["commit-tree", staged, "-p", "HEAD", "-m", STAGED_MESSAGE], io=io).strip()]
+    commit = run_git(root, ["commit-tree", tree, *parents, "-m", SAVED_MESSAGE], io=io).strip()
     run_git(root, ["update-ref", ref, commit, *([""] if is_new else [])])
     assert run_git(root, ["rev-parse", ref]).strip() == commit, f"{ref} does not name the saved commit {commit}"
     assert run_git(root, ["rev-parse", f"{ref}^"]).strip() == run_git(root, ["rev-parse", "HEAD"]).strip(), f"{ref} is not on top of HEAD"
+    assert has_staged_copy(root, ref) == (staged is not None), f"{ref} disagrees with the staged tree {staged!r} about a second parent"
 
 
 def save_discarded(root: Path, names: list[str], after_save: Callable[[], None] | None) -> tuple[str, list[str]]:
     """Saves the files in names, which a revert would discard, under a new ref below SAVED_REF_PREFIX, and returns the
     ref and the files that were saved. Anyone can write a file while that takes time, so after each save it lists the
     files again and saves again when they differ, until a list gives the tree already saved, MAX_SAVE_ATTEMPTS times at
-    most; then it deletes the ref and raises CheckpointError, so that the caller deletes nothing. after_save runs after
-    each save, before the list."""
+    most; then it deletes the ref and raises CheckpointError, so that the caller deletes nothing. A version that only
+    the index holds is saved too, as the second parent of the commit. after_save runs after each save, before the
+    list."""
     tree = snapshot_tree(root, names)
+    staged = staged_copy(root, tree)
     ref = SAVED_REF_PREFIX + datetime.now(timezone.utc).strftime(SAVED_REF_TIME)
-    point_ref_at(root, ref, tree, is_new=True)
+    point_ref_at(root, ref, (tree, staged), is_new=True)
     assert ref.startswith(SAVED_REF_PREFIX), f"the ref {ref} is not below {SAVED_REF_PREFIX}"
     try:
         for _ in range(MAX_SAVE_ATTEMPTS):
@@ -77,10 +108,11 @@ def save_discarded(root: Path, names: list[str], after_save: Callable[[], None] 
                 after_save()
             names = uncommitted(root)
             later = snapshot_tree(root, names)
-            if later == tree:
+            later_staged = staged_copy(root, later)
+            if (later, later_staged) == (tree, staged):
                 return ref, names
-            tree = later
-            point_ref_at(root, ref, tree, is_new=False)
+            tree, staged = later, later_staged
+            point_ref_at(root, ref, (tree, staged), is_new=False)
         raise CheckpointError(f"the files in {root} kept changing while the work was saved, so nothing was reverted; stop what writes to them and try again")
     except CheckpointError:
         run_git(root, ["update-ref", "-d", ref])

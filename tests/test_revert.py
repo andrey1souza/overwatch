@@ -9,7 +9,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from checkpoint_repository import RepositoryCase, git, make_dir, present, put, restore_git, set_environment, set_mode
+from checkpoint_repository import RepositoryCase, git, make_dir, present, put, remove, restore_git, set_environment, set_mode
 import checkpoint
 import saved_revert
 from codex_hook import read
@@ -74,6 +74,57 @@ class RevertTests(RepositoryCase):
         self.assertEqual(read(self.repo / "a.txt"), "broken\n")
         self.assertEqual(read(self.repo / "agent_new.py"), "x\n")
         self.assertEqual(read(self.repo / "pkg" / "m.py"), "y\n")
+
+    def parents_of(self, ref: str) -> list[str]:
+        return git(self.repo, ["rev-list", "--parents", "-n", "1", ref]).split()[1:]
+
+    def test_a_version_staged_in_the_index_and_overwritten_in_the_tree_is_kept_in_the_saved_ref(self) -> None:
+        put(self.repo / "a.txt", "staged\n")
+        git(self.repo, ["add", "a.txt"])
+        put(self.repo / "a.txt", "later\n")
+        saved = checkpoint.revert(self.repo)
+        self.assertEqual(git(self.repo, ["show", f"{saved}:a.txt"]), "later")
+        self.assertEqual(len(self.parents_of(saved)), 2)
+        self.assertEqual(git(self.repo, ["show", f"{saved}^2:a.txt"]), "staged")
+        self.assertEqual(git(self.repo, ["rev-parse", f"{saved}^"]), git(self.repo, ["rev-parse", "HEAD"]))
+        self.assertEqual(read(self.repo / "a.txt"), "base\n")
+
+    def test_a_staged_new_file_that_is_gone_from_the_tree_is_kept_in_the_saved_ref(self) -> None:
+        put(self.repo / "staged_new.py", "staged only\n")
+        git(self.repo, ["add", "staged_new.py"])
+        remove(self.repo / "staged_new.py")
+        saved = checkpoint.revert(self.repo)
+        self.assertEqual(git(self.repo, ["show", f"{saved}^2:staged_new.py"]), "staged only")
+
+    def test_a_revert_saves_a_staged_change_even_when_the_tree_matches_the_latest_commit(self) -> None:
+        put(self.repo / "a.txt", "staged\n")
+        git(self.repo, ["add", "a.txt"])
+        put(self.repo / "a.txt", "base\n")
+        saved = checkpoint.revert(self.repo)
+        self.assertIsNotNone(saved)
+        self.assertEqual(git(self.repo, ["show", f"{saved}^2:a.txt"]), "staged")
+        self.assertEqual(git(self.repo, ["diff", "--cached", "--name-only"]), "")
+
+    def test_a_saved_ref_has_one_parent_when_the_index_adds_nothing_to_the_tree(self) -> None:
+        self.discard_work()
+        self.assertEqual(len(self.parents_of(checkpoint.revert(self.repo))), 1)
+        put(self.repo / "a.txt", "same in both\n")
+        git(self.repo, ["add", "a.txt"])
+        self.assertEqual(len(self.parents_of(checkpoint.revert(self.repo))), 1)
+
+    def test_a_staged_version_that_changes_while_the_work_is_saved_is_saved_as_it_changed(self) -> None:
+        self.discard_work()
+        edits: list[str] = []
+
+        def stage_another_version() -> None:
+            if not edits:
+                edits.append("staged")
+                put(self.repo / "a.txt", "staged during the save\n")
+                git(self.repo, ["add", "a.txt"])
+                put(self.repo / "a.txt", "broken\n")
+
+        saved = checkpoint.revert(self.repo, after_save=stage_another_version)
+        self.assertEqual(git(self.repo, ["show", f"{saved}^2:a.txt"]), "staged during the save")
 
     def test_a_revert_saves_the_work_in_a_repository_where_git_knows_no_identity(self) -> None:
         self.discard_work()

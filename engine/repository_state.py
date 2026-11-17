@@ -122,6 +122,14 @@ def uncommitted(root: Path) -> list[str]:
     return tracked + untracked
 
 
+def staged_changes(root: Path) -> bool:
+    """Whether the repository's index differs from HEAD, which a hard reset would undo."""
+    assert root.is_dir(), f"{root} is not a directory to look for staged changes in"
+    listed = run_git(root, ["diff", "--cached", "--name-only"]).strip()
+    assert "\0" not in listed, f"git listed {listed!r} with a NUL where it was asked for lines"
+    return listed != ""
+
+
 def unwatched_edits(root: Path) -> list[str]:
     """The tracked files that git was told not to look at, as `assume-unchanged` or `skip-worktree` does, and that differ
     from HEAD now: a person's edit to one is not in `git status`, and a hard reset would overwrite it. A flagged file

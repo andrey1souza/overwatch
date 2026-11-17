@@ -21,14 +21,15 @@ if sys.version_info < MINIMUM_PYTHON:
 
 from checkpoint_git import GIT_TIMEOUT, CheckpointError, repository_root, run_git
 from repository_state import (MESSAGE_FILES, UNWATCHED_REASON, current_branch, dirty_submodules, has_commit, is_clean, named,
-                              nested_repositories, on_branch, refuse_unsafe, unavailable_reason, uncommitted, unwatched_edits)
-from saved_revert import MAX_SAVE_ATTEMPTS, remove_untracked, save_discarded
+                              nested_repositories, on_branch, refuse_unsafe, staged_changes, unavailable_reason, uncommitted,
+                              unwatched_edits)
+from saved_revert import MAX_SAVE_ATTEMPTS, has_staged_copy, remove_untracked, save_discarded
 from secrets_guard import (MAX_STAGED_BYTES, NAME_RULE, SIZE_RULE, UNREADABLE_RULE, Refused, Unreadable, added_lines, name_rule,
                            oversized_in_work_tree, refusals, staged_files)
 from tcr_settings import validate_allow
 
 __all__ = ["GIT_TIMEOUT", "MAX_SAVE_ATTEMPTS", "MAX_STAGED_BYTES", "MESSAGE_FILES", "NAME_RULE", "SIZE_RULE", "UNREADABLE_RULE",
-           "CheckpointError", "Refused", "Unreadable", "added_lines", "checkpoint", "current_branch", "dirty_submodules", "is_clean",
+           "CheckpointError", "Refused", "Unreadable", "added_lines", "checkpoint", "current_branch", "dirty_submodules", "has_staged_copy", "is_clean",
            "name_rule", "named", "refusals", "repository_root", "revert", "run_git", "staged_files", "unavailable_reason", "uncommitted"]
 
 MESSAGE_PREFIX = "tcr: "
@@ -103,7 +104,8 @@ def revert(cwd: Path, *, save_ref: bool = True, after_save: Callable[[], None] |
     with the directories that held only them. Ignored files, untracked nested repositories and the files inside
     submodules stay. Checks everything first and changes nothing when there is no commit to restore or an operation is in
     progress. Unless save_ref is false, the files it discards are first saved under a ref, which it returns, and saved
-    again until a list of the files finds nothing new; when that cannot be done, or git fails while it saves, the ref
+    again until a list of the files finds nothing new; a version that only the index holds is saved too, as the second
+    parent of the saved commit; when that cannot be done, or git fails while it saves, the ref
     is deleted and nothing is reverted. It removes only the untracked files of that last list, so a new file written
     after it stays and is reported by CheckpointError; a file of the list or a tracked file changed after it is lost,
     which can take tens of milliseconds, because git has no way to reset and list in one step. before_discard runs
@@ -117,7 +119,7 @@ def revert(cwd: Path, *, save_ref: bool = True, after_save: Callable[[], None] |
         raise CheckpointError(f"no revert: {UNWATCHED_REASON.format(files=named(unwatched))}; nothing was changed")
     run_git(root, ["clean", "-nfd"], warnings_fail=True)
     names = uncommitted(root)
-    saved, discarded = save_discarded(root, names, after_save) if save_ref and names else (None, names)
+    saved, discarded = save_discarded(root, names, after_save) if save_ref and (names or staged_changes(root)) else (None, names)
     if before_discard is not None:
         before_discard()
     run_git(root, ["reset", "--hard", "HEAD"])

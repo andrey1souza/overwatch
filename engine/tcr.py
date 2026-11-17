@@ -212,10 +212,10 @@ def unsettled(turn: Turn, current: State, files_unchanged: bool) -> TcrStep:
     return TcrStep(state)
 
 
-def restoration(restored: list[str], saved: str | None, skipped: list[str]) -> str:
+def restoration(restored: list[str], saved: str | None, skipped: list[str], staged: bool = False) -> str:
     """What the revert message says of the files: which came back, which submodules still hold changes that a revert does
     not reach, and where the work the revert discarded is saved and how to get it back, or that it is gone because the
-    setting turned the saving off."""
+    setting turned the saving off. When the index held a version that the tree did not, it names the command for that too."""
     came_back = f"Restored: {', '.join(f'`{name}`' for name in restored)}."
     if skipped:
         came_back += f" The files inside the submodules {', '.join(f'`{name}`' for name in skipped)} were not restored and still hold changes."
@@ -223,6 +223,8 @@ def restoration(restored: list[str], saved: str | None, skipped: list[str]) -> s
         text = f"{came_back} The discarded work is gone: `{SETTINGS_FIELD}.{SAVE_REVERTED_FIELD}` is false in {OVERRIDE_PATH}."
     else:
         text = f"{came_back} The discarded work is saved in `{saved}`; recover it with `git checkout {saved} -- .`."
+        if staged:
+            text += f" The version that was staged is in `{saved}^2`; recover it with `git checkout {saved}^2 -- .`."
     assert all(f"`{name}`" in text for name in [*restored, *skipped]), f"message leaves out one of the restored files {restored} or skipped submodules {skipped}"
     assert (saved is None) == ("is gone" in text), f"message {text!r} disagrees with the saved ref {saved!r}"
     return text
@@ -278,7 +280,8 @@ def nothing_to_revert(current: State, regressions: list[Report]) -> TcrStep:
 def reverted(turn: Turn, current: State, regressions: list[Report], save_reverted: bool) -> TcrStep:
     """Restores the latest checkpoint and tells the agent why. A failure with nothing to restore is not the edit's, so
     it is only reported. When the revert cannot finish, TCR is unavailable and says why."""
-    restored = checkpoint.uncommitted(checkpoint.repository_root(turn.cwd))
+    root = checkpoint.repository_root(turn.cwd)
+    restored = checkpoint.uncommitted(root)
     if not restored:
         return nothing_to_revert(current, regressions)
     logs = {report_key(report): write_log(turn.session, report) for report in regressions}
@@ -287,8 +290,9 @@ def reverted(turn: Turn, current: State, regressions: list[Report], save_reverte
     except checkpoint.CheckpointError as error:
         return TcrStep(replace(current, tcr=str(error)), tcr_notice(TCR_ACTIVE, str(error)))
     state = replace(current, reports=(), failed=False, told=None, signatures=(), fingerprint=UNSETTLED, head=commit_of(turn.cwd))
-    skipped = checkpoint.dirty_submodules(checkpoint.repository_root(turn.cwd))
-    step = TcrStep(state, (revert_message(regressions, current.baseline, logs, restoration(restored, saved, skipped)),), failure_status(regressions))
+    skipped = checkpoint.dirty_submodules(root)
+    staged = saved is not None and checkpoint.has_staged_copy(root, saved)
+    step = TcrStep(state, (revert_message(regressions, current.baseline, logs, restoration(restored, saved, skipped, staged)),), failure_status(regressions))
     assert not step.state.failed, "a reverted workspace still counts as failed"
     assert step.state.head == commit_of(turn.cwd), f"state head {step.state.head} is not the restored commit"
     return step

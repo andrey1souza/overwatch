@@ -187,6 +187,11 @@ class HardeningTests(HardeningCase):
         self.assertIn("`libs`", self.context(output))
         self.assertTrue((self.cwd / "libs" / "new.txt").exists())
 
+    def test_a_revert_message_names_the_command_for_the_staged_version_only_when_one_was_saved(self) -> None:
+        ref = "refs/overwatch/reverted/20261117T000000000000Z"
+        self.assertNotIn("^2", tcr.restoration(["a.txt"], ref, [], staged=False))
+        self.assertIn(f"`git checkout {ref}^2 -- .`", tcr.restoration(["a.txt"], ref, [], staged=True))
+
     def test_an_edit_the_agent_made_while_the_first_checks_ran_is_named_as_the_reason_tcr_is_unavailable(self) -> None:
         write(self.cwd / ".overwatch.json", json.dumps({"mode": "tcr"}))
         write(self.cwd / "pyproject.toml", PROJECT_FILE)
