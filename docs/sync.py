@@ -187,10 +187,10 @@ def model_downloads(directory: Path) -> list[str]:
     files = sorted(path for path in directory.iterdir() if path.suffix in {".tla", ".cfg", ".json"})
     assert files, f"No specification artifacts in {directory}"
     lines = ["", "## Sources", "",
-             "Each module below is typeset by TLATeX from its TLA+ source. Edit the TLA+ source when changing the specification.", "",
+             "Each module below is typeset by TLATeX from its TLA+ source.", "Edit the TLA+ source when changing the specification.", "",
              "| Artifact | Format |", "| --- | --- |"]
     lines.extend(f"| [{path.name}](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/{path.name}) | {path.suffix[1:]} |" for path in files)
-    assert len(lines) == len(files) + 7, 'Each available artifact must have one download row'
+    assert len(lines) == len(files) + 8, 'Each available artifact must have one download row'
     return lines
 
 

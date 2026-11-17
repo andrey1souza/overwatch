@@ -248,7 +248,9 @@ Run `python3 scripts/scenarios.py` to verify the scenarios and regenerate this p
 
 # [Model-derived integration contracts]($section.id('model-derived-integration-contracts'))
 
-These 134 cases are generated from the same TLC expectations replayed against all six integrations. Each event is followed by the model observation asserted by the replay. Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
+These 134 cases are generated from the same TLC expectations replayed against all six integrations.
+Each event is followed by the model observation asserted by the replay.
+Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.
 
 [Read the spec](https://benomahony.github.io/overwatch/model/) for the complete state machines, host capabilities, and checked properties.
 

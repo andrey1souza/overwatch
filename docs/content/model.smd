@@ -152,7 +152,8 @@ After an intentional model change, regenerate the fixtures and PDFs, review the 
 
 # [Sources]($heading.id('sources'))
 
-Each module below is typeset by TLATeX from its TLA+ source. Edit the TLA+ source when changing the specification.
+Each module below is typeset by TLATeX from its TLA+ source.
+Edit the TLA+ source when changing the specification.
 
 | Artifact | Format |
 | --- | --- |

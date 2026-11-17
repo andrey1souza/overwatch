@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Put every sentence of the hand-written Markdown on a line of its own, or with --check list the files that need it.
+"""Put every sentence of the Markdown in git on a line of its own, or with --check list the files that need it.
 
 With --stdin it formats stdin to stdout, so an editor can run it on save; with --check it rewrites nothing and
-exits 1 when a file would change. Code spans, link text, fenced code, list items, quotes and tables are left alone.
+exits 1 when a file would change. Frontmatter, code spans, link text, fenced code, list items, quotes and tables are
+left alone.
 """
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = (ROOT / "README.md", ROOT / "spec/README.md")
 ABBREVIATIONS = frozenset({
     "vs", "e.g", "i.e", "etc", "cf", "al", "no", "fig", "eq", "vol",
     "mr", "mrs", "ms", "dr", "st", "sr", "jr", "approx",
@@ -52,11 +53,24 @@ def split_sentences(line: str) -> str:
     return text
 
 
+def markdown_files() -> list[Path]:
+    """Every Markdown and SuperMD file git tracks in the repository."""
+    listed = subprocess.run(["git", "ls-files", "-z", "*.md", "*.smd"], cwd=ROOT, capture_output=True, text=True, check=True)
+    files = [ROOT / name for name in listed.stdout.split("\0") if name]
+    assert files, f"git lists no Markdown in {ROOT}; run from a checkout"
+    return files
+
+
 def format_markdown(content: str) -> str:
-    """content with each prose line split into one line per sentence, outside fences, lists, quotes and tables."""
+    """content with each prose line split into one line per sentence, outside frontmatter, fences, lists, quotes and
+    tables."""
     lines: list[str] = []
     fence: str | None = None
-    for line in content.split("\n"):
+    body = content.split("\n")
+    if body[0] == "---" and "---" in body[1:]:
+        end = body.index("---", 1) + 1
+        lines, body = body[:end], body[end:]
+    for line in body:
         match = FENCE.match(line)
         if match:
             if fence is None:
@@ -79,7 +93,7 @@ def main() -> int:
     if args.stdin:
         sys.stdout.write(format_markdown(sys.stdin.read()))
         return 0
-    stale = [path for path in FILES if format_markdown(text := path.read_text()) != text]
+    stale = [path for path in markdown_files() if format_markdown(text := path.read_text()) != text]
     for path in stale:
         if args.check:
             print(f"{path.relative_to(ROOT)} has lines with more than one sentence; run python3 scripts/markdown_format.py", file=sys.stderr)
