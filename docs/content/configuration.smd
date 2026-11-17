@@ -195,7 +195,8 @@ Otherwise Overwatch tells the agent that TCR is unavailable, and why, and change
 When the tree is dirty it names the files, and when a check wrote them, such as `report.xml`, it says that the checks changed the files while they ran and to add what a check writes to `.gitignore`.
 When the branch is `main` or `master` it tells the agent once that checkpoints land on it.
 Overwatch checks again at the start of each turn in Codex, OpenCode 1 and OpenCode 2; Pi reports only the start of a session, so there TCR does not start again after it became unavailable.
-OpenCode 1 checks a message before the agent's first model call and after the check that its session start began, so the agent's first edit cannot land while that check decides.
+OpenCode 1 holds a message until the check that its session start began has ended, so the agent's first edit cannot land while that check decides.
+It checks each message only in a session whose start announced TCR, as on or as unavailable; a session that started without TCR needs a new session after TCR is turned on.
 
 To turn TCR off, remove `mode` from `.overwatch.json`: the next event tells the agent that TCR is off, and nothing is committed or reverted.
 Setting `"enabled": false` stops every check, so TCR does nothing either.

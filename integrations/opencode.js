@@ -61,18 +61,55 @@ function blockedWarning(output) {
   return text
 }
 
+const TCR_NOTICE = /^overwatch: TCR is /
+
+/** Whether the checker's answer tells that TCR is on or cannot start, which only a project that turns TCR on gets. */
+function announcesTcr(output) {
+  assert(output !== null && typeof output === "object", `hook output ${String(output)} is not an object; pass the checker's JSON`)
+  const notices = output.overwatch?.notices
+  assert(notices === undefined || Array.isArray(notices), `notices are ${typeof notices}; the checker writes a list`)
+  return notices !== undefined && notices.some(notice => TCR_NOTICE.test(notice))
+}
+
+/**
+ * A session's start check as begin runs it: begin is given a function to call with the checker's answer, and returns
+ * the check's promise. The record's announcesTcr is true once the answer announced TCR.
+ */
+function trackStart(begin) {
+  assert(typeof begin === "function", `begin is ${typeof begin}; pass a function that runs the start check`)
+  const start = { announcesTcr: false, done: undefined }
+  start.done = begin(output => { start.announcesTcr = announcesTcr(output) })
+  assert(typeof start.done?.then === "function", `begin gave ${typeof start.done}; it must return the check's promise`)
+  return start
+}
+
+/**
+ * Waits for a session's start check, whether or not it failed, and says whether a message needs a check of its own:
+ * when the start check announced TCR, or when this plugin saw no start check for the session.
+ */
+async function messageNeedsCheck(start) {
+  assert(start === undefined || typeof start.done?.then === "function", `start is ${JSON.stringify(start)}; pass the record trackStart gave, or undefined`)
+  await start?.done.catch(() => undefined)
+  const needed = start === undefined || start.announcesTcr
+  assert(needed === (start === undefined || start.announcesTcr === true), `a message's need of a check came out ${needed} for ${JSON.stringify(start)}`)
+  return needed
+}
+
 /**
  * OpenCode 1's hooks for the project in directory: before a tool runs, refuse it when the checker denies it; after
  * an editing tool, add what the checker reports to the tool's output; when a session starts, receives a message or
  * goes idle, warn with the checker's status or refusal through client's toast, once for each event OpenCode sends.
- * OpenCode waits for chat.message before the model's first call, and the checker runs the events of one session in
- * order, so a message's check starts after the session's start check ends and before the agent can edit.
+ * OpenCode waits for chat.message before the model's first call, so a message waits for the session's start check
+ * and the agent cannot edit before it ends. A session whose start check announced TCR also has each message checked,
+ * as the checker runs the events of one session in order, so TCR decides again at each turn before the agent edits.
+ * A session that did not turn TCR on has no check run for a message.
  */
 export function createV1Hooks({ directory, client }, checker = serialChecker()) {
   assert(typeof directory === "string" && directory !== "", `OpenCode gave directory ${directory}; the hooks need the project's directory`)
   assert(typeof checker === "function", `checker is ${typeof checker}; pass a function from payload to output`)
   const check = checker
   const sessions = new SessionDelivery()
+  const starts = new Map()
   // Shows message as a warning toast. A toast that cannot be shown is logged, as OpenCode's own plugins do, since
   // failing the hook would stop the agent for a notice it can do without.
   const warn = async message => {
@@ -86,10 +123,11 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
     }
   }
 
-  const warnAbout = async (life, event, read = statusWarning) => {
+  const warnAbout = async (life, event, read = statusWarning, observe = () => undefined) => {
     assert(typeof event.hook_event_name === "string", `event ${JSON.stringify(event)} names no hook; build it with payload`)
     assert(typeof read === "function", `read is ${typeof read}; pass a function from the checker's output to text`)
     const output = await check(event)
+    observe(output)
     if (!life.closed) await warn(read(output))
   }
 
@@ -100,13 +138,19 @@ export function createV1Hooks({ directory, client }, checker = serialChecker()) 
       const reason = deniedAction(result)
       if (reason !== undefined) throw new Error(reason)
     },
-    "chat.message": async input => warnAbout(sessions.stateOf(input.sessionID), payload("UserPromptSubmit", directory, input.sessionID)),
+    "chat.message": async input => {
+      if (await messageNeedsCheck(starts.get(input.sessionID))) await warnAbout(sessions.stateOf(input.sessionID), payload("UserPromptSubmit", directory, input.sessionID))
+    },
     event: async ({ event }) => {
       const sessionID = sessionIDOf(event)
       if (!sessionID) return
-      if (event.type === "session.deleted") { sessions.remove(sessionID); return }
+      if (event.type === "session.deleted") { sessions.remove(sessionID); starts.delete(sessionID); return }
       const life = sessions.stateOf(sessionID)
-      if (event.type === "session.created") await warnAbout(life, { ...payload("SessionStart", directory, sessionID), source: "startup" })
+      if (event.type === "session.created") {
+        const start = trackStart(observe => warnAbout(life, { ...payload("SessionStart", directory, sessionID), source: "startup" }, statusWarning, observe))
+        starts.set(sessionID, start)
+        await start.done
+      }
       if (event.type === "session.idle") await warnAbout(life, payload("Stop", directory, sessionID), blockedWarning)
     },
     "tool.execute.after": async (input, output) => {

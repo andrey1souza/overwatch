@@ -25,6 +25,16 @@ function output(message, failed = true) {
   return result
 }
 
+/** What the checker says at a session's start when the project turns TCR on, or when TCR cannot start. */
+const TCR_ON = "overwatch: TCR is on: an edit that keeps the checks green is committed, and an edit that adds a failure is reverted."
+const TCR_UNAVAILABLE = "overwatch: TCR is unavailable: the working tree has uncommitted changes."
+
+/** The checker's session-start answer carrying the TCR notice text, as the engine shapes it. */
+function tcrNotice(text) {
+  assert(typeof text === "string" && text.startsWith("overwatch: TCR is "), `notice ${JSON.stringify(text)} is not a TCR notice; pass TCR_ON or TCR_UNAVAILABLE`)
+  return { overwatch: { status: "Overwatch: fixture", guarded: false, notices: [text] }, hookSpecificOutput: { additionalContext: text } }
+}
+
 /** The project directory every fixture event names; the fake checkers never read it. */
 const PROJECT = "/project"
 
@@ -77,7 +87,7 @@ test("OpenCode V1 checks a message only after the session's start check ends, so
     log.push(`${event.hook_event_name} begins`)
     if (event.hook_event_name === "SessionStart") await startEnds
     log.push(`${event.hook_event_name} ends`)
-    return {}
+    return event.hook_event_name === "SessionStart" ? tcrNotice(TCR_ON) : {}
   }
   const hooks = createV1Hooks({ directory: PROJECT, client: { tui: { showToast: async () => undefined } } }, serialChecker(heldStart))
   const started = hooks.event({ event: { type: "session.created", properties: { info: { id: "s1" } } } })
@@ -87,6 +97,63 @@ test("OpenCode V1 checks a message only after the session's start check ends, so
   endStart()
   await Promise.all([started, messaged])
   assert.deepEqual(log, ["SessionStart begins", "SessionStart ends", "UserPromptSubmit begins", "UserPromptSubmit ends"])
+})
+
+/** The events the hooks of one session send to a checker that answers the session start with startAnswer, in order. */
+async function eventsAfterStart(startAnswer) {
+  const log = []
+  const hooks = createV1Hooks(
+    { directory: PROJECT, client: { tui: { showToast: async () => undefined } } },
+    async event => {
+      log.push(event.hook_event_name)
+      return event.hook_event_name === "SessionStart" ? startAnswer : {}
+    },
+  )
+  await hooks.event({ event: { type: "session.created", properties: { info: { id: "s1" } } } })
+  await hooks["chat.message"]({ sessionID: "s1" })
+  await hooks["chat.message"]({ sessionID: "s1" })
+  return log
+}
+
+test("OpenCode V1 runs no check for a message when the project does not turn TCR on, but still waits for the start check", async () => {
+  const log = []
+  let endStart
+  const startEnds = new Promise(resolve => { endStart = resolve })
+  const hooks = createV1Hooks({ directory: PROJECT, client: { tui: { showToast: async () => undefined } } }, serialChecker(async event => {
+    log.push(`${event.hook_event_name} begins`)
+    if (event.hook_event_name === "SessionStart") await startEnds
+    log.push(`${event.hook_event_name} ends`)
+    return {}
+  }))
+  const started = hooks.event({ event: { type: "session.created", properties: { info: { id: "s1" } } } })
+  let messageDone = false
+  const messaged = hooks["chat.message"]({ sessionID: "s1" }).then(() => { messageDone = true })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(messageDone, false, "the message went on before the session's start check ended")
+  endStart()
+  await Promise.all([started, messaged])
+  assert.deepEqual(log, ["SessionStart begins", "SessionStart ends"], "a message ran a check although TCR is off")
+})
+
+test("OpenCode V1 checks every message when the start check says TCR is on", async () => {
+  assert.deepEqual(await eventsAfterStart(tcrNotice(TCR_ON)), ["SessionStart", "UserPromptSubmit", "UserPromptSubmit"])
+})
+
+test("OpenCode V1 checks every message when the start check says TCR cannot start", async () => {
+  assert.deepEqual(await eventsAfterStart(tcrNotice(TCR_UNAVAILABLE)), ["SessionStart", "UserPromptSubmit", "UserPromptSubmit"])
+})
+
+test("OpenCode V1 runs no check for any message when the start check has no TCR notice", async () => {
+  assert.deepEqual(await eventsAfterStart({ overwatch: { status: "Overwatch: fixture", guarded: false } }), ["SessionStart"])
+})
+
+test("OpenCode V1 does not fail a message when the session's start check failed", async () => {
+  const hooks = createV1Hooks(
+    { directory: PROJECT, client: { tui: { showToast: async () => undefined } } },
+    async event => { if (event.hook_event_name === "SessionStart") throw new Error("checker down"); return {} },
+  )
+  await assert.rejects(hooks.event({ event: { type: "session.created", properties: { info: { id: "s1" } } } }), /checker down/)
+  await hooks["chat.message"]({ sessionID: "s1" })
 })
 
 test("OpenCode V1 warns about an idle session only when the checker blocks the stop", async () => {
