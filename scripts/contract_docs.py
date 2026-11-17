@@ -27,8 +27,8 @@ def render_contracts(rows: list[dict]) -> list[str]:
     assert rows and {row['host'] for row in rows} == set(HOST_NAMES), f'Documentation has {len(rows)} cases for {set(row["host"] for row in rows)}, expected {set(HOST_NAMES)}'
     assert len({(row['host'], row['name']) for row in rows}) == len(rows), 'Each contract needs a unique title'
     lines = ['## Model-derived integration contracts', '',
-             f"These {len(rows)} cases are generated from the same TLC expectations replayed against all six integrations. "
-             'Each event is followed by the model observation asserted by the replay. '
+             f"These {len(rows)} cases are generated from the same TLC expectations replayed against all six integrations.",
+             'Each event is followed by the model observation asserted by the replay.',
              'Counters track failure deliveries, warnings, corrections, and idle wakeups; they exclude routine logs and recovery notices.', '',
              '[Read the spec](https://benomahony.github.io/overwatch/model/) for the complete state machines, host capabilities, and checked properties.', '']
     for host in dict.fromkeys(row['host'] for row in rows):

@@ -202,6 +202,7 @@ class ContractRunner {
       ['Begin', () => this.begin(false)], ['OutsideBegin', () => this.begin(true)],
       ['Finish', () => this.finish()], ['OutsideFinish', () => this.finish()], ['LateFinish', () => this.finish()],
       ['Report', () => (this.stopped || this.running ? undefined : this.reread())],
+      ['StartReport', () => (this.stopped || this.running ? undefined : this.host.start())],
       ['Deliver', () => (this.stopped ? undefined : this.host.context())],
       ['Stop', () => this.stop()], ['Restart', () => this.restart()],
     ])

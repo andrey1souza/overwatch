@@ -26,7 +26,8 @@ codex plugin marketplace add benomahony/overwatch
 codex plugin add overwatch@overwatch
 ```
 
-Restart Codex, run `/hooks`, and trust the Overwatch hooks. Codex requires renewed trust whenever a hook definition changes.
+Restart Codex, run `/hooks`, and trust the Overwatch hooks.
+Codex requires renewed trust whenever a hook definition changes.
 
 From a local checkout:
 
@@ -61,7 +62,8 @@ From a local checkout:
 pi install /absolute/path/to/overwatch
 ```
 
-Pi asks you to trust project-local extensions before loading them. In non-interactive runs, pass `--approve` or save the trust decision.
+Pi asks you to trust project-local extensions before loading them.
+In non-interactive runs, pass `--approve` or save the trust decision.
 
 # [Neovim]($heading.id('neovim'))
 

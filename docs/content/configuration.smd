@@ -6,7 +6,8 @@
 ---
 
 
-`.overwatch.json` at the project root, every field optional. Claude Code, Codex, OpenCode, Pi, and Neovim all read it; `summary` and `failed` are JavaScript-style regexes, which the Neovim plugin translates.
+`.overwatch.json` at the project root, every field optional.
+Claude Code, Codex, OpenCode, Pi, and Neovim all read it; `summary` and `failed` are JavaScript-style regexes, which the Neovim plugin translates.
 
 ```json
 {
@@ -18,9 +19,17 @@
 }
 ```
 
-`"enabled": false` turns overwatch off for that project, zanity included; `"baseline": []` skips the full run first. The other fields apply to one test watcher alone: in a polyglot project or a monorepo, the first language in the table above that the project has, at its root or in a sub-project. The override is read only at the project's root.
+`"enabled": false` turns overwatch off for that project, zanity included; `"baseline": []` skips the full run first.
+The other fields apply to one test watcher alone: in a polyglot project or a monorepo, the first language in the table above that the project has, at its root or in a sub-project.
+The override is read only at the project's root.
 
-`watchers` configures any entry of `watchers.json` by its name, test watchers and checkers alike, in a polyglot project or a monorepo too, where a sub-project's watcher takes its entry's settings. Each takes `enabled`, `argv`, `baseline`, `summary`, `failed`, `env`, variables set for its commands over overwatch's own and merged over the entry's, `timeout`, the seconds a check may run before it reports `timeout`, 540 unless set, and `settle`, the seconds a watch command must stay inactive before Codex, OpenCode, and Pi take its latest report as covering the files, 1 unless set, for a tool that waits longer than that before it rebuilds; the top level takes `timeout` and `settle` too, for the project's own watcher. A check that times out has a new failure, never inherited, and holds completion and protected actions like any other. Codex, OpenCode, and Pi honour `timeout` today; Claude Code and Neovim accept it and do not yet time a check out. An entry turned off gives way to the next of its language, so turning off `vitest` runs `jest` or `bun` when the project has one. The top-level fields above apply after these. Codex, OpenCode, and Pi refuse a setting of the wrong type, or a field it does not take, and name it.
+`watchers` configures any entry of `watchers.json` by its name, test watchers and checkers alike, in a polyglot project or a monorepo too, where a sub-project's watcher takes its entry's settings.
+Each takes `enabled`, `argv`, `baseline`, `summary`, `failed`, `env`, variables set for its commands over overwatch's own and merged over the entry's, `timeout`, the seconds a check may run before it reports `timeout`, 540 unless set, and `settle`, the seconds a watch command must stay inactive before Codex, OpenCode, and Pi take its latest report as covering the files, 1 unless set, for a tool that waits longer than that before it rebuilds; the top level takes `timeout` and `settle` too, for the project's own watcher.
+A check that times out has a new failure, never inherited, and holds completion and protected actions like any other.
+Codex, OpenCode, and Pi honour `timeout` today; Claude Code and Neovim accept it and do not yet time a check out.
+An entry turned off gives way to the next of its language, so turning off `vitest` runs `jest` or `bun` when the project has one.
+The top-level fields above apply after these.
+Codex, OpenCode, and Pi refuse a setting of the wrong type, or a field it does not take, and name it.
 
 ```json
 {
@@ -32,7 +41,11 @@
 }
 ```
 
-A project with no marker file is watched when its override names `summary`, `failed`, and `argv` or `baseline`; `name` labels it in the status line. With no `argv`, overwatch needs no watch tool: it reruns `baseline` itself after the agent's edits (Edit, Write, MultiEdit, NotebookEdit or Bash calls) go quiet. An edit made while the suite runs stops that run and starts another, so the agent never hears a result its later edits have already overtaken. Edits made outside the session are picked up at the agent's next edit. This repository watches its own tests that way:
+A project with no marker file is watched when its override names `summary`, `failed`, and `argv` or `baseline`; `name` labels it in the status line.
+With no `argv`, overwatch needs no watch tool: it reruns `baseline` itself after the agent's edits (Edit, Write, MultiEdit, NotebookEdit or Bash calls) go quiet.
+An edit made while the suite runs stops that run and starts another, so the agent never hears a result its later edits have already overtaken.
+Edits made outside the session are picked up at the agent's next edit.
+This repository watches its own tests that way:
 
 ```json
 {
@@ -45,7 +58,19 @@ A project with no marker file is watched when its override names `summary`, `fai
 
 # [Legacy-code triage]($heading.id('legacy-code-triage'))
 
-A legacy project can start with thousands of errors. Overwatch records the first result of each check as inherited backlog and sends one short notice with the inventory path. It saves all named issues and the full original output outside the conversation. Fixing that backlog is deliberate work; by default, it does not prevent ordinary tools or Stop events. New failures keep completion guarded, even if other errors were already present. Updating results never replaces the initial baseline with new failures. A pull or checkout that moves HEAD under the session brings in failures the agent did not make, so each check reruns and its next result becomes the baseline; in Claude Code, unless the agent edits first. A move made only by commits, which bring in no files, keeps the baseline, so an edit committed in the same step as the check breaks is still a new failure. Overwatch reads the HEAD reflog to tell the two apart; when it cannot, the move takes a fresh baseline. So does a step whose shell command runs a git operation that can bring in files (`merge`, `pull`, `cherry-pick`, `rebase`, `checkout`, `submodule` and the like) or `gh pr checkout`, `gh pr merge` or `gh repo sync`, even when it ends in a commit, as `git merge --squash` does. Overwatch reads the command as a shell does: operators, parentheses, `$(…)`, backticks and `sh -c` scripts are followed, and quoted text, such as a commit message that names a merge, is not a command. A command that hides such an operation in a script file, a git alias, or a command substitution inside double quotes is read as a commit. Also in Claude Code, the first full run can still be going when the agent starts editing; edits made during it are rechecked once it ends, and that first result is no baseline, since it may hold those edits, so every failure it reports counts as new.
+A legacy project can start with thousands of errors.
+Overwatch records the first result of each check as inherited backlog and sends one short notice with the inventory path.
+It saves all named issues and the full original output outside the conversation.
+Fixing that backlog is deliberate work; by default, it does not prevent ordinary tools or Stop events.
+New failures keep completion guarded, even if other errors were already present.
+Updating results never replaces the initial baseline with new failures.
+A pull or checkout that moves HEAD under the session brings in failures the agent did not make, so each check reruns and its next result becomes the baseline; in Claude Code, unless the agent edits first.
+A move made only by commits, which bring in no files, keeps the baseline, so an edit committed in the same step as the check breaks is still a new failure.
+Overwatch reads the HEAD reflog to tell the two apart; when it cannot, the move takes a fresh baseline.
+So does a step whose shell command runs a git operation that can bring in files (`merge`, `pull`, `cherry-pick`, `rebase`, `checkout`, `submodule` and the like) or `gh pr checkout`, `gh pr merge` or `gh repo sync`, even when it ends in a commit, as `git merge --squash` does.
+Overwatch reads the command as a shell does: operators, parentheses, `$(…)`, backticks and `sh -c` scripts are followed, and quoted text, such as a commit message that names a merge, is not a command.
+A command that hides such an operation in a script file, a git alias, or a command substitution inside double quotes is read as a commit.
+Also in Claude Code, the first full run can still be going when the agent starts editing; edits made during it are rechecked once it ends, and that first result is no baseline, since it may hold those edits, so every failure it reports counts as new.
 
 Inspect a small batch from the inventory path in the notice:
 
@@ -55,13 +80,23 @@ python3 engine/triage.py /path/from/notice.baseline.json --check go --match Test
 python3 engine/triage.py /path/from/notice.baseline.json --offset 20 --limit 20 --json
 ```
 
-Run the script from your Overwatch checkout or use its installed absolute path. `--check` matches the check, command, or subproject; `--match` searches issue names, both without case sensitivity. The view groups by check and pages the initial snapshot, with links to full logs. It does not rerun checks or silently accept new regressions. When a runner does not name individual issues, the inventory contains its summary and full log instead. An increase in its reported error, warning, or failure counts is treated as a regression; a replacement issue with the same count cannot be distinguished without issue names.
+Run the script from your Overwatch checkout or use its installed absolute path.
+`--check` matches the check, command, or subproject; `--match` searches issue names, both without case sensitivity.
+The view groups by check and pages the initial snapshot, with links to full logs.
+It does not rerun checks or silently accept new regressions.
+When a runner does not name individual issues, the inventory contains its summary and full log instead.
+An increase in its reported error, warning, or failure counts is treated as a regression; a replacement issue with the same count cannot be distinguished without issue names.
 
 # [Failure gates and protected actions]($heading.id('failure-gates-and-protected-actions'))
 
-Failure notifications and permission decisions are separate. Listing, searching, reading, editing, and running checks are ordinary operations: a red check does not deny them or launch a check before they run. Post-tool notifications never deny a tool. Completion stays guarded until the relevant failures clear; deduplicating a notification does not clear that gate. Warnings retain each check's existing failure policy, including Zanity warnings.
+Failure notifications and permission decisions are separate.
+Listing, searching, reading, editing, and running checks are ordinary operations: a red check does not deny them or launch a check before they run.
+Post-tool notifications never deny a tool.
+Completion stays guarded until the relevant failures clear; deduplicating a notification does not clear that gate.
+Warnings retain each check's existing failure policy, including Zanity warnings.
 
-There are no protected tool actions by default. Configure specific actions in the repository's `.overwatch.json`:
+There are no protected tool actions by default.
+Configure specific actions in the repository's `.overwatch.json`:
 
 ```json
 {
@@ -75,8 +110,28 @@ There are no protected tool actions by default. Configure specific actions in th
 }
 ```
 
-Tool names match without case sensitivity; use the tool name your agent sends, such as `Bash`, `bash`, or `exec_command`. An optional `command` regular expression matches its `command` or `cmd` argument. Use syntax supported by both Python and JavaScript. Protect the specific publication or deployment command rather than the whole shell tool, so repairs remain possible. Without `command`, the rule protects the entire named tool. `checks` selects watcher names or languages; an omitted or empty list selects all checks. An unrelated failed check does not block an action scoped to passing checks. Every protected attempt checks the failure state independently, so a prior denial does not grant the next attempt.
+Tool names match without case sensitivity; use the tool name your agent sends, such as `Bash`, `bash`, or `exec_command`.
+An optional `command` regular expression matches its `command` or `cmd` argument.
+Use syntax supported by both Python and JavaScript.
+Protect the specific publication or deployment command rather than the whole shell tool, so repairs remain possible.
+Without `command`, the rule protects the entire named tool.
+`checks` selects watcher names or languages; an omitted or empty list selects all checks.
+An unrelated failed check does not block an action scoped to passing checks.
+Every protected attempt checks the failure state independently, so a prior denial does not grant the next attempt.
 
-`inherited` defaults to `"allow"`, preserving backlog triage. Set it to `"block"` to require inherited findings to clear before completion or protected actions. Ordinary operations remain available under either policy. A successful check clears its gate; it does not clear failures from other checks. Environment errors retain their existing reporting behavior.
+`inherited` defaults to `"allow"`, preserving backlog triage.
+Set it to `"block"` to require inherited findings to clear before completion or protected actions.
+Ordinary operations remain available under either policy.
+A successful check clears its gate; it does not clear failures from other checks.
+Environment errors retain their existing reporting behavior.
 
-Command hooks use `PreToolUse` only for protected-action permission decisions and `Stop` for completion. Ordinary pre-tool hooks return an empty response without rerunning checks. Claude Code's in-process plugin denies protected tools before execution and replaces guarded completion with a correction request. It requests another correction for the same findings only after a tool call completes. Repeated completion attempts remain guarded without queuing duplicate corrections. Aborted or unsuccessful turns may settle. After interruption, automatic wakeups wait until another turn starts. Protected tools remain guarded. OpenCode and Pi use their before-tool hooks for protected actions. Reload the plugin after updating hook definitions; Codex may require renewed hook trust.
+Command hooks use `PreToolUse` only for protected-action permission decisions and `Stop` for completion.
+Ordinary pre-tool hooks return an empty response without rerunning checks.
+Claude Code's in-process plugin denies protected tools before execution and replaces guarded completion with a correction request.
+It requests another correction for the same findings only after a tool call completes.
+Repeated completion attempts remain guarded without queuing duplicate corrections.
+Aborted or unsuccessful turns may settle.
+After interruption, automatic wakeups wait until another turn starts.
+Protected tools remain guarded.
+OpenCode and Pi use their before-tool hooks for protected actions.
+Reload the plugin after updating hook definitions; Codex may require renewed hook trust.
