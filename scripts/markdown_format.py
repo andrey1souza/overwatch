@@ -36,7 +36,7 @@ def split_sentences(line: str) -> str:
             depth += 1
         elif not in_code and char == "]":
             depth = max(0, depth - 1)
-        ends = char in ".!?" and depth == 0 and not in_code and line[i + 1 : i + 2] == " " and line[i + 2 : i + 3].isupper()
+        ends = char in ".!?" and depth == 0 and not in_code and line[i + 1 : i + 2] == " " and (line[i + 2 : i + 3].isupper() or line[i + 2 : i + 3] == "`")
         if ends:
             j = i - 1
             while j >= 0 and (line[j].isalnum() or line[j] == "."):

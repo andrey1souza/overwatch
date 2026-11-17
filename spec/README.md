@@ -59,8 +59,11 @@ These bounds exercise concurrency and policy combinations; passing them is not p
 
 ## Model-derived conformance tests
 
-`python3 scripts/model_traces.py --jar /path/to/tla2tools.jar` generates the result-layer traces. `python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar` generates the host contracts.
-Both scripts contain input programs; TLC computes the expected observations. `model_traces.py` also has TLC walk the result model itself from a fixed seed, taking at each step only an action `Next` enables, and fails unless the walks take every action, timeouts and builds of an older version included; those walks are kept in `tests/fixtures/model-walks.*`, and an integration replays them from the change that makes it follow them. `--check` rejects stale TypeScript or JSON fixtures.
+`python3 scripts/model_traces.py --jar /path/to/tla2tools.jar` generates the result-layer traces.
+`python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar` generates the host contracts.
+Both scripts contain input programs; TLC computes the expected observations.
+`model_traces.py` also has TLC walk the result model itself from a fixed seed, taking at each step only an action `Next` enables, and fails unless the walks take every action, timeouts and builds of an older version included; those walks are kept in `tests/fixtures/model-walks.*`, and an integration replays them from the change that makes it follow them.
+`--check` rejects stale TypeScript or JSON fixtures.
 
 - Claude runs the production `register` hook chain with a controlled host protocol.
 - Codex uses real hook processes, commands, and file-backed state, including lock contention.
@@ -77,17 +80,33 @@ TLA+ describes states and the actions allowed to change them.
 TLC explores all reachable states within a configuration's finite bounds, including different orders of concurrent events.
 A failing invariant or temporal property produces a counterexample sequence to investigate before changing the implementation.
 
-In `Overwatch.tla`, `truth` maps workspace versions to findings, `head` is the current version, and `based` identifies the inherited baseline. `pending` holds completed, unread results. `ReadResults` consumes the latest complete result; unfinished process output is outside that action. `outbox` and the turn state constrain when a report becomes visible and whether it can wake an idle agent.
+In `Overwatch.tla`, `truth` maps workspace versions to findings, `head` is the current version, and `based` identifies the inherited baseline.
+`pending` holds completed, unread results.
+`ReadResults` consumes the latest complete result; unfinished process output is outside that action.
+`outbox` and the turn state constrain when a report becomes visible and whether it can wake an idle agent.
 
-In `IntegrationContract.tla`, `reports` and `baseline` contain per-check finding sets. `busy` represents an unfinished check. `request` and `reply` separate asking for an action from receiving its decision, so TLC can explore a request arriving during a check. `visible`, `contextPending`, and the delivery counters represent the host's observable channels. `active` and `session` distinguish shutdown from restart. `Capabilities` declares the host differences; it does not offer user-selectable enforcement modes.
+In `IntegrationContract.tla`, `reports` and `baseline` contain per-check finding sets.
+`busy` represents an unfinished check.
+`request` and `reply` separate asking for an action from receiving its decision, so TLC can explore a request arriving during a check.
+`visible`, `contextPending`, and the delivery counters represent the host's observable channels.
+`active` and `session` distinguish shutdown from restart.
+`Capabilities` declares the host differences; it does not offer user-selectable enforcement modes.
 
 An action such as `Respond` describes one transition.
-A primed variable such as `reply'` is its value after the transition; `UNCHANGED` lists values that the action preserves. `Init` defines possible starting states, and `Next` chooses a permitted action.
+A primed variable such as `reply'` is its value after the transition; `UNCHANGED` lists values that the action preserves.
+`Init` defines possible starting states, and `Next` chooses a permitted action.
 Invariants hold in every reachable state.
 Temporal properties describe progress across a sequence of states.
 Weak fairness (`WF_vars`) rules out indefinitely ignoring an action that remains enabled; it does not impose a response time limit.
 
-The fixture event names correspond to model actions: `RequestInspect`, `RequestRepair`, `RequestPublish`, and `RequestComplete` call `Request` with the corresponding kind; `Respond` answers an enabled request; `Poll` answers only if enabled. `Ack` consumes the reply. `Begin` and `Finish` start and finish a check; the fixture supplies the next snapshot. `Report` updates the visible report and `Deliver` consumes deferred context when pending. `Stop` closes the session and `Restart` starts a fresh one. `Turn` starts a person's turn only when idle, `CorrectionTurn` starts the submitted correction's own turn when one is pending (a person's turn otherwise), `StartTurn` requires an idle turn, and `Work` records completed tool work, which permits a fresh correction only outside a correction's own turn. `OutsideBegin` and `OutsideFinish` run a check on another process's change, which only hosts that notice such changes can replay, and `Outside` is that change in the result-layer traces. `LateFinish` represents a late check callback and has no effect on a closed session.
+The fixture event names correspond to model actions: `RequestInspect`, `RequestRepair`, `RequestPublish`, and `RequestComplete` call `Request` with the corresponding kind; `Respond` answers an enabled request; `Poll` answers only if enabled.
+`Ack` consumes the reply.
+`Begin` and `Finish` start and finish a check; the fixture supplies the next snapshot.
+`Report` updates the visible report and `Deliver` consumes deferred context when pending.
+`Stop` closes the session and `Restart` starts a fresh one.
+`Turn` starts a person's turn only when idle, `CorrectionTurn` starts the submitted correction's own turn when one is pending (a person's turn otherwise), `StartTurn` requires an idle turn, and `Work` records completed tool work, which permits a fresh correction only outside a correction's own turn.
+`OutsideBegin` and `OutsideFinish` run a check on another process's change, which only hosts that notice such changes can replay, and `Outside` is that change in the result-layer traces.
+`LateFinish` represents a late check callback and has no effect on a closed session.
 Conditional no-ops are trace-wrapper behavior, not additional model transitions.
 
 The [Behavior page](https://benomahony.github.io/overwatch/behavior/#model-derived-integration-contracts) renders every fixture's input state, events, and TLC observations.

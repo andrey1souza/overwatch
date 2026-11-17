@@ -80,7 +80,8 @@ python3 engine/triage.py /path/from/notice.baseline.json --check go --match Test
 python3 engine/triage.py /path/from/notice.baseline.json --offset 20 --limit 20 --json
 ```
 
-Run the script from your Overwatch checkout or use its installed absolute path. `--check` matches the check, command, or subproject; `--match` searches issue names, both without case sensitivity.
+Run the script from your Overwatch checkout or use its installed absolute path.
+`--check` matches the check, command, or subproject; `--match` searches issue names, both without case sensitivity.
 The view groups by check and pages the initial snapshot, with links to full logs.
 It does not rerun checks or silently accept new regressions.
 When a runner does not name individual issues, the inventory contains its summary and full log instead.
@@ -113,7 +114,8 @@ Tool names match without case sensitivity; use the tool name your agent sends, s
 An optional `command` regular expression matches its `command` or `cmd` argument.
 Use syntax supported by both Python and JavaScript.
 Protect the specific publication or deployment command rather than the whole shell tool, so repairs remain possible.
-Without `command`, the rule protects the entire named tool. `checks` selects watcher names or languages; an omitted or empty list selects all checks.
+Without `command`, the rule protects the entire named tool.
+`checks` selects watcher names or languages; an omitted or empty list selects all checks.
 An unrelated failed check does not block an action scoped to passing checks.
 Every protected attempt checks the failure state independently, so a prior denial does not grant the next attempt.
 

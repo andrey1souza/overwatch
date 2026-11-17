@@ -182,7 +182,8 @@ python3 engine/triage.py /path/from/notice.baseline.json --check go --match Test
 python3 engine/triage.py /path/from/notice.baseline.json --offset 20 --limit 20 --json
 ```
 
-Run the script from your Overwatch checkout or use its installed absolute path. `--check` matches the check, command, or subproject; `--match` searches issue names, both without case sensitivity.
+Run the script from your Overwatch checkout or use its installed absolute path.
+`--check` matches the check, command, or subproject; `--match` searches issue names, both without case sensitivity.
 The view groups by check and pages the initial snapshot, with links to full logs.
 It does not rerun checks or silently accept new regressions.
 When a runner does not name individual issues, the inventory contains its summary and full log instead.
@@ -215,7 +216,8 @@ Tool names match without case sensitivity; use the tool name your agent sends, s
 An optional `command` regular expression matches its `command` or `cmd` argument.
 Use syntax supported by both Python and JavaScript.
 Protect the specific publication or deployment command rather than the whole shell tool, so repairs remain possible.
-Without `command`, the rule protects the entire named tool. `checks` selects watcher names or languages; an omitted or empty list selects all checks.
+Without `command`, the rule protects the entire named tool.
+`checks` selects watcher names or languages; an omitted or empty list selects all checks.
 An unrelated failed check does not block an action scoped to passing checks.
 Every protected attempt checks the failure state independently, so a prior denial does not grant the next attempt.
 
@@ -333,7 +335,9 @@ Keep hook payloads, temporary paths, and test setup in the fixture rather than t
 The [Spec page](https://benomahony.github.io/overwatch/model/) embeds every TLA+ module as TLATeX typesets it, in reading order, with the source's own sections and comments.
 The [Behavior page](https://benomahony.github.io/overwatch/behavior/#model-derived-integration-contracts) renders every host contract from the TLC fixtures and supports agent and text filters.
 
-The [behavioral specification](https://github.com/benomahony/overwatch/blob/main/spec/README.md) covers every integration. `Overwatch.tla` models baselines, workspace versions, buffered builds, and notification ordering. `IntegrationContract.tla` specifies the six hosts' request/response behavior, independent inspection during checks, scoped guards, completion feedback, delivery, and lifecycle.
+The [behavioral specification](https://github.com/benomahony/overwatch/blob/main/spec/README.md) covers every integration.
+`Overwatch.tla` models baselines, workspace versions, buffered builds, and notification ordering.
+`IntegrationContract.tla` specifies the six hosts' request/response behavior, independent inspection during checks, scoped guards, completion feedback, delivery, and lifecycle.
 Both layers share `FailurePolicy.tla`.
 Host differences are explicit: OpenCode 1 warns at idle, Pi continues, OpenCode 2 queues a correction, Codex and Claude guard completion, and Neovim has no agent gates.
 

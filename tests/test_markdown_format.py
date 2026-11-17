@@ -9,6 +9,9 @@ class MarkdownFormatTests(unittest.TestCase):
     def test_each_sentence_starts_a_line(self) -> None:
         self.assertEqual(format_markdown("One. Two! Three? Four."), "One.\nTwo!\nThree?\nFour.")
 
+    def test_a_sentence_may_start_with_code(self) -> None:
+        self.assertEqual(format_markdown("Run it. `Ack` replies."), "Run it.\n`Ack` replies.")
+
     def test_abbreviations_code_and_link_text_do_not_end_a_sentence(self) -> None:
         for line in ("Use a runner, e.g. Zig, first.", "Run `a. B` now.", "See [the spec. Here](x) now."):
             self.assertEqual(format_markdown(line), line)
