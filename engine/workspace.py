@@ -23,8 +23,9 @@ FINGERPRINT_BYTES = 20
 
 
 def workspace_files(cwd: Path) -> list[Path]:
-    """Every file git would track in cwd, a repository repository_of found, or ConfigurationError saying why git
-    could not list them."""
+    """Every file git would track in cwd, a repository repository_of found, each once, although git lists a file that
+    a merge left in conflict once for each stage of the index; or ConfigurationError saying why git could not list
+    them."""
     try:
         result = subprocess.run(
             ["git", "ls-files", "-co", "--exclude-standard", "-z"],
@@ -34,7 +35,7 @@ def workspace_files(cwd: Path) -> list[Path]:
             timeout=GIT_TIMEOUT,
             check=True,
         )
-        paths = [cwd / os.fsdecode(part) for part in result.stdout.split(b"\0") if part]
+        paths = list(dict.fromkeys(cwd / os.fsdecode(part) for part in result.stdout.split(b"\0") if part))
     except (OSError, subprocess.SubprocessError) as error:
         raise ConfigurationError(f"git could not list the files of {cwd}: {error}; check that git is installed and can read the repository") from error
     assert all(path.is_relative_to(cwd) for path in paths), f"listed {[path for path in paths if not path.is_relative_to(cwd)]} outside {cwd}; list only the workspace"
