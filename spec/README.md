@@ -74,14 +74,11 @@ python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
 
 The Spec page renders every declaration and definition from every TLA+ module in source order. Its sections and explanations come directly from comments in those files. There is no separate documentation equation catalog. `scripts/model_math.py` extracts the definitions from the TLA+ source and translates their notation into LaTeX; it does not maintain separate copies of the formula bodies. Unsupported notation fails generation. Zine emits the TeX expressions, and the pinned KaTeX build step renders them as equation layouts with accessible MathML and the original TeX attached as an annotation. Release pages need no JavaScript, image viewer, or PDF plugin. Zine's local development server renders the same expressions in the browser using a bundled copy of the pinned KaTeX version; plain `cd docs && zine` works without a separate rendering step or network access. CI compares those annotations against the current source definitions.
 
-For the complete typeset-module downloads, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX generates the standalone `.tex` files from the same TLA+ modules. The generator checks alignment and rejects overflowing lines and can refresh the existing PDF downloads from the same source:
+For the complete typeset-module downloads, install `pdflatex` (for example, TeX Live's `texlive-latex-base`). TLATeX typesets every TLA+ module; the generator rejects overflowing lines and refreshes the existing PDF downloads from the same source, and `--check` typesets every module without rewriting them:
 
 ```sh
-python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar --refresh-pdfs
+python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar
 python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar --check
-mkdir -p /tmp/overwatch-typeset
-pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/Overwatch.tex
-pdflatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp/overwatch-typeset spec/IntegrationContract.tex
 python3 docs/sync.py --write
 python3 docs/sync.py
 ```

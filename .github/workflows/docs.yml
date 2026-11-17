@@ -27,7 +27,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_scenarios.py
           python3 scripts/scenarios.py --check
 
-      - name: Verify model fixtures and generated LaTeX
+      - name: Verify model fixtures and typeset modules
         run: |
           sudo apt-get update
           sudo apt-get install -y texlive-latex-base

@@ -250,7 +250,7 @@ python3 scripts/model_traces.py --jar /path/to/tla2tools.jar  # regenerate expec
 python3 scripts/model_traces.py --jar /path/to/tla2tools.jar --check  # reject stale expectations
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar  # regenerate all host contracts
 python3 scripts/integration_traces.py --jar /path/to/tla2tools.jar --check
-python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar --check  # verify generated LaTeX downloads; needs pdflatex
+python3 scripts/spec_latex.py --jar /path/to/tla2tools.jar --check  # typeset every module for the PDF downloads; needs pdflatex
 python3 scripts/timing.py gaps    # fit the gaps between edits in your Claude Code transcripts
 python3 scripts/timing.py budget --first 300  # longest rerun time for a 10% slowdown at each max-ahead
 ```
