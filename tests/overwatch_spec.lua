@@ -1,13 +1,11 @@
 -- nvim --headless -l tests/overwatch_spec.lua
-vim.opt.rtp:prepend(vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h'))
+local root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
+vim.opt.rtp:prepend(root)
+package.path = root .. '/tests/?.lua;' .. package.path
 local overwatch = require('overwatch')
+local runner = require('runner')
+local it = runner.it
 
-local failures = 0
-local function test(name, fn)
-  local ok, err = pcall(fn)
-  print((ok and 'pass ' or 'FAIL ') .. name .. (ok and '' or ('\n  ' .. tostring(err))))
-  if not ok then failures = failures + 1 end
-end
 local function eq(actual, expected)
   if not vim.deep_equal(actual, expected) then error(('expected %s, got %s'):format(vim.inspect(expected), vim.inspect(actual)), 2) end
 end
@@ -21,12 +19,12 @@ FAILED tests/test_add.py::test_add - assert 10 == 11
 ========================= 1 failed, 2 passed in 0.03s ==========================
 ]]
 
-test('javascript patterns become very magic vim patterns', function()
+it('javascript patterns become very magic vim patterns', function()
   eq(overwatch.vim_regex([[\b(?:failed|errors?)\b]]), [[\v%(<|>)%(failed|errors?)%(<|>)]])
   eq(overwatch.vim_regex('a<b>=c [^]<] .+?'), [[\va\<b\>\=c [^]<] .{-1,}]])
 end)
 
-test('the pytest summary line decides pass or fail', function()
+it('the pytest summary line decides pass or fail', function()
   local report = overwatch.read_report(python, PYTEST_FAILING)
   eq(report.is_failed, true)
   eq(overwatch.status_line(python, report), 'overwatch python ✗ 1 failed, 2 passed in 0.03s: tests/test_add.py::test_add')
@@ -35,7 +33,7 @@ test('the pytest summary line decides pass or fail', function()
   eq(overwatch.read_report(python, 'collected 3 items'), nil)
 end)
 
-test('the zig summary line decides pass or fail', function()
+it('the zig summary line decides pass or fail', function()
   local report = overwatch.read_report(zig, 'Build Summary: 4/4 steps succeeded; 48/48 tests passed\n')
   eq(overwatch.status_line(zig, report), 'overwatch zig ✓ 4/4 steps succeeded; 48/48 tests passed')
   eq(overwatch.read_report(zig, 'Build Summary: 3/5 steps succeeded (1 failed)').is_failed, true)
@@ -48,13 +46,13 @@ local function project(override)
   return dir
 end
 
-test('.overwatch.json can turn a marked project off', function()
+it('.overwatch.json can turn a marked project off', function()
   local dir = project({ enabled = false })
   vim.fn.writefile({}, dir .. '/build.zig')
   eq(overwatch.find_watchers(dir), {})
 end)
 
-test('watchers settings configure an entry by name, and one turned off gives way to the next', function()
+it('watchers settings configure an entry by name, and one turned off gives way to the next', function()
   local dir = project({ watchers = {
     vitest = { enabled = false },
     rust = { baseline = { 'cargo', 'test', '--lib' }, env = { RUST_BACKTRACE = '1' } },
@@ -72,7 +70,7 @@ test('watchers settings configure an entry by name, and one turned off gives way
   eq(found.rust.env, { RUST_BACKTRACE = '1' })
 end)
 
-test('a project with no marker and no command has no watcher', function()
+it('a project with no marker and no command has no watcher', function()
   eq(overwatch.find_watchers(project({ summary = 'x', failed = 'y' })), {})
   eq(overwatch.find_watchers(project()), {})
 end)
@@ -83,7 +81,7 @@ local function named(name, marker)
   end
 end
 
-test('each language reads its runner’s report and names what failed', function()
+it('each language reads its runner’s report and names what failed', function()
   local function read(watcher, output, code)
     local report = overwatch.read_report(watcher, output, code)
     return { overwatch.status_line(watcher, report), report.failures }
@@ -114,20 +112,20 @@ test('each language reads its runner’s report and names what failed', function
     { 'Smoke/Smoke.swift:18: Precondition failed: lost records', 'Smoke/Smoke.swift:38: Fatal error: Fixture must use 16 kHz' })
 end)
 
-test('a failure is named by every group its pattern matched, joined by a space', function()
+it('a failure is named by every group its pattern matched, joined by a space', function()
   local watcher = { name = 'lint', argv = { 'lint' }, summary = '^lint: .*$', failed = '[1-9] findings?', failure = '^(\\S+):\\d+ \\[(\\S+)\\]' }
   local report = overwatch.read_report(watcher, 'calc.py:4 [unused] x is never read\nlint: 1 finding\n')
   eq(report.failures, { 'calc.py unused' })
 end)
 
-test('every language in a polyglot project gets its own watcher', function()
+it('every language in a polyglot project gets its own watcher', function()
   local dir = project()
   for _, marker in ipairs({ 'go.mod', 'Cargo.toml', 'deno.json' }) do vim.fn.writefile({}, dir .. '/' .. marker) end
   local names = vim.tbl_map(function(watcher) return watcher.name end, overwatch.find_watchers(dir))
   eq(names, { 'deno', 'go', 'rust' })
 end)
 
-test('a language the root lacks is watched in each sub-project that has it', function()
+it('a language the root lacks is watched in each sub-project that has it', function()
   local dir = project()
   for _, path in ipairs({ 'services/api/go.mod', 'tools/Cargo.toml', 'tools/nested/Cargo.toml', 'node_modules/pad/go.mod', '.git/x/go.mod' }) do
     vim.fn.mkdir(vim.fs.dirname(dir .. '/' .. path), 'p')
@@ -139,7 +137,7 @@ test('a language the root lacks is watched in each sub-project that has it', fun
   eq(vim.tbl_map(function(watcher) return watcher.name end, overwatch.find_watchers(dir)), { 'go', 'rust tools' })
 end)
 
-test('a JS project runs the test runner it has installed, ahead of bun', function()
+it('a JS project runs the test runner it has installed, ahead of bun', function()
   local dir = project()
   vim.fn.mkdir(dir .. '/node_modules/.bin', 'p')
   vim.fn.writefile({}, dir .. '/bun.lock')
@@ -148,7 +146,7 @@ test('a JS project runs the test runner it has installed, ahead of bun', functio
   eq(vim.tbl_map(function(watcher) return watcher.name end, overwatch.find_watchers(dir)), { 'vitest' })
 end)
 
-test('each watcher in a polyglot project shows in the status line', function()
+it('each watcher in a polyglot project shows in the status line', function()
   local dir = project()
   vim.fn.writefile({}, dir .. '/Cargo.toml')
   vim.fn.writefile({}, dir .. '/go.mod')
@@ -170,7 +168,7 @@ test('each watcher in a polyglot project shows in the status line', function()
   eq(overwatch.status(), '')
 end)
 
-test('a project with no watch command reruns its suite after each save', function()
+it('a project with no watch command reruns its suite after each save', function()
   local dir = project({ name = 'sh', baseline = { 'sh', '-c', 'cat result' }, summary = [[^ \d+ fail$]], failed = [[^[1-9]\d* fail$]] })
   vim.fn.writefile({ ' 2 pass', ' 0 fail' }, dir .. '/result')
   overwatch.start(dir)
@@ -187,7 +185,7 @@ test('a project with no watch command reruns its suite after each save', functio
   eq(overwatch.status(), '')
 end)
 
-test('a command that gives no summary shows what it printed', function()
+it('a command that gives no summary shows what it printed', function()
   local dir = project({ name = 'sh', baseline = { 'sh', '-c', 'echo error: Failed to parse uv.lock' }, summary = 'x', failed = 'y' })
   local notified = {}
   vim.notify = function(text) notified[#notified + 1] = text end
@@ -198,7 +196,7 @@ test('a command that gives no summary shows what it printed', function()
   overwatch.stop()
 end)
 
-test('a command that gives no summary and exits nonzero fails', function()
+it('a command that gives no summary and exits nonzero fails', function()
   local dir = project({ name = 'sh', baseline = { 'sh', '-c', 'echo x.py:4: error: Failed to parse uv.lock; exit 2' }, summary = '^SUMMARY$', failed = 'y' })
   overwatch.start(dir)
   vim.wait(2000, function() return overwatch.status():find('✗') ~= nil end)
@@ -207,7 +205,7 @@ test('a command that gives no summary and exits nonzero fails', function()
   overwatch.stop()
 end)
 
-test('two languages failing at once share the quickfix list, and one back to green leaves it', function()
+it('two languages failing at once share the quickfix list, and one back to green leaves it', function()
   local dir = project()
   vim.fn.writefile({}, dir .. '/Cargo.toml')
   vim.fn.writefile({}, dir .. '/go.mod')
@@ -246,7 +244,7 @@ local function lines(path)
   return vim.fn.filereadable(path) == 1 and #vim.fn.readfile(path) or 0
 end
 
-test('a watcher that keeps exiting backs off, then is left stopped', function()
+it('a watcher that keeps exiting backs off, then is left stopped', function()
   overwatch.RETRY_MS = 50
   local dir = project({ name = 'sh', argv = { 'sh', '-c', 'echo run >> starts; exit 1' }, baseline = {}, summary = '^SUMMARY$', failed = 'y' })
   overwatch.start(dir)
@@ -256,7 +254,7 @@ test('a watcher that keeps exiting backs off, then is left stopped', function()
   overwatch.stop()
 end)
 
-test('a watcher that ran a while is restarted at once, every time', function()
+it('a watcher that ran a while is restarted at once, every time', function()
   overwatch.RETRY_MS = 100
   local dir = project({ name = 'sh', argv = { 'sh', '-c', 'echo run >> starts; exec sleep 0.2' }, baseline = {}, summary = '^SUMMARY$', failed = 'y' })
   overwatch.start(dir)
@@ -266,7 +264,7 @@ test('a watcher that ran a while is restarted at once, every time', function()
   overwatch.RETRY_MS = 30000
 end)
 
-test('a save made while the suite reruns stops that run and starts another', function()
+it('a save made while the suite reruns stops that run and starts another', function()
   local dir = project({ name = 'sh', baseline = { 'sh', '-c', 'cat result; exec sleep "$(cat delay)"' }, summary = '^result: .*$', failed = 'FAILED' })
   local function set(result, delay)
     vim.fn.writefile({ result }, dir .. '/result')
@@ -288,4 +286,4 @@ test('a save made while the suite reruns stops that run and starts another', fun
   overwatch.stop()
 end)
 
-os.exit(failures == 0 and 0 or 1)
+runner.finish("Neovim specs")
