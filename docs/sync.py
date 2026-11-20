@@ -202,8 +202,11 @@ def model_modules(repo: Path) -> str:
     missing = [name for name in modules if not (repo / "docs/assets/spec" / f"{name}.pdf").is_file()]
     if missing:
         raise SyncError(f"modules {missing} have no PDF in docs/assets/spec; run python3 scripts/spec_latex.py")
+    assert modules, f"spec_sources found no modules in {repo / 'spec'}; the Spec page needs at least one"
     entries = ", ".join(f'.{{ .name = "{name}", .pdf = "spec/{name}.pdf" }}' for name in modules)
-    return f".{{ .modules = [{entries}] }}"
+    custom = f".{{ .modules = [{entries}] }}"
+    assert custom.count(".pdf = ") == len(modules), f"the Spec frontmatter lists {custom.count('.pdf = ')} PDFs for {len(modules)} modules"
+    return custom
 
 
 def front_keys(text: str) -> list[str | None]:
@@ -221,7 +224,10 @@ def front_keys(text: str) -> list[str | None]:
 
 def is_generated(keys: list[str | None]) -> bool:
     """Whether frontmatter keys are those page() writes: FRONT_KEYS, then a custom value when the page has one."""
-    return keys in (FRONT_KEYS, [*FRONT_KEYS, "custom"])
+    assert "custom" not in FRONT_KEYS, f"FRONT_KEYS {FRONT_KEYS} names custom, which page() writes only after them"
+    generated = keys in (FRONT_KEYS, [*FRONT_KEYS, "custom"])
+    assert not generated or keys[: len(FRONT_KEYS)] == FRONT_KEYS, f"keys {keys} were taken as generated without FRONT_KEYS first"
+    return generated
 
 
 def replace_page(target: Path, text: str) -> str:
