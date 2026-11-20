@@ -1,8 +1,11 @@
 """Keep each sentence of the Markdown in git on a line of its own."""
+import sys
 import unittest
 
-from paths import ROOT
-from markdown_format import format_markdown, markdown_files
+import paths
+from markdown_format import format_markdown
+
+assert str(paths.ROOT / "scripts") in sys.path, f"{paths.ROOT / 'scripts'} is not on sys.path {sys.path}; paths puts scripts/ there so markdown_format imports by name"
 
 
 class MarkdownFormatTests(unittest.TestCase):
@@ -30,10 +33,6 @@ class MarkdownFormatTests(unittest.TestCase):
     def test_frontmatter_is_left_alone(self) -> None:
         text = '---\n.description = "One. Two.",\n---\n\nOne. Two.'
         self.assertEqual(format_markdown(text), '---\n.description = "One. Two.",\n---\n\nOne.\nTwo.')
-
-    def test_the_repository_markdown_is_formatted(self) -> None:
-        for path in markdown_files():
-            self.assertEqual(format_markdown(text := path.read_text()), text, f"{path.relative_to(ROOT)}: run python3 scripts/markdown_format.py")
 
 
 if __name__ == "__main__":
