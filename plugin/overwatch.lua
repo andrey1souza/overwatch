@@ -5,6 +5,6 @@ vim.api.nvim_create_user_command('OverwatchStart', function() require('overwatch
 vim.api.nvim_create_user_command('OverwatchStop', function() require('overwatch').stop() end, {})
 
 local group = vim.api.nvim_create_augroup('overwatch', {})
-vim.api.nvim_create_autocmd('VimEnter', { group = group, callback = function() require('overwatch').start() end })
-vim.api.nvim_create_autocmd('BufWritePost', { group = group, callback = function() require('overwatch').changed() end })
-vim.api.nvim_create_autocmd('VimLeavePre', { group = group, callback = function() require('overwatch').stop() end })
+vim.api.nvim_create_autocmd('VimEnter', { group = group, command = 'OverwatchStart' })
+vim.api.nvim_create_autocmd('BufWritePost', { group = group, command = "lua require('overwatch').changed()" })
+vim.api.nvim_create_autocmd('VimLeavePre', { group = group, command = 'OverwatchStop' })
