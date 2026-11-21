@@ -173,6 +173,9 @@ CONSTANTS
     Names = {{"a", "b"}}
     MaxEdits = {MAX_EDITS}
     Timeout = 2
+    TcrMode = FALSE
+    SaveReverted = FALSE
+    StartQueued = FALSE
 INVARIANTS
     Export
 ''')
@@ -216,6 +219,9 @@ CONSTANTS
     Names = {"a", "b"}
     MaxEdits = MAX_EDITS
     Timeout = 2
+    TcrMode = FALSE
+    SaveReverted = FALSE
+    StartQueued = FALSE
 INVARIANTS
     TypeOK
     BufferedResultsAreOrdered

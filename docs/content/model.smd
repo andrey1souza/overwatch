@@ -165,6 +165,12 @@ Edit the TLA+ source when changing the specification.
 | [IntegrationContract.tla](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/IntegrationContract.tla) | tla |
 | [IntegrationLifecycle.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/IntegrationLifecycle.cfg) | cfg |
 | [IntegrationLifecycle.tla](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/IntegrationLifecycle.tla) | tla |
+| [IntegrationNotices.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/IntegrationNotices.cfg) | cfg |
 | [Overwatch.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/Overwatch.cfg) | cfg |
 | [Overwatch.tla](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/Overwatch.tla) | tla |
+| [OverwatchTcr.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/OverwatchTcr.cfg) | cfg |
+| [OverwatchTcrNames.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/OverwatchTcrNames.cfg) | cfg |
+| [OverwatchTcrNotices.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/OverwatchTcrNotices.cfg) | cfg |
+| [OverwatchTcrQueues.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/OverwatchTcrQueues.cfg) | cfg |
+| [OverwatchTcrReverts.cfg](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/OverwatchTcrReverts.cfg) | cfg |
 | [modules.json](https://raw.githubusercontent.com/benomahony/overwatch/main/spec/modules.json) | json |
