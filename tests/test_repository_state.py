@@ -4,6 +4,8 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import subprocess
 import unittest
 from pathlib import Path
@@ -11,6 +13,7 @@ from pathlib import Path
 from checkpoint_repository import UNFINISHED, RepositoryCase, clear_marker, git, make_dir, present, put, put_bytes
 import checkpoint
 import repository_state
+import tcr
 from codex_hook import read
 
 
@@ -207,6 +210,14 @@ class RepositoryStateTests(RepositoryCase):
         self.assertIn("a.txt", readers["uncommitted"], "the file staged as deleted and present again was not listed as changed")
         for name, listed in readers.items():
             self.assertEqual(listed, list(dict.fromkeys(listed)), f"{name} lists a path twice: {listed}")
+
+    def test_the_listing_made_after_a_failed_reset_answers_none_for_a_root_it_cannot_list_and_does_not_raise(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            gone = tcr.uncommitted_now(self.repo / "gone")
+            relative = tcr.uncommitted_now(Path("relative"))
+        self.assertEqual(gone, (None, False), "a root that is no directory was listed, or its absence was told as a bug")
+        self.assertEqual(relative, (None, True), "a relative root was listed, or its use was not told as a bug")
+        self.assertEqual(tcr.uncommitted_now(self.repo), ([], False), "a clean repository was not listed as empty")
 
     def test_a_directory_outside_a_git_tree_is_refused(self) -> None:
         with self.assertRaises(checkpoint.CheckpointError):

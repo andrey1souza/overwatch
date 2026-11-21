@@ -17,6 +17,7 @@ import checkpoint
 import secrets_guard
 from checkpoint_repository import git, isolate_git, make_dir, put, remove_fixture_file, restore_git
 from discovery import ConfigurationError
+from tcr_settings import read_settings
 from codex_hook import read
 
 AWS_KEY = "AKIA" + "A" * 16
@@ -243,6 +244,18 @@ class CheckpointGuardTests(unittest.TestCase):
                 checkpoint.checkpoint(self.repo, allow=(entry,))
             self.assertIn("tcr.allow", str(caught.exception))
             self.assertIn("only wildcards", str(caught.exception))
+
+    def test_the_hook_and_the_checkpoint_give_the_same_message_for_a_bad_allowlist(self) -> None:
+        with self.assertRaises(ConfigurationError) as from_settings:
+            read_settings({"tcr": {"allow": [""]}})
+        with self.assertRaises(ConfigurationError) as from_checkpoint:
+            checkpoint.checkpoint(self.repo, allow=("",))
+        self.assertEqual(str(from_settings.exception), str(from_checkpoint.exception))
+
+    def test_an_unknown_field_under_tcr_is_an_error_that_names_it(self) -> None:
+        with self.assertRaises(ConfigurationError) as caught:
+            read_settings({"tcr": {"alow": []}})
+        self.assertIn("alow", str(caught.exception))
 
     def test_a_checkpoint_that_would_commit_a_secret_commits_and_reverts_nothing_and_leaves_the_work_tree_and_unstaged_files(self) -> None:
         put(self.repo / "a.txt", "edited\n")

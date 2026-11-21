@@ -1,14 +1,29 @@
-"""The allow list of the "tcr" object of .overwatch.json, and the error for a mistake in it.
+"""The "tcr" object of .overwatch.json, read by the engine and by the checkpoint command alike, so that both give
+the same error for the same mistake.
 
 Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 from __future__ import annotations
 
-from discovery import OVERRIDE_PATH, ConfigurationError
+from dataclasses import dataclass
+from typing import Any
+
+from discovery import OVERRIDE_PATH, ConfigurationError, is_positive_seconds
 
 SETTINGS_FIELD = "tcr"
+SAVE_REVERTED_FIELD = "saveReverted"
+HOST_LIMIT_FIELD = "hostLimitSeconds"
 ALLOW_FIELD = "allow"
+HOST_LIMIT_SECONDS = 550
 WILDCARDS = frozenset("*/?[]")
+
+
+@dataclass(frozen=True)
+class Settings:
+    """What the project's .overwatch.json says about how TCR behaves, apart from whether it runs."""
+    save_reverted: bool
+    host_limit_seconds: float
+    allow: tuple[str, ...]
 
 
 def setting_error(field: str, value: object, wanted: str) -> ConfigurationError:
@@ -29,3 +44,27 @@ def validate_allow(allow: object) -> tuple[str, ...]:
     assert all(entry.strip() for entry in entries), f"validate_allow kept an empty entry in {entries}"
     assert all(not set(entry.strip()) <= WILDCARDS for entry in entries), f"validate_allow kept an entry of only wildcards in {entries}"
     return entries
+
+
+def read_settings(override: dict[str, Any]) -> Settings:
+    """The project's "tcr" object: saveReverted, whether a revert keeps the work it discards in a git ref (true unless
+    it says false); hostLimitSeconds, how long the host lets one hook run; and allow, the paths and globs that a
+    checkpoint may commit although their name or content looks like a secret. ConfigurationError names the field that
+    is wrong."""
+    given = override.get(SETTINGS_FIELD, {})
+    fields = (SAVE_REVERTED_FIELD, HOST_LIMIT_FIELD, ALLOW_FIELD)
+    if not isinstance(given, dict):
+        raise ConfigurationError(f"{OVERRIDE_PATH} field {SETTINGS_FIELD!r} is {given!r}, not an object; give it {', '.join(fields)}")
+    unknown = sorted(set(given) - set(fields))
+    if unknown:
+        raise ConfigurationError(f"{OVERRIDE_PATH} field {SETTINGS_FIELD!r} has unknown fields {unknown}; use {', '.join(fields)}")
+    save = given.get(SAVE_REVERTED_FIELD, True)
+    limit = given.get(HOST_LIMIT_FIELD, HOST_LIMIT_SECONDS)
+    if not isinstance(save, bool):
+        raise setting_error(SAVE_REVERTED_FIELD, save, "a boolean; set it to true or false")
+    if not is_positive_seconds(limit):
+        raise setting_error(HOST_LIMIT_FIELD, limit, "a finite number of seconds above zero")
+    settings = Settings(save, float(limit), validate_allow(given.get(ALLOW_FIELD, [])))
+    assert limit > 0 and set(given) <= set(fields), f"read_settings accepted {given}"
+    assert len(settings.allow) == len(given.get(ALLOW_FIELD, [])), f"read_settings kept {len(settings.allow)} of the allowed paths in {given}"
+    return settings
