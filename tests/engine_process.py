@@ -23,3 +23,13 @@ def run_engine_that_fails_with(error: Exception, event: str) -> subprocess.Compl
                               env={**os.environ, "PYTHONPATH": str(ROOT / "engine")}, timeout=PROCESS_SECONDS, check=False)
     assert isinstance(finished.returncode, int), f"the engine process ended with {finished.returncode!r}, not an exit code"
     return finished
+
+
+def run_engine_that_answers(output: dict[str, object], event: str) -> subprocess.CompletedProcess[bytes]:
+    """The finished process of engine.main given event on stdin, with process_event replaced by one that gives output, and a stdout that encodes strictly as ASCII-safe UTF-8 would not need."""
+    assert event.startswith("{"), f"event {event[:PREVIEW_CHARACTERS]!r} is not a JSON object; the engine reads one from stdin"
+    script = f"import engine\nengine.process_event = lambda *arguments, **options: {output!r}\nengine.main()"
+    finished = subprocess.run([sys.executable, "-c", script], input=event.encode(), capture_output=True, timeout=PROCESS_SECONDS, check=False,
+                              env={**os.environ, "PYTHONPATH": str(ROOT / "engine"), "PYTHONIOENCODING": "utf-8:strict"})
+    assert isinstance(finished.returncode, int), f"the engine process ended with {finished.returncode!r}, not an exit code"
+    return finished

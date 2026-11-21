@@ -120,6 +120,13 @@ def make_dir(path: Path) -> None:
     assert path.is_dir(), f"{path} was not made; check its parent is writable"
 
 
+def make_parent(path: Path) -> None:
+    """Makes the directories that hold the fixture path, as many as it needs, leaving those that exist."""
+    assert path.parent != path, f"{path} has no parent to make"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    assert path.parent.is_dir(), f"{path.parent} was not made; check its parent is writable"
+
+
 def clear_marker(location: Path) -> None:
     """Removes a marker that git leaves in its directory while an operation is unfinished: a file, or an empty directory."""
     assert location.exists(), f"{location} is not there to clear; make the marker first"
