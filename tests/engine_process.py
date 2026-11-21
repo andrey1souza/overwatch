@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from paths import ROOT
 
@@ -32,4 +33,21 @@ def run_engine_that_answers(output: dict[str, object], event: str) -> subprocess
     finished = subprocess.run([sys.executable, "-c", script], input=event.encode(), capture_output=True, timeout=PROCESS_SECONDS, check=False,
                               env={**os.environ, "PYTHONPATH": str(ROOT / "engine"), "PYTHONIOENCODING": "utf-8:strict"})
     assert isinstance(finished.returncode, int), f"the engine process ended with {finished.returncode!r}, not an exit code"
+    return finished
+
+
+def run_triage(inventory: Path) -> subprocess.CompletedProcess[str]:
+    """The finished triage command given the inventory file at inventory."""
+    assert inventory.is_file(), f"{inventory} is no inventory file to give triage"
+    finished = subprocess.run([sys.executable, str(ROOT / "engine" / "triage.py"), str(inventory)], capture_output=True, text=True, timeout=PROCESS_SECONDS, check=False)
+    assert isinstance(finished.returncode, int), f"triage ended with {finished.returncode!r}, not an exit code"
+    return finished
+
+
+def run_engine_on_strict_stdin(event: bytes) -> subprocess.CompletedProcess[bytes]:
+    """The finished engine given the bytes event on a stdin that decodes strictly, whatever the locale of the machine."""
+    assert event, "no bytes were given for the engine to read"
+    finished = subprocess.run([sys.executable, str(ROOT / "engine" / "engine.py")], input=event, capture_output=True, timeout=PROCESS_SECONDS, check=False,
+                              env={**os.environ, "PYTHONPATH": str(ROOT / "engine"), "PYTHONIOENCODING": "utf-8:strict"})
+    assert isinstance(finished.returncode, int), f"the engine ended with {finished.returncode!r}, not an exit code"
     return finished
