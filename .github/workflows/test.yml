@@ -32,7 +32,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py'
 
       - name: Test the integrations against fake hosts
-        run: node --test tests/test_integrations.mjs tests/test_model_integrations.mjs tests/test_integration_contract.mjs
+        run: node --test tests/test_integrations.mjs tests/test_bounded_read.mjs tests/test_delivery.mjs tests/test_model_integrations.mjs tests/test_integration_contract.mjs
 
   oldest-python:
     runs-on: ubuntu-latest

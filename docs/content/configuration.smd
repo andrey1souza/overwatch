@@ -237,9 +237,13 @@ Overwatch checks again at the start of each turn in Codex, OpenCode 1 and OpenCo
 In a project whose `.overwatch.json` sets `"mode": "tcr"`, OpenCode 1 holds a message until the check that its session start began has ended, which can be as long as the baseline run, up to the 550 seconds that the plugin waits for the engine.
 The agent's first edit waits for that check only if OpenCode waits for the `chat.message` hook before its first model call; no real OpenCode host has shown that.
 A project that does not set the mode has no wait and no check for a message.
+In OpenCode 1, a `.overwatch.json` that is not a regular file, is larger than 1024 KiB, or takes more than 1 second to read counts as no mode for that message.
+A file that the user cannot read, and a file that is not valid JSON, count as no mode too.
+A UTF-8 byte order mark at the start makes a file invalid JSON, as it does for the engine.
 OpenCode 1 checks each message only in a session whose start announced TCR, as on or as unavailable; a session that started without TCR needs a new session after TCR is turned on.
 
 To turn TCR off, remove `mode` from `.overwatch.json`: the next event tells the agent that TCR is off, and nothing is committed or reverted.
+OpenCode 1 shows the "TCR is off" notice to you at your next message in a session that announced TCR, and not to the agent.
 Setting `"enabled": false` stops every check, so TCR commits and reverts nothing.
 The next turn start then says that TCR is unavailable because every check is off.
 

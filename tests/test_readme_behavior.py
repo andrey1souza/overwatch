@@ -4,6 +4,7 @@ Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
 from __future__ import annotations
 
+import codecs
 import json
 import subprocess
 import tempfile
@@ -17,6 +18,7 @@ import checkpoint_repository
 import tcr
 import test_tcr
 from codex_hook import read, write
+from discovery import ConfigurationError, read_override
 from tcr_hardening_case import AWS_KEY, HardeningCase
 
 OLDER_INTERPRETERS = ("python3.9", "python3.10", "/usr/bin/python3")
@@ -116,6 +118,19 @@ class ReadmeBehaviorTests(checkpoint_repository.RepositoryCase):
 
 CODECS_THAT_DO_NOT_WRITE_ASCII_AS_ITSELF = {"EBCDIC": "cp037"}
 CODECS_THE_GUARD_READS = {"UTF-16": "utf-16"}
+
+
+def override_with_a_byte_order_mark() -> dict:
+    """What the engine reads from an .overwatch.json that starts with a UTF-8 byte order mark."""
+    with tempfile.TemporaryDirectory() as root:
+        (Path(root) / ".overwatch.json").write_bytes(codecs.BOM_UTF8 + b'{"mode": "tcr"}')
+        return read_override(Path(root))
+
+
+class OverrideByteOrderMarkTests(unittest.TestCase):
+    def test_the_engine_refuses_an_override_that_starts_with_a_byte_order_mark(self) -> None:
+        with self.assertRaisesRegex(ConfigurationError, "could not read"):
+            override_with_a_byte_order_mark()
 
 
 class ReadmeHookBehaviorTests(HardeningCase):
