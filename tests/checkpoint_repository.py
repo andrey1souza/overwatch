@@ -92,6 +92,14 @@ def remove_fixture_file(path: Path) -> None:
     assert not path.exists(), f"{path} is still there after it was removed"
 
 
+def rename_fixture_file(old: Path, new: Path) -> None:
+    """Moves one fixture file to a name nothing uses, without telling git."""
+    assert old.is_file(), f"{old} is not a file to rename; rename only files the test made"
+    assert not new.exists(), f"{new} is in use; rename to a name the test did not make"
+    old.rename(new)
+    assert new.is_file() and not old.exists(), f"{old} did not move to {new}"
+
+
 def link(path: Path, target: str) -> None:
     """Makes a fixture symbolic link at path that names target, which need not exist."""
     assert not path.exists() and not path.is_symlink(), f"{path} exists already; give each fixture link its own name"
