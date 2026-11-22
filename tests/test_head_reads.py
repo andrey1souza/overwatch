@@ -23,6 +23,7 @@ GIT_READERS = frozenset({"has_commit", "head_ref", "off_branch", "current_branch
 TWO_READS_OF_ONE_FACT = {
     ("checkpoint.py", "checkpoint", "has_commit"): "the first read decides whether the branch check applies, the second whether there is a HEAD to remember; a failure of either raises and commits nothing",
     ("checkpoint.py", "revert", "has_commit"): "the first read refuses a repository with no commit, the second asserts after the reset that the commit is still there; they ask at different times on purpose",
+    ("checkpoint_command.py", "revert_answer", "uncommitted"): "the first asks whether the tree differs from HEAD before the revert, the second asserts after it that nothing differs; they ask at different times on purpose",
     ("checkpoint.py", "revert", "uncommitted"): "the first lists what the revert saves and discards, the second lists what is left after the reset; they ask at different times on purpose",
 }
 

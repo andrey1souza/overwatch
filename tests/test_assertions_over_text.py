@@ -11,7 +11,7 @@ from pathlib import Path
 from paths import ROOT
 
 ENGINE = ROOT / "engine"
-MODULES_OF_THIS_CHANGE = ("bugs", "checkpoint", "checkpoint_git", "repository_state", "safe_text", "saved_revert", "secrets_guard", "tcr", "tcr_settings", "tcr_texts")
+MODULES_OF_THIS_CHANGE = ("bugs", "checkpoint", "checkpoint_command", "checkpoint_git", "repository_state", "safe_text", "saved_revert", "secrets_guard", "tcr", "tcr_settings", "tcr_texts")
 TEXT_METHODS = frozenset({"startswith", "endswith", "split", "rsplit", "splitlines", "count", "find", "rfind", "index", "rindex", "partition", "rpartition",
                           "strip", "lstrip", "rstrip", "removeprefix", "removesuffix", "lower", "upper", "casefold", "title", "swapcase", "replace", "translate",
                           "ljust", "rjust", "center", "zfill", "expandtabs", "format_map", "isalpha", "isdigit", "isalnum", "isspace"})
@@ -209,7 +209,7 @@ class AssertionsOverTextTests(unittest.TestCase):
         """Widening the scan is a deliberate act: a module added to the engine, or moved into the scan, changes one of the two lists."""
         modules = sorted(path.stem for path in ENGINE.glob("*.py"))
         self.assertEqual(sorted((*MODULES_OF_THIS_CHANGE, *UPSTREAM_MODULES_NOT_SCANNED)), modules, "the engine holds a module that is neither scanned nor listed as upstream code left alone")
-        self.assertEqual(sorted(MODULES_OF_THIS_CHANGE), ["bugs", "checkpoint", "checkpoint_git", "repository_state", "safe_text", "saved_revert", "secrets_guard", "tcr", "tcr_settings", "tcr_texts"], "the modules scanned changed")
+        self.assertEqual(sorted(MODULES_OF_THIS_CHANGE), ["bugs", "checkpoint", "checkpoint_command", "checkpoint_git", "repository_state", "safe_text", "saved_revert", "secrets_guard", "tcr", "tcr_settings", "tcr_texts"], "the modules scanned changed")
 
     def test_every_allowed_assert_still_exists_and_has_a_reason(self) -> None:
         self.assertEqual([hit for hit in ALLOWED if hit not in set(asserts_of_the_engine())], [], "an allowed assert is gone; remove it from the list")
