@@ -26,7 +26,7 @@ import secrets_guard
 import tcr
 import tcr_texts
 from checkpoint_repository import RepositoryCase, make_parent, put
-from codex_hook import write
+from codex_hook import read, write
 from engine_process import run_engine_that_answers
 from records import First, State
 from tcr_hardening_case import AWS_KEY, FAILING_GO, GO_MODULE, HardeningCase, PROJECT_FILE
@@ -118,6 +118,13 @@ class WrittenTextTests(unittest.TestCase):
             self.assertNotIn(line_break, safe_text.safe_path(f"a{line_break}b"), f"safe_path carried {line_break!r} raw")
         kept = "echo `date`\t\u202e \xa0\u200b\u3000ünï😀 " + "x" * 300
         self.assertEqual(safe_text.safe_path(kept), kept, "safe_path changed a command that holds no line break or control character")
+
+    def test_the_written_text_is_the_one_the_plugin_writes_for_each_case_of_the_table_both_read(self) -> None:
+        cases = json.loads(read(paths.ROOT / "tests" / "fixtures" / "safe-text-cases.ts").split(" = ", 1)[1])
+        self.assertGreater(len(cases), len(CHARACTERS_THAT_HIDE_OR_FORGE), "the table has fewer cases than there are kinds of character that hide or forge text")
+        for case in cases:
+            with self.subTest(case["name"]):
+                self.assertEqual((safe_text.safe_name(case["input"]), safe_text.safe_path(case["input"]), safe_text.safe_line(case["input"])), (case["safeName"], case["safePath"], case["safeLine"]), "the engine writes this case other than the plugin does")
 
     def test_five_names_of_five_thousand_characters_give_a_short_notice_and_a_path_is_not_cut(self) -> None:
         names = ["n" * 5000] * 5

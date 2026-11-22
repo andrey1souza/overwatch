@@ -3,6 +3,7 @@ import { assert } from './assert'
 import { bringsInFiles, commandOf, protectedChecks } from './gating'
 import {
   commandLine,
+  envOf,
   environmentIn,
   exitMessage,
   gaveUpMessage,
@@ -28,14 +29,6 @@ const GIVE_UP_AFTER = 3
 
 /** Tools whose call may change the project's files; a watcher that is no long-running command reruns after each. */
 const EDITING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash'])
-
-/** The spawn option that sets a watcher's env over overwatch's own; none when it sets none. */
-function envOf(watcher: Watcher): { env?: Record<string, string> } {
-  assert(watcher.env === undefined || Object.values(watcher.env).every(value => typeof value === 'string'), `${watcher.name}'s env ${JSON.stringify(watcher.env)} holds a value that is not a string; give each variable a string`)
-  const option = watcher.env === undefined ? {} : { env: { ...watcher.env } }
-  assert(option.env === undefined || Object.keys(option.env).length === Object.keys(watcher.env ?? {}).length, `the env option for ${watcher.name} lost variables of ${JSON.stringify(watcher.env)}; copy each`)
-  return option
-}
 
 /** Runs a command to its end and reports what it printed, unless it was stopped for a newer run first. */
 async function runOnce($: EngineInterface, run: Run, argv: readonly string[], isStale = () => false) {
