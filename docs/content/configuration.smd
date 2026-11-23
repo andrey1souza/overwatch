@@ -135,7 +135,7 @@ TCR looks at the gate at each turn start.
 While the gate is malformed it says nothing more and never says that TCR is on; it starts again at a turn start once the gate is fixed and the files are committed.
 The Python engine tells the gate's message at each event and does not stop.
 The `command` pattern of a protected action is compiled by JavaScript after three rewrites, which `tests/tcr-gate-patterns.test.ts` pins: Python's `(?P<name>` and `(?P=name)` are written as JavaScript's own; each `$` outside a character class means the end of the text or the end before a last line break, so that `^git push$` protects "git push" followed by a line break; and `\A` and `\Z` outside a character class mean the start and the end of the text.
-The same file and `tests/test_hook_gate_patterns.py` also pin that `\d`, `\w` and `\b` read ASCII only here, and every Unicode digit, letter and word boundary in Python.
+The same file also pins that `\d`, `\w` and `\b` read ASCII only here, where Python reads every Unicode digit, letter and word boundary.
 The two engines of regular expressions differ in other ways that no test pins, and the list is not complete (unverified): what each accepts, what each rejects, how `\s` reads some characters, and the words of the error.
 An argument list in a tool's `command` is joined as Python's `shlex.join` joins it, before the pattern is tested.
 
