@@ -1,6 +1,6 @@
 """Tests that every function of the plugin's hooks that builds a text a notice carries is in the matrix of tests/forged-lines.test.ts, which puts hostile text in each of its inputs, or says why it need not be, and that each reason holds: the function it names exists and holds no assert over a text a file, a check or a summary gave beyond those the list of tests/test_hook_text_asserts.py gives a safe reason.
 
-The scan reads the TypeScript source with the tokenizer of ts_source.py, not its syntax tree, because the plugin's tests may import nothing but their kit. It reads a function declared with `function`, as a `const` arrow, as a method of a class or an object, and as an object property that holds an arrow, with a body in braces or an expression, and a text it builds in a template, with a join, a replace, a concat, a concatenation with a string or `+=` of a string. The limits it keeps are in the README.
+The scan reads the TypeScript source with the tokenizer of ts_source.py, not its syntax tree, because the plugin's tests may import nothing but their kit. It reads a function declared with `function`, as a `const` arrow, as a method of a class or an object, and as an object property that holds an arrow, with a body in braces or an expression, and a text it builds in a template, with a join, a replace, a concat, a concatenation with a string or `+=` of a string.
 
 Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
@@ -161,10 +161,10 @@ class HookTextBuilderTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(builders_in("x.ts", source), set(), f"the scan finds text in {name}")
 
-    def test_the_limits_the_readme_lists_are_misses_of_the_scan_today(self) -> None:
+    def test_the_limits_of_the_scan_are_misses_of_it_today(self) -> None:
         for name, (source, found) in LIMITS.items():
             with self.subTest(name):
-                self.assertEqual(builders_in("x.ts", source), found, f"the limit {name} no longer holds; update the README")
+                self.assertEqual(builders_in("x.ts", source), found, f"the limit {name} no longer holds; update the limits")
 
 
 if __name__ == "__main__":

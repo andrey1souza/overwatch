@@ -1,6 +1,6 @@
 """A reader of the plugin's TypeScript source for the tests that scan it: the source with its comments and the insides of its strings, templates and regular expressions blanked, so that a bracket or a keyword found in it is code; the functions it declares, and the calls it makes.
 
-The plugin's tests may import nothing but their kit, so these scans read the source here, with a tokenizer and not a syntax tree. The limits are in the README.
+The plugin's tests may import nothing but their kit, so these scans read the source here, with a tokenizer and not a syntax tree.
 
 Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """

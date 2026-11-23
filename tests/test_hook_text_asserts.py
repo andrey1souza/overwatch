@@ -1,4 +1,4 @@
-"""A test that no assert in the plugin's hooks looks at text a file, a check or a summary gave, unless it is listed here with the reason it cannot fail on such text, and that none is in a function that runs after a revert has discarded the work: an assert that raises there replaces the notice of the revert, and one that raises before a tool leaves the person guard off. The asserts are found in the source by the reader of ts_source.py, which the README lists the limits of.
+"""A test that no assert in the plugin's hooks looks at text a file, a check or a summary gave, unless it is listed here with the reason it cannot fail on such text, and that none is in a function that runs after a revert has discarded the work: an assert that raises there replaces the notice of the revert, and one that raises before a tool leaves the person guard off. The asserts are found in the source by the reader of ts_source.py.
 
 Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
@@ -181,11 +181,11 @@ class TextAssertTests(unittest.TestCase):
         self.assertLessEqual({"revertMessage"}, functions_after_the_revert())
         self.assertLessEqual({"noteFilesBefore"}, functions_before_the_tool())
 
-    def test_the_limits_the_readme_lists_are_misses_of_the_scan_today(self) -> None:
+    def test_the_limits_of_the_scan_are_misses_of_it_today(self) -> None:
         misses = ("function f(entry: string) {\n  assert(entry.length < 3, `a`)\n}\n", "function f(entry: string) {\n  assert(isShort(entry), `a`)\n}\n", "function f(entry: string) {\n  assert(isShort(entry), `a`)\n}\n", "function f(entry: string) {\n  check(entry.includes('x'), `a`)\n}\n")
         for source in misses:
             with self.subTest(source):
-                self.assertEqual([is_text for _, is_text in asserts_of("x.ts", source) if is_text], [], "the limit no longer holds; update the README")
+                self.assertEqual([is_text for _, is_text in asserts_of("x.ts", source) if is_text], [], "the limit no longer holds; update the limits")
 
     def test_the_hooks_hold_hundreds_of_asserts_and_the_scan_reads_each_of_them(self) -> None:
         every = every_assert()

@@ -1,6 +1,6 @@
 """Tests that every timer the plugin's hooks start with `$.clock.after` is accounted for: each one names the behavioural test that ends it, or is listed as a limit that no fake host steps.
 
-A timer that fires after `stop()` and changes the state of the next session once left the gate off after a resume. The scan reads the source with the tokenizer of ts_source.py and lists each call by its file and its first argument; a call the list does not know fails, so a new timer must name its test. The scan compares how many calls each file and first argument has with the count GUARDS holds, so a second call under a key that has a test fails. It reads the declaration of each named test in tests/late-paths.test.ts and requires that its body calls the function that GUARDS names and holds an `expect(`; a test with the title and an empty body fails. What the test proves is in that test, which stops the session or ends the work and then looks at the timer, and each one fails when the line it covers is removed. The limits are in the README.
+A timer that fires after `stop()` and changes the state of the next session once left the gate off after a resume. The scan reads the source with the tokenizer of ts_source.py and lists each call by its file and its first argument; a call the list does not know fails, so a new timer must name its test. The scan compares how many calls each file and first argument has with the count GUARDS holds, so a second call under a key that has a test fails. It reads the declaration of each named test in tests/late-paths.test.ts and requires that its body calls the function that GUARDS names and holds an `expect(`; a test with the title and an empty body fails. What the test proves is in that test, which stops the session or ends the work and then looks at the timer, and each one fails when the line it covers is removed.
 
 Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
 """
@@ -98,11 +98,6 @@ class TimerGuardTests(unittest.TestCase):
             self.assertIn(guard.test, held, f"{key} names a test that tests/tcr-ended-session.test.ts does not declare")
             self.assertEqual(weak(held[guard.test], guard.exercises), [], f"the test of {key} does not call {guard.exercises} or expect anything")
             self.assertLessEqual(guard.calls, GUARDS[key].calls, f"{key} has fewer timers than the one the test fires and the watchdog no fake host fires")
-
-    def test_every_limit_is_in_the_readme(self) -> None:
-        readme = read(paths.ROOT / "README.md")
-        limits = [key for key, guard in GUARDS.items() if guard.test == NOT_STEPPED]
-        self.assertEqual([key for key in limits if f"`{key[0]}` timer `{key[1]}`" not in readme], [], "a timer no fake host steps is not named in the README")
 
     def test_every_timer_has_as_many_calls_as_its_guard_accounts_for(self) -> None:
         self.assertEqual(miscounted(timers()), [], "a file has more or fewer `$.clock.after` calls under a key than GUARDS accounts for; name the test of each call")
