@@ -3,19 +3,20 @@
 The scan reads the TypeScript source with the tokenizer of ts_source.py, not its syntax tree, because the plugin's tests may import nothing but their kit. It reads a function declared with `function`, as a `const` arrow, as a method of a class or an object, and as an object property that holds an arrow, with a body in braces or an expression, and a text it builds in a template, with a join, a replace, a concat, a concatenation with a string or `+=` of a string.
 
 Copyright (c) 2026 benomahony. SPDX-License-Identifier: MIT
-"""
+ It also holds the fixed sentences of those builders in tests/fixtures/notice-sentences.ts, which the tests through the fake host put in file names, check names and summaries, so that a notice that compares its own text with what a file name holds fails there; run it with --write to write that fixture."""
 from __future__ import annotations
 
 import ast
 import json
 import re
+import sys
 import unittest
 
 import paths
 from codex_hook import read
 from hook_assertions import HOOKS, text_asserts
 from test_hook_text_asserts import ALLOWED, BY_CONSTRUCTION, FIXED, OBJECT, OWN, PATH, TYPE
-from ts_source import functions, masked, writes_text
+from ts_source import arguments, calls, functions, masked, scanned, writes_text
 
 REGISTRY = paths.ROOT / "tests" / "fixtures" / "hook-text-builders.ts"
 NAME_CASES = paths.ROOT / "tests" / "tcr-names-in-notices.test.ts"
@@ -101,6 +102,54 @@ def name_cases_of_the_matrix() -> set[str]:
     return {quoted or bare for quoted, bare in re.findall(r"^  (?:'([^']+)'|(\w+)): name =>", read(NAME_CASES), re.MULTILINE)}
 
 
+FIXTURE = paths.ROOT / "tests" / "fixtures" / "notice-sentences.ts"
+NOT_NOTICE_TEXT = ("assert", "new CommandError", "new Error")
+LEAST_WORDS = 2
+LEAST_CHARACTERS = 10
+ESCAPES = {"n": "\n", "t": "\t"}
+COMPARED_WITH_TEXT = ("includes", "startsWith", "endsWith")
+SAID_ABOUT_NOTICES = ("The files are unchanged", "refs/x^2")
+
+
+def unescaped(piece: str) -> str:
+    return re.sub(r"\\(.)", lambda match: ESCAPES.get(match.group(1), match.group(1)), piece)
+
+
+def inside_calls(code: str, names: tuple[str, ...]) -> list[tuple[int, int]]:
+    spans = []
+    for name in names:
+        for opening in calls(code, name):
+            spans.append((opening, arguments_end(code, opening)))
+    return spans
+
+
+def arguments_end(code: str, opening: int) -> int:
+    spans = arguments(code, opening)
+    return spans[-1][1] + 1 if spans else opening + 1
+
+
+def pieces_of_the_file(file: str, names: set[str]) -> set[str]:
+    source = read(HOOKS / file)
+    code, spans = scanned(source)
+    every = functions(code)
+    builders = [each for each in every if each.name in names]
+    skipped = inside_calls(code, NOT_NOTICE_TEXT)
+    found = set()
+    for first, last in spans:
+        is_wanted = any(each.start <= first < each.end for each in builders) or not any(each.start <= first < each.end for each in every)
+        piece = unescaped(source[first:last]).strip()
+        if is_wanted and not any(a <= first < b for a, b in skipped) and len(piece) >= LEAST_CHARACTERS and len(piece.split()) >= LEAST_WORDS:
+            found.add(piece)
+    return found
+
+
+def sentences_of_the_builders() -> list[str]:
+    covered = json.loads(read(REGISTRY).split(" = ", 1)[1])["covered"]
+    found = set(SAID_ABOUT_NOTICES)
+    for file in sorted({key.split(":")[0] for key in covered}):
+        found |= pieces_of_the_file(file, {key.split(":")[1] for key in covered if key.startswith(f"{file}:")})
+    return sorted(found)
+
 class HookTextBuilderTests(unittest.TestCase):
     def test_every_notice_the_engine_writes_names_in_is_a_case_of_the_name_matrix_or_names_why_it_has_none(self) -> None:
         held = registry()["namedByPython"]
@@ -167,5 +216,20 @@ class HookTextBuilderTests(unittest.TestCase):
                 self.assertEqual(builders_in("x.ts", source), found, f"the limit {name} no longer holds; update the limits")
 
 
+class NoticeSentenceTests(unittest.TestCase):
+    def test_the_fixture_holds_each_fixed_sentence_of_the_notice_builders_and_the_sentences_the_review_named(self) -> None:
+        held = json.loads(read(FIXTURE).split(" = ", 1)[1])
+        self.assertEqual(held, sentences_of_the_builders(), "the fixture is not what the scan finds in the builders; run python3 tests/test_hook_text_builders.py --write")
+
+    def test_the_scan_finds_a_sentence_of_each_notice_the_review_named_and_none_of_an_assert(self) -> None:
+        found = sentences_of_the_builders()
+        self.assertIn("TCR reverted part of the latest change", found)
+        self.assertIn("The discarded work is gone: `tcr.saveReverted` is false in", found)
+        self.assertFalse([each for each in found if "does not say it is about" in each], "a sentence of an assert message is in the fixture")
+
+
 if __name__ == "__main__":
-    unittest.main()
+    if "--write" in sys.argv:
+        FIXTURE.write_text(f"export const SENTENCES = {json.dumps(sentences_of_the_builders(), indent=2)}\n", encoding="utf-8")
+    else:
+        unittest.main()
