@@ -22,10 +22,12 @@ import paths
 import tcr
 from checkpoint_git import GIT_TIMEOUT, CheckpointError
 from codex_hook import read, write
+from git_faults import EXITS_WITH_AN_ERROR, NthGitCall
 from test_tcr import EDITING
 from tcr_hardening_case import FAILING_PYTEST, HardeningCase, PROJECT_FILE
 
 RESET_COMMAND = ["git", "reset", "--hard", "HEAD"]
+COMMANDS_BEFORE_THE_RESET = 52
 READ_ONLY_DIRECTORY, WRITABLE_DIRECTORY = 0o555, 0o755
 SOCKETS = "*.sock"
 REAL_RUN = subprocess.run
@@ -234,6 +236,13 @@ class RevertFaultTests(HardeningCase):
                 self.assertNotEqual(self.saved_state()["tcr"], "active", "TCR stayed active after the failure")
                 next_turn = self.context(self.call_here("UserPromptSubmit"))
                 self.assertNotIn("TCR is on", next_turn, "the next turn start turned TCR on for a tree that still holds the failing edit")
+
+    def test_a_revert_runs_no_more_than_the_known_number_of_git_commands_before_the_reset(self) -> None:
+        self.start_a_revert()
+        with NthGitCall(None, EXITS_WITH_AN_ERROR) as counting, contextlib.redirect_stderr(io.StringIO()):
+            self.call_here("PostToolUse", **EDITING)
+        position = next(position for position, argv in enumerate(counting.commands) if argv[1:5] == RESET_COMMAND[1:])
+        self.assertLessEqual(position, COMMANDS_BEFORE_THE_RESET, f"{position} git commands ran before the reset, where {COMMANDS_BEFORE_THE_RESET} ran when this was written")
 
     def test_a_renamed_file_is_told_as_restored_under_both_its_names_staged_or_not(self) -> None:
         """A revert lists as restored both the name a renamed file had and the name it has, whether the rename is staged, staged and edited, or not staged."""
