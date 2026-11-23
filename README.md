@@ -611,7 +611,7 @@ An error nobody expected is also written to the host's log.
 `tests/tcr-net-entries.test.ts`, `tests/tcr-net-gates.test.ts`, `tests/tcr-net-stops.test.ts` and `tests/tcr-net-turns.test.ts` make the host throw at each step of the plugin's calls of the host in seven entries over four files, one run for each step, and fail when a run that left the project or the entry's answer other than the run without a throw tells the agent nothing new.
 Each run starts a session cold, as the first session of a project does.
 The end of a turn is swept by three tests that each play a third of the steps.
-`tests/tcr-revert-net.test.ts` does the same for each step after the revert command was asked, for twelve answers of the command.
+`tests/tcr-boundaries.test.ts` does the same for each step after the revert command was asked, for twelve answers of the command.
 It names, for each answer, the exact number of steps after the command was asked and whether the answer is told as a revert (its reset is done) or as a try.
 A failing answer that throws nothing pauses TCR with "TCR is unavailable" and no unexpected error; a throw of a process is the command failing; only a throw of another step may go on as an error of the plugin's own.
 `tests/tcr-net-edit-marks.test.ts` makes the host throw at each step after an editing tool ran, and expects that the failure which the first result after the edit holds is still told.
