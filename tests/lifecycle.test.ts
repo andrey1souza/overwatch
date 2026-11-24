@@ -125,6 +125,7 @@ longTest('a running watcher restarts once when its program is replaced on PATH, 
     return next(e)
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   turnHooks(on)
   await $.session.start(start)
   await clock.advance(1000)
@@ -139,6 +140,9 @@ longTest('a running watcher restarts once when its program is replaced on PATH, 
   await $.turn.start({ text: 'and on', turnId: 't3' })
   await clock.advance(1000)
   expect(started.length).toBe(2)
+  const ending = $.session.end({ reason: 'prompt_input_exit', sessionId: 's1', resume: { id: 's1' } })
+  await clock.advance(1000)
+  await ending
 })
 
 longTest('a watcher that keeps exiting backs off, then gives up and wakes the agent', async ($, on) => {
